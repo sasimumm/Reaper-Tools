@@ -42,6 +42,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | cmd+V | paste lyrics: one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
 | S | settings panel |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
+| X | explain away: dim energy on drawn notes and their overtones, so what is still bright needs transcribing |
 | Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |
 | click a piano key | play that pitch through the notes track |
 | [ ] , - = , , . | brightness, contrast, resolution |

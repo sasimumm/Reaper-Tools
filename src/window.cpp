@@ -70,6 +70,11 @@ static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
 static bool g_audition = true; // play a note through the notes track when clicked or drawn
 static double g_harmonics = 8, g_guideOpacity = 0.4;
+// Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
+// bright is what still needs transcribing.
+static bool g_explain;
+static const double EXPLAIN_DIM = 0.25;
+static int g_notesVersion; // bumped whenever notes are loaded
 
 static HWND g_edit;            // lyric edit field while typing; identifies its note by start and pitch
 static double g_editStart;
@@ -88,11 +93,11 @@ static std::vector<unsigned int> g_layer; // rendered spectrogram for the note a
 struct LayerKey
 {
   double t0, pps, pitchTop, rowH;
-  int w, h, version;
+  int w, h, version, explain; // explain: 0 off, else notes version + harmonics
   bool operator==(const LayerKey &o) const
   {
     return t0 == o.t0 && pps == o.pps && pitchTop == o.pitchTop && rowH == o.rowH && w == o.w && h == o.h &&
-           version == o.version;
+           version == o.version && explain == o.explain;
   }
 };
 static LayerKey g_layerKey;
@@ -262,9 +267,21 @@ static void renderLayer(const Rect &n)
     if (a > b) a = b = (int)lround(0.5 * (lo + hi));
     rowLo[y] = std::max(0, a), rowHi[y] = std::min(s.bins - 1, b);
   }
+  std::vector<double> rowPitch(h);
+  for (int y = 0; y < h; y++) rowPitch[y] = g_view.p(n.t + y + 0.5);
+  std::vector<double> explained; // pitches of notes and overtones sounding in this column
+  const int nh = (int)lround(g_harmonics);
   std::vector<unsigned char> col(s.bins);
   for (int x = 0; x < w; x++)
   {
+    explained.clear();
+    if (g_explain)
+    {
+      const double ta = g_view.t(n.l + x), tb = g_view.t(n.l + x + 1);
+      for (const Note &nt : g_ed.notes)
+        if (nt.start < tb && nt.end > ta)
+          for (int hh = 1; hh <= nh; hh++) explained.push_back(nt.pitch + 12 * log2((double)hh));
+    }
     const double fa = (g_view.t(n.l + x) - g_audioPos) * s.frameRate();
     const double fb = (g_view.t(n.l + x + 1) - g_audioPos) * s.frameRate();
     int f0 = (int)ceil(fa), f1 = (int)ceil(fb) - 1;
@@ -282,6 +299,8 @@ static void renderLayer(const Rect &n)
       if (rowLo[y] > rowHi[y]) continue;
       unsigned char m = 0;
       for (int k = rowLo[y]; k <= rowHi[y]; k++) m = std::max(m, col[k]);
+      for (double ep : explained)
+        if (fabs(rowPitch[y] - ep) < 0.5) { m = (unsigned char)(m * EXPLAIN_DIM); break; }
       g_layer[(size_t)y * w + x] = 0xff000000 | g_lut[m];
     }
   }
@@ -339,6 +358,7 @@ static void loadNotes()
   g_ed.notes = g_loaded;
   g_ed.deleted.clear();
   g_hash = takeHash(take);
+  g_notesVersion++;
   redraw();
 }
 
@@ -543,6 +563,7 @@ static std::vector<Widget> widgets()
       {W_BUTTON, "Reset to defaults", NULL, NULL, 0, 0, false, false, 0, NULL, B_RESET},
       {W_HEADER, "Guides"},
       {W_TOGGLE, "Overtone ghosts (H)", NULL, &g_ghosts},
+      {W_TOGGLE, "Explain away drawn notes (X)", NULL, &g_explain},
       {W_SLIDER, "Overtones", &g_harmonics, NULL, 2, 16, false, false, 1, "%.0f"},
       {W_SLIDER, "Guide opacity", &g_guideOpacity, NULL, 0, 1, false, false, 1, "%.2f"},
       {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
@@ -903,7 +924,8 @@ static void paint(HDC hdc)
   char buf[160];
 
   // spectrogram
-  LayerKey key = {g_view.t0, g_view.pps, g_view.pitchTop, g_view.rowH, n.r - n.l, n.b - n.t, g_valVersion};
+  LayerKey key = {g_view.t0, g_view.pps, g_view.pitchTop, g_view.rowH, n.r - n.l, n.b - n.t, g_valVersion,
+                  g_explain ? g_notesVersion * 32 + (int)lround(g_harmonics) : 0};
   if (!g_layerValid || !(key == g_layerKey))
   {
     renderLayer(n);
@@ -1434,6 +1456,7 @@ static bool onKey(int key)
   else if (key == 'S' && !m) g_panel = !g_panel;
   else if (key == 'G' && !m) g_snapMode = (g_snapMode + 1) % 3, setupEditorSnap();
   else if (key == 'P' && !m) g_showContour = !g_showContour;
+  else if (key == 'X' && !m) g_explain = !g_explain;
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
   else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
@@ -1460,7 +1483,7 @@ static bool isOurKey(int key, int flags)
     return true;
   case 'A': return true;
   case 'V': return cmd;
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
