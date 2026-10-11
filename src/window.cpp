@@ -847,67 +847,68 @@ struct Widget
 {
   WidgetType type;
   const char *label;
-  double *value;   // sliders
-  bool *flag;      // toggles
-  double lo, hi;
-  bool logScale, analysis;
-  double display;  // shown value = value * display
-  const char *fmt;
-  int button;
-  int *choice;               // choices: a row of buttons, one per option
-  const char *const *options;
-  int optionCount;
+  double *value = nullptr;        // sliders
+  bool *flag = nullptr;           // toggles
+  double lo = 0, hi = 0;
+  bool logScale = false;
+  bool analysis = false;          // changing it recomputes the analysis
+  double display = 0;             // shown value = value * display
+  const char *fmt = nullptr;
+  int button = 0;
+  int *choice = nullptr;          // choices: a row of buttons, one per option
+  const char *const *options = nullptr;
+  int optionCount = 0;
 };
 
 static std::vector<Widget> widgets()
 {
   return {
-      {W_BUTTONS, "Presets", NULL, NULL, 0, 0, false, false, 0, NULL, B_PRESET, NULL, PRESETS, 3},
-      {W_BUTTONS, "Settings for new items", NULL, NULL, 0, 0, false, false, 0, NULL, B_SAVE_DEFAULT, NULL, DEFAULTS, 2},
-      {W_CHOICE, "Voice (1-4)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_voicePick, VOICES, WINDOW_VOICES},
-      {W_TOGGLE, "Show other voices", NULL, &g_showOthers},
-      {W_BUTTON, "Dock / undock window (D)", NULL, NULL, 0, 0, false, false, 0, NULL, B_DOCK},
-      {W_TOGGLE, "Colours from REAPER theme", NULL, &g_followTheme},
-      {W_TOGGLE, "Link time to arrange view (L)", NULL, &g_linkArrange},
-      {W_HEADER, "Display"},
-      {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
-      {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
-      {W_SLIDER, "Brightness", &g_rp.brightness, NULL, -1, 1, false, false, 1, "%+.2f"},
-      {W_SLIDER, "Colour curve", &g_rp.bias, NULL, -2, 2, false, false, 1, "%+.2f"},
-      {W_TOGGLE, "Peaks only", NULL, &g_rp.peaksOnly},
-      {W_SLIDER, "Peak dimming", &g_rp.peakDim, NULL, 0, 1, false, false, 1, "%.2f"},
-      {W_TOGGLE, "Noise subtraction", NULL, &g_rp.subtractNoise},
-      {W_SLIDER, "Noise strength", &g_rp.noiseAlpha, NULL, 0, 3, false, false, 1, "%.2f"},
-      {W_SLIDER, "Noise from quietest", &g_rp.noiseFraction, NULL, 0.01, 0.5, false, false, 100, "%.0f%%"},
-      {W_BUTTON, "Auto: whole item", NULL, NULL, 0, 0, false, false, 0, NULL, B_AUTO_ALL},
-      {W_BUTTON, "Auto: visible", NULL, NULL, 0, 0, false, false, 0, NULL, B_AUTO_VIEW},
-      {W_HEADER, "Analysis"},
-      {W_SLIDER, "Resolution (gamma)", &g_np.gamma, NULL, 3, 40, true, true, 1, "%.1f Hz"},
-      {W_SLIDER, "Lowest frequency", &g_np.fmin, NULL, 20, 500, true, true, 1, "%.0f Hz"},
-      {W_SLIDER, "Highest frequency", &g_np.fmax, NULL, 1000, 11000, true, true, 1, "%.0f Hz"},
-      {W_SLIDER, "Bins per semitone", &g_binsPerSemitone, NULL, 1, 10, false, true, 1, "%.0f"},
-      {W_CHOICE, "Channel", NULL, NULL, 0, 0, false, true, 0, NULL, 0, &g_channel, CHANNELS, 5},
-      {W_TOGGLE, "Bass analysis (sharper low notes)", NULL, &g_np.bass, 0, 0, false, true},
-      {W_SLIDER, "Bass crossover", &g_np.bassCrossover, NULL, 80, 500, true, true, 1, "%.0f Hz"},
-      {W_BUTTON, "Reset to defaults", NULL, NULL, 0, 0, false, false, 0, NULL, B_RESET},
-      {W_HEADER, "Guides"},
-      {W_TOGGLE, "Overtone ghosts (H)", NULL, &g_ghosts},
-      {W_TOGGLE, "Explain away drawn notes (X)", NULL, &g_explain},
-      {W_SLIDER, "Overtones", &g_harmonics, NULL, 2, 16, false, false, 1, "%.0f"},
-      {W_SLIDER, "Guide opacity", &g_guideOpacity, NULL, 0, 1, false, false, 1, "%.2f"},
-      {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
-      {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
-      {W_CHOICE, "Suggest from", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_suggestFrom, SUGGEST_FROM, 2},
-      {W_TOGGLE, "Estimator: front-end vote (slower)", NULL, &g_estimateVote, 0, 0, false, true},
-      {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
-      {W_HEADER, "Quantise"},
-      {W_SLIDER, "Quantise strength", &g_quantStrength, NULL, 0, 1, false, false, 100, "%.0f%%"},
-      {W_BUTTON, "Quantise selected notes (Q)", NULL, NULL, 0, 0, false, false, 0, NULL, B_QUANTISE},
-      {W_HEADER, "Playback"},
-      {W_TOGGLE, "Play notes when clicked", NULL, &g_audition},
-      {W_CHOICE, "Speed", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_speed, SPEEDS, 3},
-      {W_CHOICE, "Listen to (B: swap audio/notes)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_listen, LISTEN, 3},
-      {W_SLIDER, "Notes volume", &g_notesDb, NULL, -30, 6, false, false, 1, "%+.1f dB"},
+      {.type = W_BUTTONS, .label = "Presets", .button = B_PRESET, .options = PRESETS, .optionCount = 3},
+      {.type = W_BUTTONS, .label = "Settings for new items", .button = B_SAVE_DEFAULT, .options = DEFAULTS, .optionCount = 2},
+      {.type = W_CHOICE, .label = "Voice (1-4)", .choice = &g_voicePick, .options = VOICES, .optionCount = WINDOW_VOICES},
+      {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_showOthers},
+      {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
+      {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_followTheme},
+      {.type = W_TOGGLE, .label = "Link time to arrange view (L)", .flag = &g_linkArrange},
+      {.type = W_HEADER, .label = "Display"},
+      {.type = W_SLIDER, .label = "Floor", .value = &g_rp.dbFloor, .lo = -120, .hi = -20, .display = 1, .fmt = "%.0f dB"},
+      {.type = W_SLIDER, .label = "Contrast", .value = &g_rp.contrast, .lo = 0.1, .hi = 3, .logScale = true, .display = 1, .fmt = "%.2f"},
+      {.type = W_SLIDER, .label = "Brightness", .value = &g_rp.brightness, .lo = -1, .hi = 1, .display = 1, .fmt = "%+.2f"},
+      {.type = W_SLIDER, .label = "Colour curve", .value = &g_rp.bias, .lo = -2, .hi = 2, .display = 1, .fmt = "%+.2f"},
+      {.type = W_TOGGLE, .label = "Peaks only", .flag = &g_rp.peaksOnly},
+      {.type = W_SLIDER, .label = "Peak dimming", .value = &g_rp.peakDim, .hi = 1, .display = 1, .fmt = "%.2f"},
+      {.type = W_TOGGLE, .label = "Noise subtraction", .flag = &g_rp.subtractNoise},
+      {.type = W_SLIDER, .label = "Noise strength", .value = &g_rp.noiseAlpha, .hi = 3, .display = 1, .fmt = "%.2f"},
+      {.type = W_SLIDER, .label = "Noise from quietest", .value = &g_rp.noiseFraction, .lo = 0.01, .hi = 0.5, .display = 100, .fmt = "%.0f%%"},
+      {.type = W_BUTTON, .label = "Auto: whole item", .button = B_AUTO_ALL},
+      {.type = W_BUTTON, .label = "Auto: visible", .button = B_AUTO_VIEW},
+      {.type = W_HEADER, .label = "Analysis"},
+      {.type = W_SLIDER, .label = "Resolution (gamma)", .value = &g_np.gamma, .lo = 3, .hi = 40, .logScale = true, .analysis = true, .display = 1, .fmt = "%.1f Hz"},
+      {.type = W_SLIDER, .label = "Lowest frequency", .value = &g_np.fmin, .lo = 20, .hi = 500, .logScale = true, .analysis = true, .display = 1, .fmt = "%.0f Hz"},
+      {.type = W_SLIDER, .label = "Highest frequency", .value = &g_np.fmax, .lo = 1000, .hi = 11000, .logScale = true, .analysis = true, .display = 1, .fmt = "%.0f Hz"},
+      {.type = W_SLIDER, .label = "Bins per semitone", .value = &g_binsPerSemitone, .lo = 1, .hi = 10, .analysis = true, .display = 1, .fmt = "%.0f"},
+      {.type = W_CHOICE, .label = "Channel", .analysis = true, .choice = &g_channel, .options = CHANNELS, .optionCount = 5},
+      {.type = W_TOGGLE, .label = "Bass analysis (sharper low notes)", .flag = &g_np.bass, .analysis = true},
+      {.type = W_SLIDER, .label = "Bass crossover", .value = &g_np.bassCrossover, .lo = 80, .hi = 500, .logScale = true, .analysis = true, .display = 1, .fmt = "%.0f Hz"},
+      {.type = W_BUTTON, .label = "Reset to defaults", .button = B_RESET},
+      {.type = W_HEADER, .label = "Guides"},
+      {.type = W_TOGGLE, .label = "Overtone ghosts (H)", .flag = &g_ghosts},
+      {.type = W_TOGGLE, .label = "Explain away drawn notes (X)", .flag = &g_explain},
+      {.type = W_SLIDER, .label = "Overtones", .value = &g_harmonics, .lo = 2, .hi = 16, .display = 1, .fmt = "%.0f"},
+      {.type = W_SLIDER, .label = "Guide opacity", .value = &g_guideOpacity, .hi = 1, .display = 1, .fmt = "%.2f"},
+      {.type = W_TOGGLE, .label = "Pitch contour (P)", .flag = &g_showContour},
+      {.type = W_TOGGLE, .label = "Suggested notes (N, A: accept all)", .flag = &g_suggest},
+      {.type = W_CHOICE, .label = "Suggest from", .choice = &g_suggestFrom, .options = SUGGEST_FROM, .optionCount = 2},
+      {.type = W_TOGGLE, .label = "Estimator: front-end vote (slower)", .flag = &g_estimateVote, .analysis = true},
+      {.type = W_TOGGLE, .label = "Note pitch from contour", .flag = &g_pitchFromContour},
+      {.type = W_HEADER, .label = "Quantise"},
+      {.type = W_SLIDER, .label = "Quantise strength", .value = &g_quantStrength, .hi = 1, .display = 100, .fmt = "%.0f%%"},
+      {.type = W_BUTTON, .label = "Quantise selected notes (Q)", .button = B_QUANTISE},
+      {.type = W_HEADER, .label = "Playback"},
+      {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &g_audition},
+      {.type = W_CHOICE, .label = "Speed", .choice = &g_speed, .options = SPEEDS, .optionCount = 3},
+      {.type = W_CHOICE, .label = "Listen to (B: swap audio/notes)", .choice = &g_listen, .options = LISTEN, .optionCount = 3},
+      {.type = W_SLIDER, .label = "Notes volume", .value = &g_notesDb, .lo = -30, .hi = 6, .display = 1, .fmt = "%+.1f dB"},
   };
 }
 
@@ -979,27 +980,42 @@ static void changedSetting(const Widget &w)
 struct Setting
 {
   const char *name;
-  double *d;
-  bool *b;
-  int *i;
-  double lo, hi; // loaded values are clamped to this range
+  double *d = nullptr;
+  bool *b = nullptr;
+  int *i = nullptr;
+  double lo = 0, hi = 0; // loaded values are clamped to this range
 };
 static const Setting SETTINGS[] = {
-    {"gamma", &g_np.gamma, NULL, NULL, 3, 40}, {"fmin", &g_np.fmin, NULL, NULL, 20, 500},
-    {"fmax", &g_np.fmax, NULL, NULL, 1000, 11000},
-    {"binspersemitone", &g_binsPerSemitone, NULL, NULL, 1, 10}, {"channel", NULL, NULL, &g_channel, 0, CH_CENTRE},
-    {"bass", NULL, &g_np.bass}, {"basscrossover", &g_np.bassCrossover, NULL, NULL, 80, 500},
-    {"floor", &g_rp.dbFloor, NULL, NULL, -120, -20}, {"contrast", &g_rp.contrast, NULL, NULL, 0.1, 3},
-    {"brightness", &g_rp.brightness, NULL, NULL, -1, 1}, {"bias", &g_rp.bias, NULL, NULL, -2, 2},
-    {"peaks", NULL, &g_rp.peaksOnly}, {"peakdim", &g_rp.peakDim, NULL, NULL, 0, 1},
-    {"denoise", NULL, &g_rp.subtractNoise}, {"noisealpha", &g_rp.noiseAlpha, NULL, NULL, 0, 3},
-    {"noisefrac", &g_rp.noiseFraction, NULL, NULL, 0.01, 0.5}, {"ghosts", NULL, &g_ghosts},
-    {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
-    {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
-    {"suggestfrom", NULL, NULL, &g_suggestFrom, 0, 1}, {"estimatevote", NULL, &g_estimateVote},
-    {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
-    {"theme", NULL, &g_followTheme}, {"linkarrange", NULL, &g_linkArrange},
-    {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
+    {.name = "gamma", .d = &g_np.gamma, .lo = 3, .hi = 40},
+    {.name = "fmin", .d = &g_np.fmin, .lo = 20, .hi = 500},
+    {.name = "fmax", .d = &g_np.fmax, .lo = 1000, .hi = 11000},
+    {.name = "binspersemitone", .d = &g_binsPerSemitone, .lo = 1, .hi = 10},
+    {.name = "channel", .i = &g_channel, .lo = 0, .hi = CH_CENTRE},
+    {.name = "bass", .b = &g_np.bass},
+    {.name = "basscrossover", .d = &g_np.bassCrossover, .lo = 80, .hi = 500},
+    {.name = "floor", .d = &g_rp.dbFloor, .lo = -120, .hi = -20},
+    {.name = "contrast", .d = &g_rp.contrast, .lo = 0.1, .hi = 3},
+    {.name = "brightness", .d = &g_rp.brightness, .lo = -1, .hi = 1},
+    {.name = "bias", .d = &g_rp.bias, .lo = -2, .hi = 2},
+    {.name = "peaks", .b = &g_rp.peaksOnly},
+    {.name = "peakdim", .d = &g_rp.peakDim, .lo = 0, .hi = 1},
+    {.name = "denoise", .b = &g_rp.subtractNoise},
+    {.name = "noisealpha", .d = &g_rp.noiseAlpha, .lo = 0, .hi = 3},
+    {.name = "noisefrac", .d = &g_rp.noiseFraction, .lo = 0.01, .hi = 0.5},
+    {.name = "ghosts", .b = &g_ghosts},
+    {.name = "harmonics", .d = &g_harmonics, .lo = 2, .hi = 16},
+    {.name = "guideopacity", .d = &g_guideOpacity, .lo = 0, .hi = 1},
+    {.name = "explain", .b = &g_explain},
+    {.name = "contour", .b = &g_showContour},
+    {.name = "suggest", .b = &g_suggest},
+    {.name = "suggestfrom", .i = &g_suggestFrom, .lo = 0, .hi = 1},
+    {.name = "estimatevote", .b = &g_estimateVote},
+    {.name = "pitchfromcontour", .b = &g_pitchFromContour},
+    {.name = "audition", .b = &g_audition},
+    {.name = "theme", .b = &g_followTheme},
+    {.name = "linkarrange", .b = &g_linkArrange},
+    {.name = "snap", .i = &g_snapMode, .lo = 0, .hi = SNAP_GRID},
+    {.name = "quantise", .d = &g_quantStrength, .lo = 0, .hi = 1},
 };
 static const char *EXT_SECTION = "reatrace", *EXT_DEFAULTS = "defaults";
 static const char *OLD_EXT_SECTION = "reascribe"; // before the rename; read when there's nothing newer

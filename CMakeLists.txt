@@ -1,7 +1,10 @@
 cmake_minimum_required(VERSION 3.20)
 project(reatrace LANGUAGES C CXX OBJCXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# Bounds-checked operator[] on std::vector, std::span, std::string etc. (libc++'s cheap checks), also in the plugin.
+add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
 set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
 
 if(NOT APPLE)
