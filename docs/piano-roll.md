@@ -198,7 +198,7 @@ tempo tools and markers-to-tempo conversion. We display the tempo map and leave 
 | PLAY-2 | P0 | ✅ | Notes play through the voice track's synth (ReaSynth added on setup) together with the audio. |
 | PLAY-3 | P1 | ✅ | Audition on click: piano keys, clicked notes, drawn notes and pitch changes while dragging play through the voice track as a track preview of a generated one-note MIDI file (written safely to REAPER's resource folder). Previews play to their end, lasting longer at slower playrates, so notes don't hang. |
 | PLAY-4 | P1 | ✅ | Loop: shift+drag in the ruler sets REAPER's time selection and loop points (whether or not REAPER links them). R loops the selected notes' range (or the time selection): sets it, turns on repeat and plays from its start; R again stops. |
-| PLAY-5 | P1 | — | Balance controls: audio vs. notes volume, solo audio, solo notes, quick A/B. |
+| PLAY-5 | P1 | ✅ | Balance controls: audio vs. notes volume, solo audio, solo notes, quick A/B. Panel: "Listen to" Both / Audio / Notes (mutes the audio track or the voice tracks) and a notes volume slider (the voice tracks' faders, −30 … +6 dB); B swaps audio/notes. Uses track mutes and volume rather than item volume, which could reach the spectrogram's audio reader; the panel reads them back, so changes made in REAPER show. Muting the audio track also mutes anything else on it. |
 | PLAY-6 | P1 | ✅ | Slow playback: 100/75/50% buttons set the master playrate and turn on preserve pitch (action 40671, assumed). |
 | PLAY-7 | P2 | — | Scrub with the mouse over the ruler (REAPER's scrub, or DrawScore's spectral-freeze idea, unproven). |
 | PLAY-8 | P1 | — | Reference tone while holding a key on the keyboard, to compare against the sung pitch. |

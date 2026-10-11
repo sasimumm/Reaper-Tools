@@ -68,6 +68,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | click a syllable in the lyrics lane | type that note's lyric |
 | click/drag the overview strip | scroll to that part of the item |
 | shift+drag the ruler | time selection and loop points (snapped like notes) |
+| B | A/B: hear only the audio / only the notes (track mutes); the panel also has Both and the notes volume |
 | R | loop the selected notes' range (or the time selection) from its start; R again stops |
 | Q | quantise selected notes to the grid (strength in the panel) |
 | other keys | REAPER's own shortcuts (Space = play/stop, ...) |

@@ -70,6 +70,8 @@
 #define REAPERAPI_WANT_GetSet_LoopTimeRange2
 #define REAPERAPI_WANT_GetSet_ArrangeView2
 #define REAPERAPI_WANT_GetSetRepeat
+#define REAPERAPI_WANT_SetMediaTrackInfo_Value
+#define REAPERAPI_WANT_TrackList_AdjustWindows
 #define REAPERAPI_WANT_OnPlayButton
 #define REAPERAPI_WANT_OnStopButton
 #define REAPERAPI_WANT_SetMediaItemInfo_Value

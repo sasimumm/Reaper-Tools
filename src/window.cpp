@@ -87,6 +87,11 @@ static int g_channel = CH_MIX;
 static const char *const SPEEDS[] = {"100%", "75%", "50%"};
 static const double SPEED_RATES[] = {1, 0.75, 0.5};
 static int g_speed;
+// Balance: which of audio and notes is heard (track mutes), and the voice tracks' volume.
+static const char *const LISTEN[] = {"Both", "Audio", "Notes"};
+enum { LISTEN_BOTH, LISTEN_AUDIO, LISTEN_NOTES };
+static int g_listen;
+static double g_notesDb; // read back from the lead voice track
 static double g_quantStrength = 1;
 static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
@@ -839,6 +844,8 @@ static std::vector<Widget> widgets()
       {W_HEADER, "Playback"},
       {W_TOGGLE, "Play notes when clicked", NULL, &g_audition},
       {W_CHOICE, "Speed", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_speed, SPEEDS, 3},
+      {W_CHOICE, "Listen to (B: swap audio/notes)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_listen, LISTEN, 3},
+      {W_SLIDER, "Notes volume", &g_notesDb, NULL, -30, 6, false, false, 1, "%+.1f dB"},
   };
 }
 
@@ -894,10 +901,13 @@ static void autoCalibrateView()
   autoCalibrate(g_spec, g_rp, f0, f1);
 }
 
+static void applyNotesVolume();
+
 static void changedSetting(const Widget &w)
 {
   if (w.analysis) { g_analysisDirty = true; redraw(); return; } // recomputed on mouse up
   if (w.value == &g_rp.noiseFraction) estimateNoise(g_spec, g_rp.noiseFraction);
+  if (w.value == &g_notesDb) applyNotesVolume();
   if (isRenderParam(w.value)) updateValues();
   else redraw();
 }
@@ -1056,6 +1066,46 @@ static void applySpeed()
   CSurf_OnPlayRateChange(rate);
 }
 
+// The voice tracks that exist, for this audio item.
+static std::vector<MediaTrack *> voiceTracks()
+{
+  std::vector<MediaTrack *> out;
+  for (int v = 0; v < WINDOW_VOICES; v++)
+    if (MediaItem *it = VoiceItem(g_audio, v, false)) out.push_back(GetMediaItem_Track(it));
+  return out;
+}
+
+static void applyListen()
+{
+  if (MediaTrack *a = GetMediaItem_Track(g_audio)) SetMediaTrackInfo_Value(a, "B_MUTE", g_listen == LISTEN_NOTES);
+  for (MediaTrack *t : voiceTracks()) SetMediaTrackInfo_Value(t, "B_MUTE", g_listen == LISTEN_AUDIO);
+  TrackList_AdjustWindows(false);
+}
+
+// A/B: swap between hearing only the audio and only the notes.
+static void swapListen()
+{
+  g_listen = g_listen == LISTEN_AUDIO ? LISTEN_NOTES : LISTEN_AUDIO;
+  applyListen();
+}
+
+static void applyNotesVolume()
+{
+  for (MediaTrack *t : voiceTracks()) SetMediaTrackInfo_Value(t, "D_VOL", pow(10.0, g_notesDb / 20));
+  TrackList_AdjustWindows(false);
+}
+
+// Mutes and volume can also change in REAPER: show what the tracks say.
+static void readBalance()
+{
+  MediaTrack *a = GetMediaItem_Track(g_audio);
+  const std::vector<MediaTrack *> vt = voiceTracks();
+  const bool audioMuted = a && GetMediaTrackInfo_Value(a, "B_MUTE") != 0;
+  const bool notesMuted = !vt.empty() && GetMediaTrackInfo_Value(vt[0], "B_MUTE") != 0;
+  g_listen = audioMuted && !notesMuted ? LISTEN_NOTES : notesMuted && !audioMuted ? LISTEN_AUDIO : LISTEN_BOTH;
+  if (!vt.empty() && g_panelWidget < 0) g_notesDb = 20 * log10(std::max(1e-6, GetMediaTrackInfo_Value(vt[0], "D_VOL")));
+}
+
 static void panelMouse(int x, int y, bool down)
 {
   const Rect p = panelArea();
@@ -1084,6 +1134,7 @@ static void panelMouse(int x, int y, bool down)
     if (i == *w.choice) return;
     *w.choice = i;
     if (w.choice == &g_speed) applySpeed();
+    else if (w.choice == &g_listen) applyListen();
     else if (w.choice == &g_voicePick) g_voicePick = g_voice, selectVoice(i);
     else if (w.analysis) requestAnalysis(false);
   }
@@ -1099,6 +1150,7 @@ static void drawPanel(Canvas &cv, HDC dc)
   const double rate = Master_GetPlayRate(NULL);
   for (int i = 0; i < 3; i++)
     if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) g_speed = i;
+  readBalance();
   std::vector<Widget> ws = widgets();
   int top = 8 - g_panelScroll;
   char buf[64];
@@ -2084,6 +2136,7 @@ static bool onKey(int key)
   else if (key == 'D' && (m & MOD_CMD)) { if (g_ed.duplicateSelected()) commitNotes(); }
   else if (key == 'K' && !m) splitNotes();
   else if (key == 'R' && !m) loopPlay();
+  else if (key == 'B' && !m) swapListen();
   else if (key == 'J' && !m) { if (g_ed.joinSelected()) commitNotes(); }
   else if (key == 'F' && !m) fitItem();
   else if (key == 'Z' && !m) zoomToSelection();
@@ -2110,7 +2163,7 @@ static bool isOurKey(int key, int flags)
   case 'V': case 'C': return cmd;
   case 'X': case 'D': return cmd || !(flags & (FALT | FSHIFT));
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'Q': case 'L': case 'K': case 'J': case 'R': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'Q': case 'L': case 'K': case 'J': case 'R': case 'B': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
