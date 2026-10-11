@@ -1130,7 +1130,9 @@ static void scrollPitch(double semitones)
 // Plays a short note through the notes track (so through its synth) as a track preview, from a
 // tiny generated MIDI file per pitch; nothing needs to be armed. Previews always play to the end:
 // stopping one mid-note leaves the synth without a note-off, so a pool lets them overlap.
-static const double PREVIEW_LIFE = 0.6; // seconds; the note itself is ~0.4 s
+// Seconds before a finished preview is stopped. The file is ~1 s at 120 bpm; generous in case
+// REAPER plays it at a slower project tempo, since stopping before the note-off hangs the note.
+static const double PREVIEW_LIFE = 2.5;
 static const int PREVIEW_SLOTS = 16;
 struct Preview
 {
@@ -1171,9 +1173,14 @@ static void previewPitch(int pitch)
   snprintf(path, sizeof(path), "%s/Data/reascribe-preview-%d.mid", GetResourcePath(), pitch);
   const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
   if (fd < 0) return;
-  // format 0, 96 ticks per quarter; note on, note off after 77 ticks (~0.4 s at 120 bpm), end of track
-  const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 12,
-                               0, 0x90, (unsigned char)pitch, 96, 77, 0x80, (unsigned char)pitch, 0, 0, 0xff, 0x2f, 0};
+  // format 0, 96 ticks per quarter: note on; note off after 77 ticks (~0.4 s at 120 bpm); all notes
+  // off; end of track 96 ticks later, so the note-off isn't on the source's last tick (where it
+  // was not played, leaving the note hanging)
+  const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 16,
+                               0, 0x90, (unsigned char)pitch, 96,
+                               77, 0x80, (unsigned char)pitch, 0,
+                               10, 0xb0, 0x7b, 0,
+                               96, 0xff, 0x2f, 0};
   const bool ok = write(fd, smf, sizeof(smf)) == (ssize_t)sizeof(smf);
   close(fd);
   if (!ok) return;
