@@ -57,6 +57,7 @@ static OtherVoice g_others[WINDOW_VOICES];
 static double g_audioPos, g_audioLen, g_audioOffs, g_audioRate;
 
 static NSGTParams g_np;
+static double g_binsPerSemitone = 5; // slider for g_np.binsPerOctave, applied in requestAnalysis()
 static RenderParams g_rp;
 static Spectrogram g_spec;
 static std::vector<unsigned char> g_val; // renderValues() output, one byte per cell
@@ -349,6 +350,7 @@ static void requestAnalysis(bool autoCalibrateAfter)
   MediaItem_Take *take = GetActiveTake(g_audio);
   if (!take) return;
   g_autoOnInstall |= autoCalibrateAfter;
+  g_np.binsPerOctave = 12 * (int)lround(g_binsPerSemitone);
   cancelJob();
   const AnalysisKey key = {g_np, g_audioPos, g_audioLen, g_audioOffs, g_audioRate};
   const int ch = g_channel;
@@ -817,6 +819,7 @@ static std::vector<Widget> widgets()
       {W_SLIDER, "Resolution (gamma)", &g_np.gamma, NULL, 3, 40, true, true, 1, "%.1f Hz"},
       {W_SLIDER, "Lowest frequency", &g_np.fmin, NULL, 20, 500, true, true, 1, "%.0f Hz"},
       {W_SLIDER, "Highest frequency", &g_np.fmax, NULL, 1000, 11000, true, true, 1, "%.0f Hz"},
+      {W_SLIDER, "Bins per semitone", &g_binsPerSemitone, NULL, 1, 10, false, true, 1, "%.0f"},
       {W_CHOICE, "Channel", NULL, NULL, 0, 0, false, true, 0, NULL, 0, &g_channel, CHANNELS, 5},
       {W_TOGGLE, "Bass analysis (sharper low notes)", NULL, &g_np.bass, 0, 0, false, true},
       {W_SLIDER, "Bass crossover", &g_np.bassCrossover, NULL, 80, 500, true, true, 1, "%.0f Hz"},
@@ -910,7 +913,8 @@ struct Setting
 };
 static const Setting SETTINGS[] = {
     {"gamma", &g_np.gamma, NULL, NULL, 3, 40}, {"fmin", &g_np.fmin, NULL, NULL, 20, 500},
-    {"fmax", &g_np.fmax, NULL, NULL, 1000, 11000}, {"channel", NULL, NULL, &g_channel, 0, CH_CENTRE},
+    {"fmax", &g_np.fmax, NULL, NULL, 1000, 11000},
+    {"binspersemitone", &g_binsPerSemitone, NULL, NULL, 1, 10}, {"channel", NULL, NULL, &g_channel, 0, CH_CENTRE},
     {"bass", NULL, &g_np.bass}, {"basscrossover", &g_np.bassCrossover, NULL, NULL, 80, 500},
     {"floor", &g_rp.dbFloor, NULL, NULL, -120, -20}, {"contrast", &g_rp.contrast, NULL, NULL, 0.1, 3},
     {"brightness", &g_rp.brightness, NULL, NULL, -1, 1}, {"bias", &g_rp.bias, NULL, NULL, -2, 2},
@@ -962,7 +966,7 @@ static void loadSettings(const char *str)
 
 static void resetSettings()
 {
-  g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
+  g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX, g_binsPerSemitone = 5;
   g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
   g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
   g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false;

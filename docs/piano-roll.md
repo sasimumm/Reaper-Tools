@@ -95,7 +95,7 @@ fields next to the sliders are not done.
 |---|---|---|---|---|---|
 | CTL-10 | Resolution (`gamma`) | 3 … 40 Hz | 11 | lower = sharper pitch, blurrier timing (P0) | ✅ |
 | CTL-11 | Frequency range | low 20 … 500 Hz, high 1 … 11 kHz | 27.5 Hz … 8 kHz | P0; the initial view shows the vocal range E2 … C6 | ✅ |
-| CTL-12 | Bins per semitone | 1 … 10 | 5 | vertical detail vs. memory/time (P1) | — |
+| CTL-12 | Bins per semitone | 1 … 10 | 5 | vertical detail vs. memory/time (P1); memory scales with it (~6 MB per bin per semitone per 3 minutes); the pitch contour is self-checked at 1, 2 and 10 | ✅ |
 | CTL-13 | Time step (hop) | 128 / 256 / 512 samples | 256 (11.6 ms) | horizontal detail vs. memory/time (P1) | — |
 | CTL-14 | Channel | mix, left, right, side, centre | mix | P1; side-by-side buttons | ✅ |
 

@@ -55,6 +55,23 @@ int main()
     printf("note %.2f-%.2f s: median %.2f (expected %.2f)\n", n.a, n.b, p, n.pitch);
     assert(fabs(p - n.pitch) < 0.2);
   }
+  // the contour doesn't depend on the bins-per-semitone setting
+  for (int bps : {1, 2, 10})
+  {
+    NSGTParams np;
+    np.binsPerOctave = 12 * bps;
+    const Spectrogram sb = computeNSGT(np, (long long)x.size(), [&](long long st, int n, float *o) {
+      for (int i = 0; i < n; i++) o[i] = st + i >= 0 && st + i < (long long)x.size() ? x[st + i] : 0;
+    });
+    const Contour cb = trackPitch(sb);
+    for (auto &n : notes)
+    {
+      double p;
+      assert(contourMedian(cb, (int)(n.a * fr), (int)(n.b * fr), 0, &p));
+      printf("%d bins/semitone, note %.2f-%.2f s: median %.2f\n", bps, n.a, n.b, p);
+      assert(fabs(p - n.pitch) < 0.3);
+    }
+  }
   int voicedInRest = 0;
   for (int f = (int)(1.38 * fr); f < (int)(1.52 * fr); f++) voicedInRest += c.pitch[f] >= 0;
   printf("voiced frames in the rest: %d\n", voicedInRest);
