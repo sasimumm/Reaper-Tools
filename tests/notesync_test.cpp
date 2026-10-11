@@ -1,0 +1,177 @@
+// Self-check for notes <-> MIDI take: run `build/notesync_test`.
+#include <algorithm>
+#include <cassert>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "../src/notesync.h"
+
+// A take like REAPER's: indices stay put until sort(), inserted events are appended, sort() orders
+// notes by start then pitch and text events by position. 960 PPQ per second.
+class FakeTake : public Take {
+  public:
+    struct N {
+        NoteEvent e;
+        int velocity;
+    };
+    std::vector<N> notes;
+    std::vector<TextEvent> texts;
+    int sorts = 0;
+
+    double toTime(double ppq) override { return ppq / 960; }
+    double toPPQ(double time) override { return time * 960; }
+    int noteCount() override { return (int)notes.size(); }
+    NoteEvent note(int i) override { return notes[(size_t)i].e; }
+    int textCount() override { return (int)texts.size(); }
+    bool text(int i, TextEvent *out) override {
+        *out = texts[(size_t)i];
+        return true;
+    }
+    void setNote(int i, const NoteEvent &n) override { notes[(size_t)i].e = n; }
+    void deleteNote(int i) override { notes.erase(notes.begin() + i); }
+    void insertNote(const NoteEvent &n, int velocity) override { notes.push_back({n, velocity}); }
+    void deleteText(int i) override { texts.erase(texts.begin() + i); }
+    void insertText(const TextEvent &t) override { texts.push_back(t); }
+    void sort() override {
+        sorts++;
+        std::stable_sort(notes.begin(), notes.end(), [](const N &a, const N &b) {
+            return a.e.start < b.e.start || (a.e.start == b.e.start && a.e.pitch < b.e.pitch);
+        });
+        std::stable_sort(texts.begin(), texts.end(),
+                         [](const TextEvent &a, const TextEvent &b) { return a.ppq < b.ppq; });
+    }
+};
+
+static const int TRACK_NAME = 3; // another text event type, which must be left alone
+
+// Loads, edits with `edit`, writes, reads back.
+template <class F> static std::vector<Note> roundTrip(FakeTake &t, NoteChanges *changes, F edit) {
+    const std::vector<Note> loaded = readNotes(t);
+    std::vector<Note> edited = loaded;
+    std::vector<int> deleted;
+    edit(edited, deleted);
+    *changes = diffNotes(loaded, edited, deleted);
+    writeNotes(t, loaded, edited, deleted, 96);
+    return readNotes(t);
+}
+
+static FakeTake song() {
+    FakeTake t;
+    t.notes = {
+        {{0, 480, 60, false}, 96}, {{960, 1440, 62, false}, 96}, {{1920, 2400, 64, false}, 96}
+    };
+    t.texts = {
+        {0, TRACK_NAME, "Lead"},
+        {0, LYRIC_EVENT, "hel-"},
+        {960, LYRIC_EVENT, "lo"},
+        {3000, LYRIC_EVENT, "orphan"}
+    };
+    return t;
+}
+
+static std::vector<std::string> lyricTexts(const FakeTake &t) {
+    std::vector<std::string> out;
+    for (const Take::TextEvent &e : t.texts) {
+        if (e.type == LYRIC_EVENT) {
+            out.push_back(e.text);
+        }
+    }
+    return out;
+}
+
+int main() {
+    NoteChanges c;
+
+    // reading: times converted, lyrics on the notes starting there; other text events ignored
+    {
+        FakeTake t = song();
+        const std::vector<Note> n = readNotes(t);
+        assert(n.size() == 3 && n[0].start == 0 && n[1].start == 1 && n[1].end == 1.5);
+        assert(n[0].lyric == "hel-" && n[0].lyricIdx == 1 && n[1].lyric == "lo" &&
+               n[2].lyric.empty());
+        assert(n[0].idx == 0 && n[2].idx == 2);
+    }
+
+    // a chord: the lyric goes on the first note starting there, not both
+    {
+        FakeTake t;
+        t.notes = {{{0, 480, 60, false}, 96}, {{0, 480, 67, false}, 96}};
+        t.texts = {{0.2, LYRIC_EVENT, "ah"}}; // within half a tick
+        const std::vector<Note> n = readNotes(t);
+        assert(n[0].lyric == "ah" && n[1].lyric.empty());
+    }
+
+    // nothing changed: nothing written but the sort, no undo point
+    {
+        FakeTake t = song();
+        const FakeTake before = t;
+        roundTrip(t, &c, [](std::vector<Note> &, std::vector<int> &) {});
+        assert(!c.data && !c.lyrics && t.notes.size() == before.notes.size() &&
+               t.texts.size() == before.texts.size());
+    }
+
+    // selection only: written to the take, but no undo point and lyrics untouched
+    {
+        FakeTake t = song();
+        const std::vector<Note> n =
+            roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[2].sel = true; });
+        assert(!c.data && !c.lyrics && n[2].sel && t.texts.size() == 4);
+    }
+
+    // moving a note with a lyric moves its lyric; the orphan lyric and the track name stay
+    {
+        FakeTake t = song();
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e[1].start = 2.5, e[1].end = 3;
+        });
+        assert(c.data && c.lyrics);
+        assert(n.size() == 3 && n[2].pitch == 62 && n[2].start == 2.5 && n[2].lyric == "lo");
+        assert(n[1].pitch == 64 && n[1].lyric.empty());
+        const std::vector<std::string> l = lyricTexts(t);
+        assert(std::count(l.begin(), l.end(), "orphan") == 1 &&
+               std::count(l.begin(), l.end(), "lo") == 1);
+        assert(t.texts[0].type == TRACK_NAME);
+    }
+
+    // deleting several notes removes the right ones (highest index first) and their lyrics
+    {
+        FakeTake t = song();
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &d) {
+            d = {0, 2};
+            e = {e[1]};
+        });
+        assert(c.data && c.lyrics && n.size() == 1 && n[0].pitch == 62 && n[0].lyric == "lo");
+        const std::vector<std::string> l = lyricTexts(t);
+        assert(l.size() == 2 && std::count(l.begin(), l.end(), "hel-") == 0);
+    }
+
+    // new notes are inserted with the velocity and their lyric; renaming a lyric rewrites it
+    {
+        FakeTake t = song();
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e.push_back({4, 4.5, 67, true, -1, "world"});
+            e[0].lyric = "hey";
+        });
+        assert(c.data && c.lyrics && n.size() == 4 && n[3].pitch == 67 && n[3].sel &&
+               n[3].lyric == "world");
+        assert(n[0].lyric == "hey" && t.notes[3].velocity == 96);
+        assert(lyricTexts(t).size() == 4); // hey, lo, orphan, world
+    }
+
+    // a resize alone doesn't touch the lyrics
+    {
+        FakeTake t = song();
+        roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].end = 0.75; });
+        assert(c.data && !c.lyrics && t.notes[0].e.end == 720);
+    }
+
+    // another voice's accepted notes are appended unselected, then sorted
+    {
+        FakeTake t = song();
+        appendNotes(t, {{0.5, 0.75, 70, true, -1}}, 80);
+        assert(t.notes.size() == 4 && t.notes[1].e.pitch == 70 && !t.notes[1].e.sel &&
+               t.notes[1].velocity == 80);
+    }
+    printf("ok\n");
+}

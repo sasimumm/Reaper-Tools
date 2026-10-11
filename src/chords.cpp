@@ -33,8 +33,8 @@ struct Chord {
 
 // Where a chord item sits in the project.
 struct Placement {
-    double qn0;        // project QN of the source start
-    double start, end; // item start and end, project seconds
+    double qn0 = 0;            // project QN of the source start
+    double start = 0, end = 0; // item start and end, project seconds
 };
 
 class ChordSource : public PCM_source {

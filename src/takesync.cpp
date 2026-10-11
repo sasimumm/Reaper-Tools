@@ -1,5 +1,7 @@
 #include "ui.h"
 
+#include "notesync.h"
+
 static std::vector<Note> g_loaded; // notes as read from the take, by take index
 
 // --- notes <-> MIDI take ---------------------------------------------------------
@@ -19,43 +21,65 @@ std::string takeHash(MediaItem_Take *take) {
     return h;
 }
 
-static const int LYRIC_EVENT = 5; // MIDI meta event type used by REAPER's notation lyrics
+// Take over REAPER's MIDI API.
+class ReaperTake : public Take {
+  public:
+    explicit ReaperTake(MediaItem_Take *take) : m_take(take) {}
+    double toTime(double ppq) override { return MIDI_GetProjTimeFromPPQPos(m_take, ppq); }
+    double toPPQ(double time) override { return MIDI_GetPPQPosFromProjTime(m_take, time); }
+    int noteCount() override {
+        int notes = 0;
+        MIDI_CountEvts(m_take, &notes, NULL, NULL);
+        return notes;
+    }
+    NoteEvent note(int i) override {
+        NoteEvent e = {0, 0, 0, false};
+        MIDI_GetNote(m_take, i, &e.sel, NULL, &e.start, &e.end, NULL, &e.pitch, NULL);
+        return e;
+    }
+    int textCount() override {
+        int texts = 0;
+        MIDI_CountEvts(m_take, NULL, NULL, &texts);
+        return texts;
+    }
+    bool text(int i, TextEvent *out) override {
+        char msg[1024];
+        int size = sizeof(msg) - 1;
+        if (!MIDI_GetTextSysexEvt(m_take, i, NULL, NULL, &out->ppq, &out->type, msg, &size)) {
+            return false;
+        }
+        msg[std::max(0, std::min(size, (int)sizeof(msg) - 1))] = 0;
+        out->text = msg;
+        return true;
+    }
+    void setNote(int i, const NoteEvent &n) override {
+        const bool noSort = true;
+        MIDI_SetNote(m_take, i, &n.sel, NULL, &n.start, &n.end, NULL, &n.pitch, NULL, &noSort);
+    }
+    void deleteNote(int i) override { MIDI_DeleteNote(m_take, i); }
+    void insertNote(const NoteEvent &n, int velocity) override {
+        const bool noSort = true;
+        MIDI_InsertNote(m_take, n.sel, false, n.start, n.end, 0, n.pitch, velocity, &noSort);
+    }
+    void deleteText(int i) override { MIDI_DeleteTextSysexEvt(m_take, i); }
+    void insertText(const TextEvent &t) override {
+        MIDI_InsertTextSysexEvt(m_take, false, false, t.ppq, t.type, t.text.c_str(),
+                                (int)t.text.size());
+    }
+    void sort() override { MIDI_Sort(m_take); }
 
-// Lyrics are MIDI lyric events at a note's start; each attaches to the first note starting there.
+  private:
+    MediaItem_Take *m_take;
+};
+
 void loadNotes() {
     g_ed.cancel();
-    g_loaded.clear();
     MediaItem_Take *take = midiTake();
-    int cnt = 0, textCnt = 0;
     if (take) {
-        MIDI_CountEvts(take, &cnt, NULL, &textCnt);
-    }
-    std::vector<double> startPPQ;
-    for (int i = 0; i < cnt; i++) {
-        bool sel = false;
-        double s = 0, e = 0;
-        int pitch = 0;
-        MIDI_GetNote(take, i, &sel, NULL, &s, &e, NULL, &pitch, NULL);
-        g_loaded.push_back(
-            {MIDI_GetProjTimeFromPPQPos(take, s), MIDI_GetProjTimeFromPPQPos(take, e), pitch, sel,
-             i});
-        startPPQ.push_back(s);
-    }
-    for (int i = 0; i < textCnt; i++) {
-        char msg[1024];
-        int sz = sizeof(msg) - 1, type = 0;
-        double ppq = 0;
-        if (!MIDI_GetTextSysexEvt(take, i, NULL, NULL, &ppq, &type, msg, &sz) ||
-            type != LYRIC_EVENT) {
-            continue;
-        }
-        msg[std::max(0, std::min(sz, (int)sizeof(msg) - 1))] = 0;
-        for (size_t n = 0; n < g_loaded.size(); n++) {
-            if (g_loaded[n].lyricIdx < 0 && fabs(startPPQ[n] - ppq) < 0.5) {
-                g_loaded[n].lyric = msg, g_loaded[n].lyricIdx = i;
-                break;
-            }
-        }
+        ReaperTake t(take);
+        g_loaded = readNotes(t);
+    } else {
+        g_loaded.clear();
     }
     g_ed.notes = g_loaded;
     g_ed.deleted.clear();
@@ -79,17 +103,12 @@ void loadOtherVoices(bool force) {
             continue;
         }
         o.item = item, o.hash = h, o.notes.clear();
-        int cnt = 0;
         if (take) {
-            MIDI_CountEvts(take, &cnt, NULL, NULL);
-        }
-        for (int i = 0; i < cnt; i++) {
-            double st = 0, en = 0;
-            int pitch = 0;
-            MIDI_GetNote(take, i, NULL, NULL, &st, &en, NULL, &pitch, NULL);
-            o.notes.push_back(
-                {MIDI_GetProjTimeFromPPQPos(take, st), MIDI_GetProjTimeFromPPQPos(take, en), pitch,
-                 false, i});
+            ReaperTake t(take);
+            o.notes = readNotes(t);
+            for (Note &n : o.notes) {
+                n.sel = false;
+            }
         }
         g_notesVersion++;
         redraw();
@@ -98,76 +117,19 @@ void loadOtherVoices(bool force) {
 
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
 void commitNotes() {
-    bool dataChanged = !g_ed.deleted.empty(), lyricsChanged = false;
-    for (int i : g_ed.deleted) {
-        lyricsChanged |= g_loaded[i].lyricIdx >= 0;
-    }
-    for (const Note &n : g_ed.notes) {
-        if (n.idx < 0 || n.idx >= (int)g_loaded.size()) {
-            dataChanged = true, lyricsChanged |= !n.lyric.empty();
-            continue;
-        }
-        const Note &o = g_loaded[n.idx];
-        dataChanged |=
-            n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
-        lyricsChanged |= n.lyric != o.lyric || (n.start != o.start && !n.lyric.empty());
-    }
-    if (dataChanged) {
+    const NoteChanges changes = diffNotes(g_loaded, g_ed.notes, g_ed.deleted);
+    if (changes.data) {
         Undo_BeginBlock2(NULL);
     }
     MediaItem_Take *take = midiTake();
-    if (!take && dataChanged && (g_midi = VoiceItem(g_audio, g_voice, true))) {
+    if (!take && changes.data && (g_midi = VoiceItem(g_audio, g_voice, true))) {
         take = GetActiveTake(g_midi);
     }
     if (take) {
-        const bool noSort = true;
-        for (const Note &n : g_ed.notes) {
-            if (n.idx < 0 || n.idx >= (int)g_loaded.size()) {
-                continue;
-            }
-            const Note &o = g_loaded[n.idx];
-            if (n.start == o.start && n.end == o.end && n.pitch == o.pitch && n.sel == o.sel) {
-                continue;
-            }
-            const double s = MIDI_GetPPQPosFromProjTime(take, n.start),
-                         e = MIDI_GetPPQPosFromProjTime(take, n.end);
-            MIDI_SetNote(take, n.idx, &n.sel, NULL, &s, &e, NULL, &n.pitch, NULL, &noSort);
-        }
-        std::vector<int> del = g_ed.deleted;
-        std::sort(del.rbegin(), del.rend()); // highest first so earlier indices stay valid
-        for (int i : del) {
-            MIDI_DeleteNote(take, i);
-        }
-        for (const Note &n : g_ed.notes) {
-            if (n.idx < 0) {
-                MIDI_InsertNote(take, n.sel, false, MIDI_GetPPQPosFromProjTime(take, n.start),
-                                MIDI_GetPPQPosFromProjTime(take, n.end), 0, n.pitch, g_ed.velocity,
-                                &noSort);
-            }
-        }
-        if (lyricsChanged) {
-            // rewrite the lyric events attached to notes; unattached text events are left alone
-            std::vector<int> old;
-            for (const Note &o : g_loaded) {
-                if (o.lyricIdx >= 0) {
-                    old.push_back(o.lyricIdx);
-                }
-            }
-            std::sort(old.rbegin(), old.rend());
-            for (int i : old) {
-                MIDI_DeleteTextSysexEvt(take, i);
-            }
-            for (const Note &n : g_ed.notes) {
-                if (!n.lyric.empty()) {
-                    MIDI_InsertTextSysexEvt(take, false, false,
-                                            MIDI_GetPPQPosFromProjTime(take, n.start), LYRIC_EVENT,
-                                            n.lyric.c_str(), (int)n.lyric.size());
-                }
-            }
-        }
-        MIDI_Sort(take);
+        ReaperTake t(take);
+        writeNotes(t, g_loaded, g_ed.notes, g_ed.deleted, g_ed.velocity);
     }
-    if (dataChanged) {
+    if (changes.data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
         UpdateArrange();
     }
@@ -178,14 +140,8 @@ void commitNotes() {
 void insertIntoVoice(int v, const std::vector<Note> &notes) {
     MediaItem *item = VoiceItem(g_audio, v, true);
     MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
-    if (!take) {
-        return;
+    if (take) {
+        ReaperTake t(take);
+        appendNotes(t, notes, g_ed.velocity);
     }
-    const bool noSort = true;
-    for (const Note &n : notes) {
-        MIDI_InsertNote(take, false, false, MIDI_GetPPQPosFromProjTime(take, n.start),
-                        MIDI_GetPPQPosFromProjTime(take, n.end), 0, n.pitch, g_ed.velocity,
-                        &noSort);
-    }
-    MIDI_Sort(take);
 }
