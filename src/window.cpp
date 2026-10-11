@@ -82,6 +82,7 @@ static std::vector<int> g_estimatedVoice; // voice of each, -1 if crowded out (a
 static std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
 static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};
 static int g_suggestFrom;
+static bool g_estimateVote = true;        // the estimator's front-end vote (EstimateParams::vote)
 static const std::vector<Segment> &suggestions() { return g_suggestFrom ? g_segments : g_estimated; }
 // The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the active voice's.
 static int suggestionVoice(size_t i)
@@ -224,11 +225,12 @@ struct AnalysisKey
 {
   NSGTParams p;
   double pos, len, offs, rate;
+  bool vote;
   bool operator==(const AnalysisKey &o) const
   {
     return p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin && p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave &&
            p.hop == o.p.hop && p.gamma == o.p.gamma && p.bass == o.p.bass &&
-           (!p.bass || p.bassCrossover == o.p.bassCrossover) && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
+           (!p.bass || p.bassCrossover == o.p.bassCrossover) && vote == o.vote && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
   }
 };
 
@@ -334,7 +336,9 @@ struct Job
     const bool haveBp = runBasicPitch(modelPath, mono, es.frames, bp, &err, part(0.2, 0.45));
     if (cancel) return;
     vocal.estimateNote = haveBp ? "" : "basic-pitch: " + err;
-    const std::vector<NoteEstimate> est = estimateNotes(es, mono, haveBp ? &bp : nullptr, EstimateParams(), part(0.45, 1));
+    EstimateParams opts;
+    opts.vote = key.vote;
+    const std::vector<NoteEstimate> est = estimateNotes(es, mono, haveBp ? &bp : nullptr, opts, part(0.45, 1));
     for (const NoteEstimate &e : est) vocal.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
     vocal.estimatedVoice = assignVoices(est, es.frameRate(), WINDOW_VOICES);
   }
@@ -415,7 +419,7 @@ static void requestAnalysis(bool autoCalibrateAfter)
   g_autoOnInstall |= autoCalibrateAfter;
   g_np.binsPerOctave = 12 * (int)lround(g_binsPerSemitone);
   cancelJob();
-  const AnalysisKey key = {g_np, g_audioPos, g_audioLen, g_audioOffs, g_audioRate};
+  const AnalysisKey key = {g_np, g_audioPos, g_audioLen, g_audioOffs, g_audioRate, g_estimateVote};
   const int ch = g_channel;
   if (cached(ch, key) && g_cache[ch].vocalValid) { install(g_cache[ch]); return; }
 
@@ -894,6 +898,7 @@ static std::vector<Widget> widgets()
       {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
       {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
       {W_CHOICE, "Suggest from", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_suggestFrom, SUGGEST_FROM, 2},
+      {W_TOGGLE, "Estimator: front-end vote (slower)", NULL, &g_estimateVote, 0, 0, false, true},
       {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
       {W_HEADER, "Quantise"},
       {W_SLIDER, "Quantise strength", &g_quantStrength, NULL, 0, 1, false, false, 100, "%.0f%%"},
@@ -991,7 +996,7 @@ static const Setting SETTINGS[] = {
     {"noisefrac", &g_rp.noiseFraction, NULL, NULL, 0.01, 0.5}, {"ghosts", NULL, &g_ghosts},
     {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
     {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
-    {"suggestfrom", NULL, NULL, &g_suggestFrom, 0, 1},
+    {"suggestfrom", NULL, NULL, &g_suggestFrom, 0, 1}, {"estimatevote", NULL, &g_estimateVote},
     {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
     {"theme", NULL, &g_followTheme}, {"linkarrange", NULL, &g_linkArrange},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
@@ -1045,7 +1050,7 @@ static void resetSettings()
   g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX, g_binsPerSemitone = 5;
   g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
   g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
-  g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false, g_suggestFrom = 0;
+  g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false, g_suggestFrom = 0, g_estimateVote = true;
 }
 
 static void setupEditorSnap();

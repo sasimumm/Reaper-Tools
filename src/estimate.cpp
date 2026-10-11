@@ -41,7 +41,8 @@ static const int REGION = 6;             // semitones sharing adapted partial am
 static const double CLAMP = 1.25, SOLO = 0.6;
 static const int CHUNK = 1024;           // frames per matrix product, to bound memory
 
-std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, const std::function<bool(double)> &progress)
+std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, const std::function<bool(double)> &progress,
+                           int harmonics)
 {
   const int n = hi - lo + 1, F = s.frames, bpo = s.p.binsPerOctave;
   std::vector<float> roll((size_t)std::max(0, F) * std::max(0, n), 0);
@@ -54,7 +55,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, con
   // Gaussian partials: part[(b * P + p) * NH + h - 1]
   std::vector<float> part((size_t)B * P * NH, 0);
   for (int p = 0; p < P; p++)
-    for (int h = 1; h <= NH; h++)
+    for (int h = 1; h <= std::min(NH, harmonics); h++)
     {
       const double c = s.binOfPitch(pitchOf(p) + 12 * log2((double)h)) - b0;
       if (c >= B) break;
@@ -114,7 +115,11 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, con
   auto ratio = [&](int c0, int fc) {
     cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, fc, B, K, 1.0f, &H[(size_t)c0 * K], K, W.data(), K, 0.0f, WH.data(), B);
     for (int f = 0; f < fc; f++)
-      for (int b = 0; b < B; b++) WH[(size_t)f * B + b] = V(c0 + f, b) / (WH[(size_t)f * B + b] + eps);
+    {
+      float *row = &WH[(size_t)f * B];
+      vDSP_vsadd(row, 1, &eps, row, 1, B);
+      vDSP_vdiv(row, 1, &s.mag[(size_t)(c0 + f) * s.bins + b0], 1, row, 1, B); // V / (WH + eps)
+    }
   };
   int done = 0;
   // KL multiplicative updates with W fixed; W's columns sum to 1
@@ -664,16 +669,199 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
   return out;
 }
 
+// --- front ends for the vote (transcribe mf0.FRONT_ENDS, notes.VOTERS) --------------------------
+
+static Spectrogram axisFromC2(int bpo, int frames)
+{
+  Spectrogram s;
+  s.p.sampleRate = SR, s.p.fmin = hzOf(36), s.p.fmax = hzOf(36) * 128, s.p.binsPerOctave = bpo, s.p.hop = HOP, s.p.gamma = 0;
+  s.bins = bpo * 7, s.frames = frames;
+  s.mag.assign((size_t)s.bins * frames, 0);
+  return s;
+}
+
+// Fourier transform of a Hann window, normalised to 1 at 0; u is frequency x window length.
+static double hannSpectrum(double u)
+{
+  if (fabs(u) < 1e-9) return 1;
+  if (fabs(fabs(u) - 1) < 1e-9) return 0.5;
+  return sin(M_PI * u) / (M_PI * u) / (1 - u * u);
+}
+
+// Like computeNSGT: one FFT per block, each bin's window spectrum multiplied in, then a small inverse
+// FFT decimated to the hop. Blocks are 2^17 samples (Accelerate's FFT) since a long CQT window at C2
+// is over a second.
+Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale, const std::function<bool(double)> &progress)
+{
+  const int frames = (int)(x.size() / HOP) + 1;
+  Spectrogram s = axisFromC2(bpo, frames);
+  const int LOG2N = 17, N = 1 << LOG2N;
+  const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1); // librosa's relative bandwidth
+  struct Bin { int k0, k1, M, logM, step; std::vector<float> w; float scale; };
+  std::vector<Bin> bins(s.bins);
+  double maxL = 0;
+  int maxM = 0;
+  for (int b = 0; b < s.bins; b++)
+  {
+    const double f = s.p.fmin * pow(2.0, (double)b / bpo), L = filterScale * SR / (alpha * f), c = f * N / SR;
+    maxL = std::max(maxL, L);
+    Bin &bn = bins[b];
+    const double reach = 4.0 * N / L; // main lobe and the first sidelobes
+    bn.k0 = std::max(1, (int)floor(c - reach)), bn.k1 = std::min(N / 2 - 1, (int)ceil(c + reach));
+    for (int k = bn.k0; k <= bn.k1; k++) bn.w.push_back((float)hannSpectrum((k - c) * L / N));
+    bn.M = N / HOP, bn.logM = LOG2N - 8;
+    while (bn.M < bn.k1 - bn.k0 + 1) bn.M *= 2, bn.logM++;
+    bn.step = bn.M * HOP / N;
+    bn.scale = (float)(sqrt(L) / 2 / N); // 1/N: a sine reads its amplitude; sqrt(L)/2: librosa's scale
+    maxM = std::max(maxM, bn.M);
+  }
+  const int margin = ((int)ceil(maxL / 2 / HOP) + 1) * HOP, framesPerBlock = (N - 2 * margin) / HOP;
+  FFTSetup setup = vDSP_create_fftsetup(LOG2N, kFFTRadix2);
+  std::vector<float> block(N), re(N / 2), im(N / 2), sre(maxM), sim(maxM);
+  DSPSplitComplex X = {re.data(), im.data()}, Y = {sre.data(), sim.data()};
+  for (int first = 0; first < frames; first += framesPerBlock)
+  {
+    const long long start = (long long)first * HOP - margin;
+    for (int i = 0; i < N; i++)
+    {
+      const long long j = start + i;
+      block[i] = j >= 0 && j < (long long)x.size() ? x[j] : 0;
+    }
+    vDSP_ctoz((const DSPComplex *)block.data(), 2, &X, 1, N / 2);
+    vDSP_fft_zrip(setup, &X, 1, LOG2N, kFFTDirection_Forward); // twice the DFT, as WDL's
+    const int nf = std::min(framesPerBlock, frames - first);
+    for (int b = 0; b < s.bins; b++)
+    {
+      const Bin &bn = bins[b];
+      std::fill(sre.begin(), sre.begin() + bn.M, 0.0f), std::fill(sim.begin(), sim.begin() + bn.M, 0.0f);
+      for (int k = bn.k0; k <= bn.k1; k++) sre[k - bn.k0] = re[k] * bn.w[k - bn.k0], sim[k - bn.k0] = im[k] * bn.w[k - bn.k0];
+      vDSP_fft_zip(setup, &Y, 1, bn.logM, kFFTDirection_Inverse);
+      for (int i = 0; i < nf; i++)
+      {
+        const int j = (margin / HOP + i) * bn.step;
+        s.mag[(size_t)(first + i) * s.bins + b] = hypotf(sre[j], sim[j]) * bn.scale;
+      }
+    }
+    if (progress && !progress((double)(first + nf) / frames)) break;
+  }
+  vDSP_destroy_fftsetup(setup);
+  return s;
+}
+
+Spectrogram computeCFP(const std::vector<float> &x, int bpo)
+{
+  static bool fftInit = (WDL_fft_init(), true);
+  (void)fftInit;
+  const int NF = 4096, frames = (int)(x.size() / HOP) + 1;
+  const double G_SPEC = 0.24, G_CEPS = 0.6;
+  Spectrogram s = axisFromC2(bpo, frames);
+  std::vector<float> hann(NF);
+  for (int i = 0; i < NF; i++) hann[i] = (float)(0.5 - 0.5 * cos(2 * M_PI * i / NF));
+  // where each axis bin falls on the spectrum's and the cepstrum's (1/quefrency) axes, for linear interpolation
+  std::vector<double> specPos(s.bins), cepsFreq(s.bins);
+  for (int b = 0; b < s.bins; b++) cepsFreq[b] = specPos[b] = s.p.fmin * pow(2.0, (double)b / bpo);
+  for (double &v : specPos) v = v * NF / SR;
+  const int *perm = WDL_fft_permute_tab(NF / 2);
+  std::vector<WDL_FFT_REAL> buf(NF), ceps(NF);
+  std::vector<float> Z(NF / 2 + 1), C(NF / 2);
+  const std::vector<float> gs(Z.size(), (float)(G_SPEC / 2)), gc(C.size(), (float)G_CEPS);
+  const int nz = (int)Z.size(), nc = (int)C.size();
+  for (int f = 0; f < frames; f++)
+  {
+    for (int i = 0; i < NF; i++)
+    {
+      const long long j = (long long)f * HOP - NF / 2 + i;
+      buf[i] = (j >= 0 && j < (long long)x.size() ? x[j] : 0) * hann[i];
+    }
+    WDL_real_fft(buf.data(), NF, 0);
+    const WDL_FFT_COMPLEX *X = (const WDL_FFT_COMPLEX *)buf.data();
+    // (|X|/2)^g: numpy's |stft| is half of WDL's; as power^(g/2), vectorised
+    Z[0] = 0.25f * X[0].re * X[0].re, Z[NF / 2] = 0.25f * X[0].im * X[0].im;
+    for (int k = 1; k < NF / 2; k++) Z[k] = 0.25f * (X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im);
+    vvpowf(Z.data(), gs.data(), Z.data(), &nz);
+    std::fill(ceps.begin(), ceps.end(), 0);
+    WDL_FFT_COMPLEX *Y = (WDL_FFT_COMPLEX *)ceps.data();
+    Y[0].re = Z[0], Y[0].im = Z[NF / 2];
+    for (int k = 1; k < NF / 2; k++) Y[perm[k]].re = Z[k];
+    WDL_real_fft(ceps.data(), NF, 1); // N x numpy's irfft
+    for (int q = 0; q < NF / 2; q++) C[q] = std::max(0.0f, (float)(ceps[q] / NF));
+    vvpowf(C.data(), gc.data(), C.data(), &nc);
+    float *out = &s.mag[(size_t)f * s.bins];
+    for (int b = 0; b < s.bins; b++)
+    {
+      const double pos = specPos[b];
+      const int k = std::min(NF / 2 - 1, (int)pos);
+      const double spec = Z[k] + (Z[k + 1] - Z[k]) * (pos - k);
+      // cepstrum at quefrency SR/f (q = 1 .. NF/2-1; numpy's interp holds the end values outside)
+      const double q = std::max(1.0, std::min(NF / 2.0 - 1, SR / cepsFreq[b]));
+      const int qi = std::min(NF / 2 - 2, (int)q);
+      // interpolated linearly in frequency, as transcribe does on the reversed 1/q axis
+      const double fa = SR / (double)(qi + 1), fb = SR / (double)qi, fq = SR / q;
+      const double cv = fb > fa ? C[qi + 1] + (C[qi] - C[qi + 1]) * (fq - fa) / (fb - fa) : C[qi];
+      out[b] = (float)(spec * cv);
+    }
+  }
+  return s;
+}
+
+// Adds (frame, pitch) cells every voter's notes cover but `raw` lacks: a run of them extends a touching
+// same-pitch note, else becomes a note (if long enough) with the voters' mean strength.
+static void vote(std::vector<NoteEstimate> &raw, const std::vector<std::vector<NoteEstimate>> &voters, int F, int lo, int n, int minLen)
+{
+  if (voters.empty()) return;
+  std::vector<unsigned char> mine(F), all(F), cov(F);
+  std::vector<float> str(F);
+  for (int p = 0; p < n; p++)
+  {
+    const int pitch = lo + p;
+    std::fill(mine.begin(), mine.end(), 0), std::fill(all.begin(), all.end(), 1), std::fill(str.begin(), str.end(), 0.0f);
+    for (const NoteEstimate &e : raw)
+      if (e.pitch == pitch) std::fill(mine.begin() + e.f0, mine.begin() + std::min(F, e.f1), 1);
+    for (const std::vector<NoteEstimate> &v : voters)
+    {
+      std::fill(cov.begin(), cov.end(), 0);
+      for (const NoteEstimate &e : v)
+        if (e.pitch == pitch)
+          for (int f = e.f0; f < std::min(F, e.f1); f++) cov[f] = 1, str[f] += e.strength / voters.size();
+      for (int f = 0; f < F; f++) all[f] &= cov[f];
+    }
+    for (int f = 0; f < F;)
+    {
+      if (!all[f] || mine[f]) { f++; continue; }
+      int b = f;
+      while (b < F && all[b] && !mine[b]) b++;
+      NoteEstimate *before = nullptr, *after = nullptr;
+      for (NoteEstimate &e : raw)
+        if (e.pitch == pitch && e.f1 == f) before = &e;
+        else if (e.pitch == pitch && e.f0 == b) after = &e;
+      if (before) before->f1 = b;
+      else if (after) after->f0 = f;
+      else if (b - f >= minLen)
+      {
+        double sum = 0;
+        for (int g = f; g < b; g++) sum += str[g];
+        raw.push_back({f, b, pitch, (float)(sum / (b - f))});
+      }
+      f = b;
+    }
+  }
+}
+
 std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono, const BasicPitch *bp,
                                         const EstimateParams &ep, const std::function<bool(double)> &progress)
 {
   std::vector<NoteEstimate> out;
   const int lo = ep.lo, hi = ep.hi, n = hi - lo + 1, F = s.frames;
   if (F <= 0 || n <= 0) return out;
-  const double nmfShare = ep.sacfAbs > 0 ? 0.6 : 1;
-  bool cancelled = false;
+  // progress: main NMF, SACF, the three voters
+  const double nmfEnd = ep.vote ? 0.3 : ep.sacfAbs > 0 ? 0.6 : 1, sacfEnd = ep.vote ? 0.45 : 1;
+  const double nmfShare = nmfEnd;
+  std::atomic<bool> cancelled{false};
   auto stage = [&](double a, double b) {
-    return [&, a, b](double f) { return !(cancelled = progress && !progress(a + (b - a) * f)); };
+    return [&, a, b](double f) {
+      if (progress && !progress(a + (b - a) * f)) cancelled = true;
+      return !cancelled;
+    };
   };
   std::vector<float> roll = nmfRoll(s, lo, hi, ep.adapt, stage(0, nmfShare));
   if (cancelled) return out;
@@ -701,7 +889,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
   Activity act = activity(roll, F, n, gp, ep.abs, ep.rel, ep.oct);
   if (ep.sacfAbs > 0)
   {
-    std::vector<float> sroll = sacfRoll(mono, F, lo, hi, stage(nmfShare, 1));
+    std::vector<float> sroll = sacfRoll(mono, F, lo, hi, stage(nmfShare, sacfEnd));
     if (cancelled) return out;
     // the SACF fails on different notes than the NMF: add what it finds confidently
     const Activity sa = activity(sroll, F, n, gp, ep.sacfAbs, ep.rel, ep.oct);
@@ -733,6 +921,8 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
     for (int h = f; h < std::min(F, f + w); h++) after = std::max(after, roll[(size_t)h * n + p]);
     return dip < REATTACK_DIP * after;
   };
+  auto runs = [&](Activity &act, const std::vector<float> &roll) {
+  std::vector<NoteEstimate> out;
   for (int p = 0; p < n; p++)
   {
     for (int f = 0; f < F;)
@@ -758,6 +948,40 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
       if (split) act.on[(size_t)end * n + p] = 1; // the re-attack starts the next note
     }
   }
+  return out;
+  };
+  out = runs(act, roll);
+
+  if (ep.vote)
+  {
+    // the main detector on three other front ends; each misses notes the others find, so only what
+    // all of them agree on is added
+    struct Voter { int bpo; double scale; bool cfp; double abs; };
+    static const Voter VOTERS[] = {{60, 1.0, false, 0.06}, {36, 1.5, false, 0.06}, {36, 1.0, true, 0.15}};
+    // in parallel: each is about as costly as the main NMF; progress counts finished iterations
+    std::vector<std::vector<NoteEstimate>> voters(3);
+    std::atomic<int> iterations{0};
+    auto voterProgress = [&](double) {
+      const double f = std::min(1.0, ++iterations / (3.0 * ITERS));
+      if (progress && !progress(sacfEnd + (1 - sacfEnd) * f)) cancelled = true;
+      return !cancelled;
+    };
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 3; i++)
+      threads.emplace_back([&, i] {
+        const Voter &v = VOTERS[i];
+        const Spectrogram fe = v.cfp ? computeCFP(mono, v.bpo) : computeCQT(mono, v.bpo, v.scale);
+        if (cancelled) return;
+        const std::vector<float> vr = nmfRoll(fe, lo, hi, false, voterProgress, v.cfp ? 1 : NH);
+        if (cancelled) return;
+        Activity va = activity(vr, F, n, gp, v.abs, ep.rel, ep.oct);
+        voters[i] = runs(va, vr);
+      });
+    for (std::thread &t : threads) t.join();
+    if (cancelled) return {};
+    vote(out, voters, F, lo, n, minLen);
+  }
+
   if (ep.octaveDoublings)
   {
     Partials P(mono, F);

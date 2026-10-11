@@ -101,6 +101,32 @@ int main()
     assert(got[0] == 57 && sub < 0.3 * at);
   }
 
+  // vote front ends: a sine reads A/2 * sqrt(window length) on the CQT (librosa's scale), at its bin;
+  // CFP peaks at a tone's pitch and not at its octaves
+  {
+    std::vector<float> x((size_t)(3 * SR));
+    for (size_t i = 0; i < x.size(); i++) x[i] = 0.5f * (float)sin(2 * M_PI * 220 * i / SR);
+    for (double scale : {1.0, 1.5})
+      for (int bpo : {36, 60})
+      {
+        const Spectrogram c = computeCQT(x, bpo, scale);
+        const int b = (int)lround(c.binOfPitch(57));
+        const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1), L = scale * SR / (alpha * 220);
+        const double got = c.at(c.frames / 2, b), want = 0.25 * sqrt(L);
+        int best = 0;
+        for (int k = 0; k < c.bins; k++) best = c.at(c.frames / 2, k) > c.at(c.frames / 2, best) ? k : best;
+        printf("cqt%d x%.1f: A3 bin %.2f (librosa scale %.2f), peak bin %d of %d\n", bpo, scale, got, want, best, b);
+        assert(fabs(got / want - 1) < 0.05 && best == b);
+      }
+    std::vector<float> y((size_t)(2 * SR));
+    tone(y, 0, 2, 57);
+    const Spectrogram c = computeCFP(y);
+    const int f = c.frames / 2;
+    const double at = c.at(f, (int)lround(c.binOfPitch(57))), up = c.at(f, (int)lround(c.binOfPitch(69))), down = c.at(f, (int)lround(c.binOfPitch(45)));
+    printf("cfp A3: octave above %.2f, below %.2f of it\n", up / at, down / at);
+    assert(up < 0.5 * at && down < 0.5 * at);
+  }
+
   // basic-pitch: posteriors at the right pitch and time, also in a later window (alignment)
   std::vector<float> x((size_t)(8 * SR));
   for (float &v : x) v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);

@@ -28,6 +28,7 @@ struct EstimateParams
   double bridge = 0.07;          // seconds of dropout bridged inside a note
   bool adapt = true;             // learn partial amplitudes on the recording
   bool octaveDoublings = true;   // add voices an octave above a note (even-partial surplus, common-fate veto)
+  bool vote = true;              // front-end vote: add notes that CQT60, a long-window CQT36 and CFP all find
 };
 
 // The spectrogram the estimator expects (fixed, since the display's settings can change).
@@ -47,6 +48,15 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
 std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double frameRate, int maxVoices);
 
 // Stages, exposed for the self-check. Rolls are frames x (hi-lo+1), normalised to the p99 of frame maxima.
-std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, const std::function<bool(double)> &progress = nullptr);
+std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, const std::function<bool(double)> &progress = nullptr,
+                           int harmonics = 12);
+
+// The vote's front ends (transcribe mf0.cqt / mf0.cfp), on a 7-octave axis from C2 at hop 256:
+// librosa's CQT magnitude (a sine of amplitude A reads A/2 * sqrt(window length)), with Hann windows
+// filterScale times the constant-Q length; and combined frequency and periodicity (Su & Yang 2015),
+// a power-compressed spectrum times the generalised cepstrum mapped to frequency.
+Spectrogram computeCQT(const std::vector<float> &mono, int binsPerOctave, double filterScale,
+                       const std::function<bool(double)> &progress = nullptr);
+Spectrogram computeCFP(const std::vector<float> &mono, int binsPerOctave = 36);
 std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,
                             const std::function<bool(double)> &progress = nullptr);
