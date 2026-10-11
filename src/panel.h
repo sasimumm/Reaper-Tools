@@ -14,5 +14,6 @@ void setListen(int mode);
 int speedIndex();
 void setSpeed(int index);
 void panelMouse(int x, int y, bool down);
+void panelDoubleClick(int y); // resets a slider to its default
 void drawPanel(Canvas &cv, HDC dc);
 void finishPanelDrag();

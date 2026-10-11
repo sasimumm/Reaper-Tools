@@ -443,6 +443,24 @@ static void readBalance() {
     }
 }
 
+// A slider's value in default settings: the same field of a fresh Settings; notes volume is 0 dB.
+static double sliderDefault(const Widget &w) {
+    static const Settings d;
+    const char *base = (const char *)&g_settings, *p = (const char *)w.value;
+    if (p >= base && p < base + sizeof(Settings)) {
+        return *(const double *)((const char *)&d + (p - base));
+    }
+    return 0;
+}
+
+void panelDoubleClick(int y) {
+    const int i = widgetAt(y);
+    std::vector<Widget> ws = widgets();
+    if (i >= 0 && ws[i].type == W_SLIDER && *ws[i].value != sliderDefault(ws[i])) {
+        g_panelWidget = i, *ws[i].value = sliderDefault(ws[i]), changedSetting(ws[i]);
+    }
+}
+
 void panelMouse(int x, int y, bool down) {
     const Rect p = panelArea();
     std::vector<Widget> ws = widgets();

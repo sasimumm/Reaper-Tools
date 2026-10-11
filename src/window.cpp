@@ -466,8 +466,12 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
     case WM_LBUTTONDBLCLK: {
-        // double-click a note to type its lyric
+        // double-click a note to type its lyric, a slider to reset it
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+        if (panelShown() && panelArea().in(x, y)) {
+            g_drag = DRAG_PANEL, panelDoubleClick(y); // mouse up recomputes the analysis if needed
+            return 0;
+        }
         int hit = -1;
         if (noteArea().in(x, y) &&
             g_session.ed.hitTest(g_ui.view, x, y, &hit) != NoteEditor::NONE) {
