@@ -181,21 +181,69 @@ static Spectrogram analyzeChannel(MediaItem_Take *take, int mode)
   return s;
 }
 
+// What an analysis depends on: if any of it changes, that channel is recomputed.
+struct AnalysisKey
+{
+  NSGTParams p;
+  double pos, len, offs, rate;
+  bool operator==(const AnalysisKey &o) const
+  {
+    return p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin && p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave &&
+           p.hop == o.p.hop && p.gamma == o.p.gamma && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
+  }
+};
+
+// One entry per channel. Memory ceiling: ~30 MB per channel per 3 minutes of audio.
+struct ChannelCache
+{
+  bool valid = false;
+  AnalysisKey key;
+  Spectrogram spec;
+  bool vocalValid = false;
+  Contour contour;
+  std::vector<Segment> segments;
+  std::vector<int> onsets;
+  std::vector<double> snapTimes;
+};
+static ChannelCache g_cache[5];
+
+static void clearCache()
+{
+  for (ChannelCache &c : g_cache) c = ChannelCache();
+}
+
+static const Spectrogram &cachedSpectrogram(MediaItem_Take *take, int ch, const AnalysisKey &key)
+{
+  ChannelCache &c = g_cache[ch];
+  if (c.valid && c.key == key) return c.spec;
+  c = ChannelCache();
+  if (ch == CH_CENTRE)
+  {
+    // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
+    c.spec = cachedSpectrogram(take, CH_MIX, key);
+    const Spectrogram &side = cachedSpectrogram(take, CH_SIDE, key);
+    if (side.mag.size() == c.spec.mag.size())
+      for (size_t i = 0; i < c.spec.mag.size(); i++) c.spec.mag[i] = std::max(0.0f, c.spec.mag[i] - side.mag[i]);
+  }
+  else c.spec = analyzeChannel(take, ch);
+  c.key = key, c.valid = true;
+  return c.spec;
+}
+
 static void analyze()
 {
   MediaItem_Take *take = GetActiveTake(g_audio);
   if (!take) return;
-  if (g_channel == CH_CENTRE)
+  const AnalysisKey key = {g_np, g_audioPos, g_audioLen, g_audioOffs, g_audioRate};
+  g_spec = cachedSpectrogram(take, g_channel, key);
+  ChannelCache &c = g_cache[g_channel];
+  if (!c.vocalValid)
   {
-    // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
-    g_spec = analyzeChannel(take, CH_MIX);
-    Spectrogram side = analyzeChannel(take, CH_SIDE);
-    if (side.mag.size() == g_spec.mag.size())
-      for (size_t i = 0; i < g_spec.mag.size(); i++) g_spec.mag[i] = std::max(0.0f, g_spec.mag[i] - side.mag[i]);
+    analyzeVocal();
+    c.contour = g_contour, c.segments = g_segments, c.onsets = g_onsets, c.snapTimes = g_snapTimes, c.vocalValid = true;
   }
-  else g_spec = analyzeChannel(take, g_channel);
+  else g_contour = c.contour, g_segments = c.segments, g_onsets = c.onsets, g_snapTimes = c.snapTimes;
   estimateNoise(g_spec, g_rp.noiseFraction);
-  analyzeVocal();
   g_analysisDirty = false;
 }
 
@@ -1576,6 +1624,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
   case WM_DESTROY:
     stopPreviews(false);
+    clearCache();
     g_edit = NULL; // destroyed with the window
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
     g_memdc = NULL, g_memw = g_memh = 0, g_hwnd = NULL, g_layerValid = false, g_drag = DRAG_NONE;
@@ -1597,6 +1646,7 @@ void Window_Open(MediaItem *audio, MediaItem *midi)
     return;
   }
   Window_Close();
+  clearCache();
   g_audio = audio, g_midi = midi;
   g_audioPos = GetMediaItemInfo_Value(audio, "D_POSITION");
   g_audioLen = GetMediaItemInfo_Value(audio, "D_LENGTH");
