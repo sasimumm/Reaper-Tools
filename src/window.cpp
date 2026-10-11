@@ -1130,8 +1130,9 @@ static void scrollPitch(double semitones)
 // Plays a short note through the notes track (so through its synth) as a track preview, from a
 // tiny generated MIDI file per pitch; nothing needs to be armed. Previews always play to the end:
 // stopping one mid-note leaves the synth without a note-off, so a pool lets them overlap.
-// Seconds before a finished preview is stopped. The file is ~1 s at 120 bpm; generous in case
-// REAPER plays it at a slower project tempo, since stopping before the note-off hangs the note.
+// Seconds (at normal speed) before a finished preview is stopped. The file is ~1 s at 120 bpm;
+// generous in case REAPER plays it at a slower project tempo, since stopping before the
+// note-off hangs the note.
 static const double PREVIEW_LIFE = 2.5;
 static const int PREVIEW_SLOTS = 16;
 struct Preview
@@ -1153,8 +1154,10 @@ static void stopPreview(Preview &p)
 static void stopPreviews(bool onlyFinished)
 {
   const double now = time_precise();
+  // previews follow the master playrate, so at 50% speed they take twice as long
+  const double life = PREVIEW_LIFE / std::max(0.1, Master_GetPlayRate(NULL));
   for (Preview &p : g_previews)
-    if (p.playing && (!onlyFinished || now - p.started > PREVIEW_LIFE)) stopPreview(p);
+    if (p.playing && (!onlyFinished || now - p.started > life)) stopPreview(p);
 }
 
 static void previewPitch(int pitch)
