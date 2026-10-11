@@ -75,6 +75,7 @@ struct WindowState {
     HWND edit = NULL; // lyric edit field while typing; identifies its note by start and pitch
     bool analysisDirty = false; // an analysis slider moved; recomputed on mouse up
     int mouseX = -1, mouseY = -1;
+    bool help = false; // the shortcut sheet is shown (?)
 };
 inline WindowState g_ui;
 

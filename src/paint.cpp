@@ -22,7 +22,7 @@ static const double EXPLAIN_DIM = 0.25;
 static HDC g_memdc;
 static int g_memw, g_memh, g_scale = 1, g_fontScale;
 static bool g_layerValid;
-static HFONT g_font;
+static HFONT g_font, g_mono;
 static std::vector<unsigned int> g_layer; // rendered spectrogram for the note area
 struct LayerKey {
     double t0, pps, pitchTop, rowH;
@@ -431,6 +431,254 @@ int lyricAt(int x) {
     return best;
 }
 
+// --- status line, hints, empty states, shortcuts ---------------------------------------
+
+static void monoText(HDC dc, const char *s, int l, int t, int r, int b, unsigned int col,
+                     int flags) {
+    if (g_mono) {
+        SelectObject(dc, g_mono);
+    }
+    text(dc, s, l, t, r, b, col, flags);
+    if (g_font) {
+        SelectObject(dc, g_font);
+    }
+}
+
+// What a click or drag does where the mouse is.
+static std::string hoverHint(const Layout &L) {
+    const int x = g_ui.mouseX, y = g_ui.mouseY;
+    static const char *const VOICE_NAMES[WINDOW_VOICES] = {"Lead", "voice 2", "voice 3", "voice 4"};
+    const char *voice = VOICE_NAMES[g_session.voice];
+    char buf[200];
+    if (L.notes.in(x, y)) {
+        int hit = -1;
+        const NoteEditor::Hit h = g_session.ed.hitTest(g_ui.view, x, y, &hit);
+        if (h == NoteEditor::LEFT || h == NoteEditor::RIGHT) {
+            return "Drag: resize  ·  Alt: no snap";
+        }
+        if (h == NoteEditor::BODY) {
+            return "Drag: move  ·  Shift: lock to time or pitch  ·  Double-click or Enter: lyric  "
+                   "·  K: split";
+        }
+        if (const int i = suggestionAt(x, y); i >= 0) {
+            const int v = suggestionVoice((size_t)i);
+            if (v < 0) {
+                snprintf(buf, sizeof(buf),
+                         "Crowded out (more notes than voices)  ·  Click: add it to %s", voice);
+            } else {
+                snprintf(buf, sizeof(buf), "Click: accept into %s  ·  A: accept all in view",
+                         VOICE_NAMES[v]);
+            }
+            return buf;
+        }
+        snprintf(buf, sizeof(buf),
+                 "Drag: draw a note in %s  ·  Shift+drag: select  ·  Alt: no snap", voice);
+        return buf;
+    }
+    if (L.lyrics.in(x, y)) {
+        return "Click: edit this syllable  ·  Cmd+V: paste lyrics onto the selected notes";
+    }
+    if (L.overview.in(x, y)) {
+        return "Click or drag: scroll to that part of the item";
+    }
+    if (L.ruler.in(x, y)) {
+        return "Click: move the edit cursor  ·  Shift+drag: time selection and loop  ·  R: loop it";
+    }
+    if (L.chords.in(x, y)) {
+        return "Chords come from chord items: double-click one in the arrange view to edit it";
+    }
+    if (x >= 0 && x < KB_W && y >= L.notes.t && y < L.notes.b) {
+        return "Click: hear this pitch";
+    }
+    return "?: shortcuts";
+}
+
+// A small rounded label on the status line; returns its left edge.
+static int chip(Canvas &cv, HDC dc, int right, int t, int b, const char *label, unsigned int bg,
+                unsigned int fg) {
+    const int w = 12 + 7 * (int)strlen(label), l = right - w;
+    cv.rounded(l, t + 3, right, b - 3, bg);
+    text(dc, label, l, t, right, b, fg, DT_CENTER);
+    return l;
+}
+
+// Fixed columns (pitch, Hz, peak cents, level, time, bar.beat, the note's sung offset), the hint,
+// then the modes as chips on the right.
+static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
+    const Rect n = L.notes, s = L.status, c = L.client;
+    cv.clip = {0, n.b, n.l, s.t};
+    cv.fill(0, n.b, n.l, s.t, g_theme.button);
+    cv.clip = s;
+    cv.fill(s.l, s.t, s.r, s.b, g_theme.ruler);
+    cv.fill(s.l, s.t, s.r, s.t + 1, 0x000000);
+    char buf[160];
+    static const int COLS[] = {44, 84, 112, 64, 92, 76, 100}; // widths, points
+    std::string col[7];
+    const bool over = n.in(g_ui.mouseX, g_ui.mouseY);
+    if (over) {
+        const double t = g_ui.view.t(g_ui.mouseX), p = g_ui.view.p(g_ui.mouseY);
+        const int ip = (int)floor(p + 0.5);
+        pitchName(ip, buf, sizeof(buf)), col[0] = buf;
+        snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12)), col[1] = buf;
+        const Spectrogram &sp = g_analysis.spec;
+        const int f = (int)lround((t - g_session.audioPos) * sp.frameRate());
+        if (f >= 0 && f < sp.frames) {
+            const int b0 = std::max(0, (int)floor(sp.binOfPitch(ip - 1))),
+                      b1 = std::min(sp.bins - 1, (int)ceil(sp.binOfPitch(ip + 1)));
+            int best = -1;
+            for (int b = b0; b <= b1; b++) {
+                if (best < 0 || sp.at(f, b) > sp.at(f, best)) {
+                    best = b;
+                }
+            }
+            if (best >= 0) {
+                const double peak =
+                    69 + 12 * log2(sp.p.fmin * pow(2.0, (double)best / sp.p.binsPerOctave) / 440);
+                const int pp = (int)floor(peak + 0.5);
+                char name[16];
+                pitchName(pp, name, sizeof(name));
+                snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100),
+                    col[2] = buf;
+                const int bin = std::max(0, std::min(sp.bins - 1, (int)lround(sp.binOfPitch(p))));
+                snprintf(buf, sizeof(buf), "%4.0f dB", 20 * log10(std::max(1e-10f, sp.at(f, bin)))),
+                    col[3] = buf;
+            }
+        }
+        format_timestr_pos(t, buf, sizeof(buf), 0), col[4] = buf;
+        format_timestr_pos(t, buf, sizeof(buf), 2), col[5] = buf;
+        int hovered = -1;
+        if (g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &hovered) !=
+            NoteEditor::NONE) {
+            const Note &hn = g_session.ed.notes[(size_t)hovered];
+            double sung = 0;
+            const int f0 = (int)lround((hn.start - g_session.audioPos) * sp.frameRate()),
+                      f1 = (int)lround((hn.end - g_session.audioPos) * sp.frameRate());
+            if (contourMedian(g_analysis.contour, f0, f1, (int)lround(0.05 * sp.frameRate()),
+                              &sung)) {
+                snprintf(buf, sizeof(buf), "sung %+.0fc", (sung - hn.pitch) * 100), col[6] = buf;
+            }
+        }
+    }
+    int x = 6;
+    for (int i = 0; i < 7; i++) {
+        monoText(dc, col[i].empty() ? (i < 2 && !over ? "—" : "") : col[i].c_str(), x, s.t,
+                 x + COLS[i] - 6, s.b, i == 6 ? g_theme.dim : g_theme.text, DT_LEFT);
+        x += COLS[i];
+        cv.fill(x - 4, s.t + 5, x - 3, s.b - 5, g_theme.track);
+    }
+
+    // modes, right to left: progress or the analysis note, voice, snap
+    static const char *const SNAP_NAMES[] = {"snap: off", "snap: onsets", "snap: grid"};
+    static const char *const VOICE_NAMES[WINDOW_VOICES] = {"Lead", "Voice 2", "Voice 3", "Voice 4"};
+    int right = c.r - 8;
+    if (const int pm = analysisProgress(); pm >= 0) {
+        cv.fill(right - 60, s.t + 10, right, s.b - 10, g_theme.button);
+        cv.fill(right - 60, s.t + 10, right - 60 + 60 * pm / 1000, s.b - 10, C_ACCENT);
+        right -= 66;
+        snprintf(buf, sizeof(buf), "analysing %d%%", pm / 10);
+        text(dc, buf, right - 90, s.t, right, s.b, g_theme.dim, DT_RIGHT);
+        right -= 96;
+    } else {
+        const std::string &note =
+            g_analysis.error.empty() ? g_analysis.estimateNote : g_analysis.error;
+        if (!note.empty()) {
+            text(dc, note.c_str(), x, s.t, right, s.b, 0xffa040, DT_RIGHT);
+            right -= 8 + 6 * (int)note.size();
+        }
+    }
+    right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[g_session.voice],
+                 VOICE_COLOURS[g_session.voice], 0x14161c) -
+            6;
+    right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[std::clamp(g_settings.snapMode, 0, 2)],
+                 g_theme.button, g_theme.dim) -
+            10;
+    if (right > x + 40) {
+        text(dc, hoverHint(L).c_str(), x + 4, s.t, right, s.b, g_theme.dim,
+             DT_LEFT | DT_END_ELLIPSIS);
+    }
+}
+
+// What to do when there is nothing to see yet.
+static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
+    cv.clip = n;
+    const int cx = (n.l + n.r) / 2, cy = (n.t + n.b) / 2;
+    auto banner = [&](const char *msg, int y) {
+        const int w = 24 + 7 * (int)strlen(msg);
+        cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, 0x000000, 150);
+        text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
+    };
+    char buf[300];
+    if (!g_analysis.spec.frames) {
+        if (const int pm = analysisProgress(); pm >= 0) {
+            snprintf(buf, sizeof(buf), "Analysing…  %d%%", pm / 10);
+            banner(buf, cy);
+        } else if (!g_analysis.error.empty()) {
+            banner(g_analysis.error.c_str(), cy);
+        }
+    } else if (g_session.ed.notes.empty() && !g_session.ed.active()) {
+        banner("Drag to draw a note  ·  N: suggested notes  ·  ?: shortcuts", n.b - 30);
+    }
+}
+
+// The shortcut sheet over the window (?, Esc to close).
+static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
+    struct Row {
+        const char *what, *keys;
+    };
+    struct Group {
+        const char *title;
+        std::vector<Row> rows;
+    };
+    static const Group GROUPS[] = {
+        {"Navigate",
+         {{"Scroll pitch, time", "scroll, shift+scroll"},
+          {"Zoom time, pitch", "cmd+scroll, alt+scroll"},
+          {"Fit item, zoom to selection", "F, Z"},
+          {"Link to arrange view", "L"}}},
+        {"Draw and edit",
+         {{"Draw a note", "drag on empty space"},
+          {"Lock to time or pitch", "shift while moving"},
+          {"No snapping", "alt"},
+          {"Split, join", "K, J"},
+          {"Copy, cut, paste, duplicate", "cmd+C, X, V, D"},
+          {"Quantise selected", "Q"},
+          {"Delete", "Delete, right-click"}}},
+        {"Suggestions and voices",
+         {{"Show suggestions", "N"},
+          {"Accept all in view", "A"},
+          {"Edit voice", "1-4"},
+          {"Contour, ghosts, explain", "P, H, X"},
+          {"Snap mode", "G"}}},
+        {"Lyrics",
+         {{"Type a syllable", "Enter, double-click"},
+          {"Next, previous note", "Tab, Space, -; shift+Tab"},
+          {"Paste lyrics", "cmd+V"}}},
+        {"Listen",
+         {{"Play, stop", "Space"}, {"Loop the selection", "R"}, {"Audio or notes only", "B"}}},
+        {"Display",
+         {{"Brightness, contrast", "[ ], - ="},
+          {"Resolution", ", ."},
+          {"Settings panel, dock", "S, D"}}},
+    };
+    const Rect c = L.client, n = L.notes;
+    cv.clip = c;
+    cv.fill(0, n.t, c.r, c.b, 0x0c0d11, 215);
+    const int cols = 3, colW = std::min(300, (c.r - 80) / cols), x0 = (c.r - colW * cols) / 2;
+    text(dc, "Shortcuts   (? or Esc to close)", x0, n.t + 14, x0 + colW * cols, n.t + 34,
+         g_theme.text, DT_LEFT);
+    for (int g = 0; g < 6; g++) {
+        const int gx = x0 + (g % cols) * colW;
+        int y = n.t + 46 + (g / cols) * 170;
+        text(dc, GROUPS[g].title, gx, y, gx + colW, y + 18, C_ACCENT, DT_LEFT);
+        y += 20;
+        for (const Row &r : GROUPS[g].rows) {
+            text(dc, r.what, gx, y, gx + colW - 10, y + 16, g_theme.text, DT_LEFT);
+            monoText(dc, r.keys, gx, y, gx + colW - 14, y + 16, g_theme.dim, DT_RIGHT);
+            y += 17;
+        }
+    }
+}
+
 void paint(HDC hdc) {
     const Layout L = layout(); // once per frame, so every area agrees
     const Rect c = L.client;
@@ -450,10 +698,18 @@ void paint(HDC hdc) {
         if (g_font && g_fontScale != S) {
             DeleteObject(g_font), g_font = NULL;
         }
+        if (g_mono && g_fontScale != S) {
+            DeleteObject(g_mono), g_mono = NULL;
+        }
         if (!g_font) {
             g_font = CreateFont(12 * S, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                                 OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
                                 DEFAULT_PITCH, "Helvetica");
+        }
+        if (!g_mono) { // figures that don't shift as the mouse moves
+            g_mono = CreateFont(11 * S, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                                OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY,
+                                DEFAULT_PITCH, "Menlo");
         }
         g_fontScale = S;
         if (g_memdc && g_font) {
@@ -720,80 +976,11 @@ void paint(HDC hdc) {
         cv.fill(o.l, o.t, o.r, o.t + 1, 0x000000);
     }
 
-    // status line: pitch, frequency, cents of the strongest nearby peak, time, bar.beat, level
-    const int sy = L.status.t;
-    cv.clip = {0, n.b, n.l, sy};
-    cv.fill(0, n.b, n.l, sy, g_theme.button);
-    cv.clip = {0, sy, c.r, c.b};
-    cv.fill(0, sy, c.r, c.b, g_theme.ruler);
-    std::string status;
-    if (n.in(g_ui.mouseX, g_ui.mouseY)) {
-        const double t = g_ui.view.t(g_ui.mouseX), p = g_ui.view.p(g_ui.mouseY);
-        const int ip = (int)floor(p + 0.5);
-        char name[16], tm[32], bb[32];
-        pitchName(ip, name, sizeof(name));
-        format_timestr_pos(t, tm, sizeof(tm), 0);
-        format_timestr_pos(t, bb, sizeof(bb), 2);
-        snprintf(buf, sizeof(buf), "%-4s %7.1f Hz   %s   %s", name, 440 * pow(2.0, (p - 69) / 12),
-                 tm, bb);
-        status = buf;
-        const int f = (int)lround((t - g_session.audioPos) * g_analysis.spec.frameRate());
-        if (f >= 0 && f < g_analysis.spec.frames) {
-            const int b0 = std::max(0, (int)floor(g_analysis.spec.binOfPitch(ip - 1))),
-                      b1 = std::min(g_analysis.spec.bins - 1,
-                                    (int)ceil(g_analysis.spec.binOfPitch(ip + 1)));
-            int best = -1;
-            for (int b = b0; b <= b1; b++) {
-                if (best < 0 || g_analysis.spec.at(f, b) > g_analysis.spec.at(f, best)) {
-                    best = b;
-                }
-            }
-            if (best >= 0) {
-                const double peakPitch =
-                    69 + 12 * log2(g_analysis.spec.p.fmin *
-                                   pow(2.0, (double)best / g_analysis.spec.p.binsPerOctave) / 440);
-                const int pp = (int)floor(peakPitch + 0.5);
-                pitchName(pp, name, sizeof(name));
-                snprintf(
-                    buf, sizeof(buf), "   peak %s %+.0f c   %.0f dB", name, (peakPitch - pp) * 100,
-                    20 * log10(std::max(
-                             1e-10f,
-                             g_analysis.spec.at(
-                                 f, std::max(0, std::min(g_analysis.spec.bins - 1,
-                                                         (int)lround(
-                                                             g_analysis.spec.binOfPitch(p))))))));
-                status += buf;
-            }
-        }
+    drawEmptyStates(cv, dc, n);
+    drawStatus(cv, dc, L);
+    if (g_ui.help) {
+        drawShortcuts(cv, dc, L);
     }
-    int hovered = -1;
-    if (n.in(g_ui.mouseX, g_ui.mouseY) &&
-        g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &hovered) != NoteEditor::NONE) {
-        const Note &hn = g_session.ed.notes[hovered];
-        double sung = 0;
-        const int f0 = (int)lround((hn.start - g_session.audioPos) * g_analysis.spec.frameRate()),
-                  f1 = (int)lround((hn.end - g_session.audioPos) * g_analysis.spec.frameRate());
-        if (contourMedian(g_analysis.contour, f0, f1,
-                          (int)lround(0.05 * g_analysis.spec.frameRate()), &sung)) {
-            snprintf(buf, sizeof(buf), "   note sung %+.0f c", (sung - hn.pitch) * 100);
-            status += buf;
-        }
-    }
-    static const char *const SNAP_NAMES[] = {"off", "onsets", "grid"};
-    if (const int pm = analysisProgress(); pm >= 0) {
-        snprintf(buf, sizeof(buf), "analysing %d%%   snap: %s (G)", pm / 10,
-                 SNAP_NAMES[g_settings.snapMode]);
-        cv.clip = {0, 0, c.r, c.b};
-        cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
-        cv.clip = {0, sy, c.r, c.b};
-    } else {
-        const std::string &note =
-            g_analysis.error.empty() ? g_analysis.estimateNote : g_analysis.error;
-        snprintf(buf, sizeof(buf), "%s%ssnap: %s (G)", note.c_str(), note.empty() ? "" : "   ",
-                 SNAP_NAMES[g_settings.snapMode]);
-    }
-    text(dc, status.c_str(), 6, sy, c.r - 120, c.b, g_theme.text, DT_LEFT);
-    text(dc, buf, 6, sy, c.r - 6, c.b, g_theme.dim, DT_RIGHT);
 
     cv.clip = {0, 0, c.r, c.b};
     if (L.panelShown) {

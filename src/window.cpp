@@ -182,6 +182,10 @@ static bool onKey(int key) {
         if (g_session.ed.deleteSelected()) {
             commitNotes();
         }
+    } else if (key == ('?' | CHARKEY) || (key == ('/' | CHARKEY) && (m & MOD_SHIFT))) {
+        g_ui.help = !g_ui.help;
+    } else if (key == VK_ESCAPE && g_ui.help) {
+        g_ui.help = false;
     } else if (key == VK_ESCAPE) {
         if (g_session.ed.active()) {
             g_session.ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture();
@@ -276,7 +280,9 @@ static bool isOurKey(int key, int flags) {
     case '-' | CHARKEY:
     case '=' | CHARKEY:
     case ',' | CHARKEY:
-    case '.' | CHARKEY: return true;
+    case '.' | CHARKEY:
+    case '?' | CHARKEY: return true;
+    case '/' | CHARKEY: return (flags & FSHIFT) != 0;
     case 'A': return true;
     case 'V':
     case 'C': return cmd;
