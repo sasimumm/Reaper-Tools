@@ -7,6 +7,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <set>
+#include <string>
 
 #define REAPERAPI_IMPLEMENT
 #define REAPERAPI_MINIMAL
@@ -58,6 +60,7 @@
 #define REAPERAPI_WANT_StopTrackPreview2
 #define REAPERAPI_WANT_SetEditCurPos
 #define REAPERAPI_WANT_ShowMessageBox
+#define REAPERAPI_WANT_ShowConsoleMsg
 #define REAPERAPI_WANT_TakeIsMIDI
 #define REAPERAPI_WANT_time_precise
 #define REAPERAPI_WANT_TimeMap2_QNToTime
@@ -106,6 +109,7 @@
 #include "reaper_plugin_functions.h"
 
 #include "chords.h"
+#include "guard.h"
 #include "window.h"
 
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
@@ -228,36 +232,52 @@ static void openSelected() {
     Window_Open(audio, voice);
 }
 
+void ReportFailure(const char *where, const char *what) {
+    static std::set<std::string>
+        reported; // a failure in the timer would otherwise repeat 30x a second
+    char msg[512];
+    snprintf(msg, sizeof(msg), "ReaTrace: %s failed: %s\n", where, what);
+    if (reported.insert(msg).second) {
+        ShowConsoleMsg(msg);
+    }
+}
+
 static int g_cmdOpen;
 
 static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
-    if (Chords_OnAction(command)) {
+    return guarded("action", false, [&] {
+        if (Chords_OnAction(command)) {
+            return true;
+        }
+        if (command != g_cmdOpen) {
+            return false;
+        }
+        openSelected();
         return true;
-    }
-    if (command != g_cmdOpen) {
-        return false;
-    }
-    openSelected();
-    return true;
+    });
 }
 
 static int translateAccel(MSG *msg, accelerator_register_t *) {
-    if (int r = Chords_TranslateAccel(msg)) {
-        return r;
-    }
-    return Window_TranslateAccel(msg);
+    return guarded("key handling", 0, [&] {
+        if (int r = Chords_TranslateAccel(msg)) {
+            return r;
+        }
+        return Window_TranslateAccel(msg);
+    });
 }
 
 static void timer() {
-    Chords_Timer();
-    Window_Timer();
+    guarded("timer", [] {
+        Chords_Timer();
+        Window_Timer();
+    });
 }
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
                                                                  reaper_plugin_info_t *rec) {
     if (!rec) {
-        Window_Close();
+        guarded("unload", [] { Window_Close(); });
         return 0;
     }
     if (rec->caller_version != REAPER_PLUGIN_VERSION || REAPERAPI_LoadAPI(rec->GetFunc) != 0) {

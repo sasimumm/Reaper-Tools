@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "guard.h"
 #include "reaper_plugin_functions.h"
 #undef min
 #undef max
@@ -43,9 +44,11 @@ class ChordSource : public PCM_source {
     MediaItem *m_item = NULL;
 
     PCM_source *Duplicate() override {
-        auto *d = new ChordSource;
-        d->chords = chords, d->length = length;
-        return d;
+        return guarded("chord item copy", (PCM_source *)NULL, [&] {
+            auto *d = new ChordSource;
+            d->chords = chords, d->length = length;
+            return (PCM_source *)d;
+        });
     }
     bool IsAvailable() override { return true; }
     const char *GetType() override { return SOURCE_TYPE; }
@@ -65,12 +68,22 @@ class ChordSource : public PCM_source {
     void GetPeakInfo(PCM_source_peaktransfer_t *block) override { block->peaks_out = 0; }
 
     void SaveState(ProjectStateContext *ctx) override {
+        guarded("saving a chord item", [&] { saveState(ctx); });
+    }
+    int LoadState(const char *firstLine, ProjectStateContext *ctx) override {
+        return guarded("loading a chord item", -1, [&] { return loadState(firstLine, ctx); });
+    }
+    int Extended(int call, void *parm1, void *parm2, void *parm3) override {
+        return guarded("chord item", 0, [&] { return extended(call, parm1, parm2, parm3); });
+    }
+
+    void saveState(ProjectStateContext *ctx) {
         ctx->AddLine("LENGTH %.9f", length);
         for (const Chord &c : chords) {
             ctx->AddLine("BEAT %.9f %s", c.qn, c.name.c_str());
         }
     }
-    int LoadState(const char *, ProjectStateContext *ctx) override {
+    int loadState(const char *, ProjectStateContext *ctx) {
         chords.clear();
         char line[4096];
         while (ctx->GetLine(line, sizeof(line)) == 0) {
@@ -101,7 +114,7 @@ class ChordSource : public PCM_source {
     int PeaksBuild_Run() override { return 0; }
     void PeaksBuild_Finish() override {}
 
-    int Extended(int call, void *parm1, void *parm2, void *parm3) override {
+    int extended(int call, void *parm1, void *parm2, void *parm3) {
         if (call == PCM_SOURCE_EXT_SETITEMCONTEXT) {
             m_item = (MediaItem *)parm1;
             return 1;
@@ -499,7 +512,9 @@ const std::vector<ChordSpan> &Chords_Spans() {
 // --- registration --------------------------------------------------------------------
 
 static PCM_source *createFromType(const char *type, int) {
-    return !strcmp(type, SOURCE_TYPE) ? new ChordSource : NULL;
+    return guarded("creating a chord item", (PCM_source *)NULL, [&] {
+        return !strcmp(type, SOURCE_TYPE) ? (PCM_source *)new ChordSource : NULL;
+    });
 }
 static PCM_source *createFromFile(const char *, int) { return NULL; }
 static const char *enumFileExtensions(int, const char **desc) {

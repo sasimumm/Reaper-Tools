@@ -21,6 +21,7 @@
 #include "contour.h"
 #include "editor.h"
 #include "estimate.h"
+#include "guard.h"
 #include "nsgt.h"
 
 // Layout, in pixels.
@@ -84,6 +85,7 @@ static std::vector<Segment>
     g_estimated; // notes from the estimator (estimate.h), the default suggestions
 static std::vector<int> g_estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
 static std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
+static std::string g_analysisError; // why there is no analysis (failed, or the item is too long)
 static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};
 static int g_suggestFrom;
 static bool g_estimateVote = true; // the estimator's front-end vote (EstimateParams::vote)
@@ -390,7 +392,25 @@ struct Job {
         vocal.estimatedVoice = assignVoices(est, es.frameRate(), WINDOW_VOICES);
     }
 
+    std::string error; // set instead of the results when the analysis failed
+
+    // Exceptions must not escape the thread (that terminates REAPER); the main thread shows them.
     void run() {
+        try {
+            work();
+        } catch (const std::bad_alloc &) {
+            error = "out of memory";
+        } catch (const std::exception &e) {
+            error = e.what();
+        } catch (...) {
+            error = "unknown error";
+        }
+        if (!error.empty()) {
+            done = true;
+        }
+    }
+
+    void work() {
         // progress weights: one per spectrogram, two for the vocal analysis and note estimation
         int stages = 2, stage = 0;
         for (bool b : need) {
@@ -484,6 +504,10 @@ static void install(const ChannelCache &c) {
     updateValues();
 }
 
+// Memory ceiling: 15 minutes peaks at ~1.3 GB in the note estimator (measured), plus ~150 MB per
+// cached channel spectrogram; longer items are refused rather than risking running out.
+static const double MAX_ANALYSIS_SECONDS = 15 * 60;
+
 // Starts (or reuses from the cache) the analysis for the current channel and settings.
 static void requestAnalysis(bool autoCalibrateAfter) {
     MediaItem_Take *take = GetActiveTake(g_audio);
@@ -493,6 +517,13 @@ static void requestAnalysis(bool autoCalibrateAfter) {
     g_autoOnInstall |= autoCalibrateAfter;
     g_np.binsPerOctave = 12 * (int)lround(g_binsPerSemitone);
     cancelJob();
+    g_analysisError.clear();
+    if (g_audioLen > MAX_ANALYSIS_SECONDS) {
+        g_analysisError =
+            "not analysed: items over 15 minutes need too much memory; split the item";
+        redraw();
+        return;
+    }
     const AnalysisKey key = {g_np,        g_audioPos,  g_audioLen,
                              g_audioOffs, g_audioRate, g_estimateVote};
     const int ch = g_channel;
@@ -539,6 +570,12 @@ static void pollJob() {
     } // keep the progress display moving
     g_job->thread.join();
     Job &j = *g_job;
+    if (!j.error.empty()) {
+        g_analysisError = "analysis failed: " + j.error;
+        g_job.reset();
+        redraw();
+        return;
+    }
     for (int r = 0; r < 4; r++) {
         if (j.need[r] && r != j.channel) {
             ChannelCache &c = g_cache[r];
@@ -2235,8 +2272,9 @@ static void paint(HDC hdc) {
         cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
         cv.clip = {0, sy, c.r, c.b};
     } else {
-        snprintf(buf, sizeof(buf), "%s%ssnap: %s (G)", g_estimateNote.c_str(),
-                 g_estimateNote.empty() ? "" : "   ", SNAP_NAMES[g_snapMode]);
+        const std::string &note = g_analysisError.empty() ? g_estimateNote : g_analysisError;
+        snprintf(buf, sizeof(buf), "%s%ssnap: %s (G)", note.c_str(), note.empty() ? "" : "   ",
+                 SNAP_NAMES[g_snapMode]);
     }
     text(dc, status.c_str(), 6, sy, c.r - 120, c.b, C_TEXT, DT_LEFT);
     text(dc, buf, 6, sy, c.r - 6, c.b, C_DIM, DT_RIGHT);
@@ -3018,7 +3056,7 @@ static void finishPanelDrag() {
     g_panelWidget = -1;
 }
 
-static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCHITTEST: return HTCLIENT; // otherwise SWELL turns clicks into WM_NCLBUTTONDOWN etc.
     case WM_PAINT: {
@@ -3198,6 +3236,10 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
+static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    return guarded("window", (INT_PTR)0, [&] { return handleMessage(hwnd, msg, wParam, lParam); });
+}
+
 // --- lifecycle ---------------------------------------------------------------------
 
 // Floating: a resizable top-level window. Docked: a child window handed to REAPER's docker
@@ -3262,7 +3304,7 @@ void Window_Open(MediaItem *audio, int voice) {
     g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
     g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(),
     g_snapTimes.clear();
-    g_estimated.clear(), g_estimatedVoice.clear(), g_estimateNote.clear();
+    g_estimated.clear(), g_estimatedVoice.clear(), g_estimateNote.clear(), g_analysisError.clear();
     const bool hadSettings = loadItemSettings();
     updateValues();
     requestAnalysis(!hadSettings);
