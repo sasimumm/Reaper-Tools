@@ -59,7 +59,7 @@ static std::vector<int> g_onsets;         // frames
 static std::vector<double> g_snapTimes;   // onsets and segment edges, project time, sorted
 static bool g_showContour = true, g_suggest = true, g_pitchFromContour = true;
 
-static const char *const CHANNELS[] = {"Mix", "Left", "Right", "Side", "Centre (mid - side)"};
+static const char *const CHANNELS[] = {"Mix", "Left", "Right", "Side", "Centre"}; // centre: mid minus side
 enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
 static int g_channel = CH_MIX;
 
@@ -467,7 +467,7 @@ struct Widget
   double display;  // shown value = value * display
   const char *fmt;
   int button;
-  int *choice;               // choices: click cycles through options
+  int *choice;               // choices: a row of buttons, one per option
   const char *const *options;
   int optionCount;
 };
@@ -506,7 +506,7 @@ static std::vector<Widget> widgets()
   };
 }
 
-static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE || t == W_CHOICE ? 20 : 24; }
+static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE ? 20 : t == W_CHOICE ? 42 : 24; }
 
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) { return p >= (const void *)&g_rp && p < (const void *)(&g_rp + 1); }
@@ -595,7 +595,9 @@ static void panelMouse(int x, int y, bool down)
   else if (down && w.type == W_BUTTON) pressButton(w.button);
   else if (down && w.type == W_CHOICE)
   {
-    *w.choice = (*w.choice + 1) % w.optionCount;
+    const int i = std::max(0, std::min(w.optionCount - 1, (x - p.l - 12) * w.optionCount / std::max(1, p.r - p.l - 24)));
+    if (i == *w.choice) return;
+    *w.choice = i;
     if (w.choice == &g_speed) applySpeed();
     else if (w.analysis) analyze(), updateValues();
   }
@@ -637,8 +639,14 @@ static void drawPanel(Canvas &cv, HDC dc)
     }
     else if (w.type == W_CHOICE)
     {
-      text(dc, w.label, l, top, r, top + h, C_TEXT, DT_LEFT);
-      text(dc, w.options[*w.choice], l, top, r, top + h, C_ACCENT, DT_RIGHT);
+      text(dc, w.label, l, top, r, top + 16, C_TEXT, DT_LEFT);
+      for (int i = 0; i < w.optionCount; i++)
+      {
+        const int bl = l + (r - l) * i / w.optionCount, br = l + (r - l) * (i + 1) / w.optionCount;
+        const bool on = i == *w.choice;
+        cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : 0x333333);
+        text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : C_TEXT, DT_CENTER);
+      }
     }
     else
     {
