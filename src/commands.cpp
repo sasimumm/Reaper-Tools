@@ -1,10 +1,12 @@
 #include "ui.h"
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
-const std::vector<Segment> &suggestions() { return g_suggestFrom ? g_segments : g_estimated; }
+const std::vector<Segment> &suggestions() {
+    return g_settings.suggestFrom ? g_segments : g_estimated;
+}
 // The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the active voice's.
 int suggestionVoice(size_t i) {
-    return g_suggestFrom || i >= g_estimatedVoice.size() ? g_voice : g_estimatedVoice[i];
+    return g_settings.suggestFrom || i >= g_estimatedVoice.size() ? g_voice : g_estimatedVoice[i];
 }
 
 // --- grid ------------------------------------------------------------------------
@@ -39,8 +41,8 @@ void quantiseSelected() {
         if (!n.sel) {
             continue;
         }
-        const double s = n.start + (snapToGrid(n.start) - n.start) * g_quantStrength;
-        double e = n.end + (snapToGrid(n.end) - n.end) * g_quantStrength;
+        const double s = n.start + (snapToGrid(n.start) - n.start) * g_settings.quantStrength;
+        double e = n.end + (snapToGrid(n.end) - n.end) * g_settings.quantStrength;
         if (e < s + g_ed.minLen) {
             e = std::max(n.end - n.start + s, s + g_ed.minLen);
         }
@@ -85,7 +87,7 @@ void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
 }
 
 int suggestionAt(int x, int y) {
-    if (!g_suggest) {
+    if (!g_settings.suggest) {
         return -1;
     }
     const std::vector<Segment> &sug = suggestions();
@@ -122,9 +124,9 @@ static double snapToOnsets(double t) {
 }
 
 void setupEditorSnap() {
-    if (g_snapMode == SNAP_GRID) {
+    if (g_settings.snapMode == SNAP_GRID) {
         g_ed.snap = snapToGrid;
-    } else if (g_snapMode == SNAP_ONSETS) {
+    } else if (g_settings.snapMode == SNAP_ONSETS) {
         g_ed.snap = snapToOnsets;
     } else {
         g_ed.snap = [](double t) { return t; };

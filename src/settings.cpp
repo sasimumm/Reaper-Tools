@@ -10,36 +10,36 @@ struct Setting {
     double lo = 0, hi = 0; // loaded values are clamped to this range
 };
 static const Setting SETTINGS[] = {
-    {.name = "gamma", .d = &g_np.gamma, .lo = 3, .hi = 40},
-    {.name = "fmin", .d = &g_np.fmin, .lo = 20, .hi = 500},
-    {.name = "fmax", .d = &g_np.fmax, .lo = 1000, .hi = 11000},
-    {.name = "binspersemitone", .d = &g_binsPerSemitone, .lo = 1, .hi = 10},
-    {.name = "channel", .i = &g_channel, .lo = 0, .hi = CH_CENTRE},
-    {.name = "bass", .b = &g_np.bass},
-    {.name = "basscrossover", .d = &g_np.bassCrossover, .lo = 80, .hi = 500},
-    {.name = "floor", .d = &g_rp.dbFloor, .lo = -120, .hi = -20},
-    {.name = "contrast", .d = &g_rp.contrast, .lo = 0.1, .hi = 3},
-    {.name = "brightness", .d = &g_rp.brightness, .lo = -1, .hi = 1},
-    {.name = "bias", .d = &g_rp.bias, .lo = -2, .hi = 2},
-    {.name = "peaks", .b = &g_rp.peaksOnly},
-    {.name = "peakdim", .d = &g_rp.peakDim, .lo = 0, .hi = 1},
-    {.name = "denoise", .b = &g_rp.subtractNoise},
-    {.name = "noisealpha", .d = &g_rp.noiseAlpha, .lo = 0, .hi = 3},
-    {.name = "noisefrac", .d = &g_rp.noiseFraction, .lo = 0.01, .hi = 0.5},
-    {.name = "ghosts", .b = &g_ghosts},
-    {.name = "harmonics", .d = &g_harmonics, .lo = 2, .hi = 16},
-    {.name = "guideopacity", .d = &g_guideOpacity, .lo = 0, .hi = 1},
-    {.name = "explain", .b = &g_explain},
-    {.name = "contour", .b = &g_showContour},
-    {.name = "suggest", .b = &g_suggest},
-    {.name = "suggestfrom", .i = &g_suggestFrom, .lo = 0, .hi = 1},
-    {.name = "estimatevote", .b = &g_estimateVote},
-    {.name = "pitchfromcontour", .b = &g_pitchFromContour},
-    {.name = "audition", .b = &g_audition},
-    {.name = "theme", .b = &g_followTheme},
-    {.name = "linkarrange", .b = &g_linkArrange},
-    {.name = "snap", .i = &g_snapMode, .lo = 0, .hi = SNAP_GRID},
-    {.name = "quantise", .d = &g_quantStrength, .lo = 0, .hi = 1},
+    {.name = "gamma", .d = &g_settings.np.gamma, .lo = 3, .hi = 40},
+    {.name = "fmin", .d = &g_settings.np.fmin, .lo = 20, .hi = 500},
+    {.name = "fmax", .d = &g_settings.np.fmax, .lo = 1000, .hi = 11000},
+    {.name = "binspersemitone", .d = &g_settings.binsPerSemitone, .lo = 1, .hi = 10},
+    {.name = "channel", .i = &g_settings.channel, .lo = 0, .hi = CH_CENTRE},
+    {.name = "bass", .b = &g_settings.np.bass},
+    {.name = "basscrossover", .d = &g_settings.np.bassCrossover, .lo = 80, .hi = 500},
+    {.name = "floor", .d = &g_settings.rp.dbFloor, .lo = -120, .hi = -20},
+    {.name = "contrast", .d = &g_settings.rp.contrast, .lo = 0.1, .hi = 3},
+    {.name = "brightness", .d = &g_settings.rp.brightness, .lo = -1, .hi = 1},
+    {.name = "bias", .d = &g_settings.rp.bias, .lo = -2, .hi = 2},
+    {.name = "peaks", .b = &g_settings.rp.peaksOnly},
+    {.name = "peakdim", .d = &g_settings.rp.peakDim, .lo = 0, .hi = 1},
+    {.name = "denoise", .b = &g_settings.rp.subtractNoise},
+    {.name = "noisealpha", .d = &g_settings.rp.noiseAlpha, .lo = 0, .hi = 3},
+    {.name = "noisefrac", .d = &g_settings.rp.noiseFraction, .lo = 0.01, .hi = 0.5},
+    {.name = "ghosts", .b = &g_settings.ghosts},
+    {.name = "harmonics", .d = &g_settings.harmonics, .lo = 2, .hi = 16},
+    {.name = "guideopacity", .d = &g_settings.guideOpacity, .lo = 0, .hi = 1},
+    {.name = "explain", .b = &g_settings.explain},
+    {.name = "contour", .b = &g_settings.showContour},
+    {.name = "suggest", .b = &g_settings.suggest},
+    {.name = "suggestfrom", .i = &g_settings.suggestFrom, .lo = 0, .hi = 1},
+    {.name = "estimatevote", .b = &g_settings.estimateVote},
+    {.name = "pitchfromcontour", .b = &g_settings.pitchFromContour},
+    {.name = "audition", .b = &g_settings.audition},
+    {.name = "theme", .b = &g_settings.followTheme},
+    {.name = "linkarrange", .b = &g_settings.linkArrange},
+    {.name = "snap", .i = &g_settings.snapMode, .lo = 0, .hi = SNAP_GRID},
+    {.name = "quantise", .d = &g_settings.quantStrength, .lo = 0, .hi = 1},
 };
 static const char *OLD_EXT_SECTION =
     "reascribe"; // before the rename; read when there's nothing newer
@@ -92,13 +92,7 @@ void loadSettings(const char *str) {
     }
 }
 
-void resetSettings() {
-    g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX, g_binsPerSemitone = 5;
-    g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
-    g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
-    g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false, g_suggestFrom = 0,
-    g_estimateVote = true;
-}
+void resetSettings() { g_settings = Settings(); }
 static std::string g_savedSettings; // last written to the item, to only write on change
 
 // Per-item settings live in the project's extended state under the item's GUID (that API takes

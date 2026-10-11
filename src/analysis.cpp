@@ -3,8 +3,8 @@
 // --- spectrogram ---------------------------------------------------------------
 
 void updateValues() {
-    renderValues(g_spec, g_rp, g_val);
-    makeColormap(g_rp.bias, g_lut);
+    renderValues(g_spec, g_settings.rp, g_val);
+    makeColormap(g_settings.rp.bias, g_lut);
     g_valVersion++;
     redraw();
 }
@@ -261,9 +261,9 @@ static void install(const ChannelCache &c) {
         g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
     }
     std::sort(g_snapTimes.begin(), g_snapTimes.end());
-    estimateNoise(g_spec, g_rp.noiseFraction);
+    estimateNoise(g_spec, g_settings.rp.noiseFraction);
     if (g_autoOnInstall) {
-        autoCalibrate(g_spec, g_rp), g_autoOnInstall = false;
+        autoCalibrate(g_spec, g_settings.rp), g_autoOnInstall = false;
     }
     g_analysisDirty = false;
     updateValues();
@@ -280,7 +280,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
         return;
     }
     g_autoOnInstall |= autoCalibrateAfter;
-    g_np.binsPerOctave = 12 * (int)lround(g_binsPerSemitone);
+    g_settings.np.binsPerOctave = 12 * (int)lround(g_settings.binsPerSemitone);
     cancelJob();
     g_analysisError.clear();
     if (g_audioLen > MAX_ANALYSIS_SECONDS) {
@@ -289,9 +289,9 @@ void requestAnalysis(bool autoCalibrateAfter) {
         redraw();
         return;
     }
-    const AnalysisKey key = {g_np,        g_audioPos,  g_audioLen,
-                             g_audioOffs, g_audioRate, g_estimateVote};
-    const int ch = g_channel;
+    const AnalysisKey key = {g_settings.np, g_audioPos,  g_audioLen,
+                             g_audioOffs,   g_audioRate, g_settings.estimateVote};
+    const int ch = g_settings.channel;
     if (cached(ch, key) && g_cache[ch].vocalValid) {
         install(g_cache[ch]);
         return;
@@ -315,7 +315,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
         job->need[CH_MIX] = job->need[CH_SIDE] = false;
         job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
     }
-    readAudio(take, g_audioLen, g_np.sampleRate, job->left,
+    readAudio(take, g_audioLen, g_settings.np.sampleRate, job->left,
               job->right); // the note estimator always needs it
     Job *j = job.get();
     job->thread = std::thread([j] { j->run(); });

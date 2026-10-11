@@ -127,7 +127,7 @@ static void scrollPitch(double semitones) {
 static double g_arrA = -1, g_arrB = -1, g_ourA, g_ourB; // ranges as of the last sync
 
 static void syncArrange() {
-    if (!g_linkArrange) {
+    if (!g_settings.linkArrange) {
         g_arrA = g_arrB = -1;
         return;
     }
@@ -173,7 +173,7 @@ int mods() {
 }
 
 static void adjustGamma(double delta) {
-    g_np.gamma = std::max(3.0, std::min(40.0, g_np.gamma + delta));
+    g_settings.np.gamma = std::max(3.0, std::min(40.0, g_settings.np.gamma + delta));
     requestAnalysis(false);
 }
 
@@ -207,15 +207,15 @@ static bool onKey(int key) {
         }
         beginLyric(i);
     } else if (key == 'H' && !m) {
-        g_ghosts = !g_ghosts;
+        g_settings.ghosts = !g_settings.ghosts;
     } else if (key == 'S' && !m) {
         g_panel = !g_panel;
     } else if (key == 'G' && !m) {
-        g_snapMode = (g_snapMode + 1) % 3, setupEditorSnap();
+        g_settings.snapMode = (g_settings.snapMode + 1) % 3, setupEditorSnap();
     } else if (key == 'P' && !m) {
-        g_showContour = !g_showContour;
+        g_settings.showContour = !g_settings.showContour;
     } else if (key == 'X' && !m) {
-        g_explain = !g_explain;
+        g_settings.explain = !g_settings.explain;
     } else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) {
         selectVoice(key - '1');
     } else if (key == 'Q' && !m) {
@@ -223,9 +223,9 @@ static bool onKey(int key) {
     } else if (key == 'D' && !m) {
         g_dockPending = true;
     } else if (key == 'L' && !m) {
-        g_linkArrange = !g_linkArrange;
+        g_settings.linkArrange = !g_settings.linkArrange;
     } else if (key == 'N' && !m) {
-        g_suggest = !g_suggest;
+        g_settings.suggest = !g_settings.suggest;
     } else if (key == 'A' && !m) {
         acceptVisibleSuggestions();
     } else if (key == 'V' && (m & MOD_CMD)) {
@@ -253,13 +253,13 @@ static bool onKey(int key) {
     } else if (key == 'Z' && !m) {
         zoomToSelection();
     } else if (key == ('[' | CHARKEY)) {
-        g_rp.brightness = std::max(-1.0, g_rp.brightness - 0.05), updateValues();
+        g_settings.rp.brightness = std::max(-1.0, g_settings.rp.brightness - 0.05), updateValues();
     } else if (key == (']' | CHARKEY)) {
-        g_rp.brightness = std::min(1.0, g_rp.brightness + 0.05), updateValues();
+        g_settings.rp.brightness = std::min(1.0, g_settings.rp.brightness + 0.05), updateValues();
     } else if (key == ('-' | CHARKEY)) {
-        g_rp.contrast = std::max(0.1, g_rp.contrast / 1.1), updateValues();
+        g_settings.rp.contrast = std::max(0.1, g_settings.rp.contrast / 1.1), updateValues();
     } else if (key == ('=' | CHARKEY)) {
-        g_rp.contrast = std::min(3.0, g_rp.contrast * 1.1), updateValues();
+        g_settings.rp.contrast = std::min(3.0, g_settings.rp.contrast * 1.1), updateValues();
     } else if (key == (',' | CHARKEY)) {
         adjustGamma(-1);
     } else if (key == ('.' | CHARKEY)) {
@@ -446,7 +446,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         ReleaseCapture();
         const int drawn = d == DRAG_NOTES ? g_ed.drawing() : -1;
         if (d == DRAG_NOTES && g_ed.mouseUp(g_view, x, y, mods())) {
-            if (drawn >= 0 && drawn < (int)g_ed.notes.size() && g_pitchFromContour &&
+            if (drawn >= 0 && drawn < (int)g_ed.notes.size() && g_settings.pitchFromContour &&
                 !(mods() & MOD_ALT)) {
                 pitchFromContour(g_ed.notes[drawn]);
             }

@@ -33,7 +33,7 @@ static unsigned int mix(unsigned int a, unsigned int b, double f) {
 // Theme colours by their reaper.ini keys, falling back to the built-in dark colours.
 static void applyTheme() {
     auto col = [](const char *key, unsigned int dflt) -> unsigned int {
-        const int c = g_followTheme ? GetThemeColor(key, 0) : -1;
+        const int c = g_settings.followTheme ? GetThemeColor(key, 0) : -1;
         return c < 0 ? dflt
                      : ((c & 255) << 16) | (c & 0xff00) | ((c >> 16) & 255); // COLORREF is 0xBBGGRR
     };
@@ -68,11 +68,11 @@ static void renderLayer(const Rect &n) {
         rowPitch[y] = g_view.p(n.t + (y + 0.5) / S);
     }
     std::vector<double> explained; // pitches of notes and overtones sounding in this column
-    const int nh = (int)lround(g_harmonics);
+    const int nh = (int)lround(g_settings.harmonics);
     std::vector<unsigned char> col(s.bins);
     for (int x = 0; x < w; x++) {
         explained.clear();
-        if (g_explain) {
+        if (g_settings.explain) {
             const double ta = g_view.t(n.l + x / S), tb = g_view.t(n.l + (x + 1) / S);
             auto add = [&](const Note &nt) {
                 if (nt.start < tb && nt.end > ta) {
@@ -247,10 +247,10 @@ static double overtonePitch(double p, int h) { return p + 12 * log2((double)h); 
 
 // Note ghosts: faint outlines where each note's overtones should be.
 static void drawGhosts(Canvas &cv) {
-    if (!g_ghosts) {
+    if (!g_settings.ghosts) {
         return;
     }
-    const int a = (int)lround(g_guideOpacity * 160), n = (int)lround(g_harmonics);
+    const int a = (int)lround(g_settings.guideOpacity * 160), n = (int)lround(g_settings.harmonics);
     for (const Note &nt : g_ed.notes) {
         const int x0 = (int)lround(g_view.x(nt.start)),
                   x1 = std::max(x0 + 2, (int)lround(g_view.x(nt.end)));
@@ -285,7 +285,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         tB = g_view.t(g_mouseX) + 0.03;
         xA = g_mouseX - 70, xB = g_mouseX + 70;
     }
-    const int a = (int)lround(g_guideOpacity * 256), nh = (int)lround(g_harmonics);
+    const int a = (int)lround(g_settings.guideOpacity * 256),
+              nh = (int)lround(g_settings.harmonics);
     char buf[32];
     for (int h = 1; h <= nh; h++) {
         const int y = (int)lround(g_view.y(overtonePitch(p0, h)));
@@ -320,7 +321,7 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
 }
 
 static void drawSuggestions(Canvas &cv, const Rect &n) {
-    if (!g_suggest) {
+    if (!g_settings.suggest) {
         return;
     }
     const std::vector<Segment> &sug = suggestions();
@@ -348,7 +349,7 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
 
 // The sung pitch as a white line with a dark edge, one pixel column at a time.
 static void drawContour(Canvas &cv, const Rect &n) {
-    if (!g_showContour || g_contour.pitch.empty()) {
+    if (!g_settings.showContour || g_contour.pitch.empty()) {
         return;
     }
     const double fr = g_spec.frameRate();
@@ -464,10 +465,14 @@ void paint(HDC hdc) {
 
     // spectrogram
     LayerKey key = {
-        g_view.t0,       g_view.pps,
-        g_view.pitchTop, g_view.rowH,
-        (n.r - n.l) * S, (n.b - n.t) * S,
-        g_valVersion,    g_explain ? g_notesVersion * 32 + (int)lround(g_harmonics) : 0
+        g_view.t0,
+        g_view.pps,
+        g_view.pitchTop,
+        g_view.rowH,
+        (n.r - n.l) * S,
+        (n.b - n.t) * S,
+        g_valVersion,
+        g_settings.explain ? g_notesVersion * 32 + (int)lround(g_settings.harmonics) : 0
     };
     if (!g_layerValid || !(key == g_layerKey)) {
         renderLayer(n);
@@ -749,14 +754,14 @@ void paint(HDC hdc) {
     static const char *const SNAP_NAMES[] = {"off", "onsets", "grid"};
     if (const int pm = analysisProgress(); pm >= 0) {
         snprintf(buf, sizeof(buf), "analysing %d%%   snap: %s (G)", pm / 10,
-                 SNAP_NAMES[g_snapMode]);
+                 SNAP_NAMES[g_settings.snapMode]);
         cv.clip = {0, 0, c.r, c.b};
         cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
         cv.clip = {0, sy, c.r, c.b};
     } else {
         const std::string &note = g_analysisError.empty() ? g_estimateNote : g_analysisError;
         snprintf(buf, sizeof(buf), "%s%ssnap: %s (G)", note.c_str(), note.empty() ? "" : "   ",
-                 SNAP_NAMES[g_snapMode]);
+                 SNAP_NAMES[g_settings.snapMode]);
     }
     text(dc, status.c_str(), 6, sy, c.r - 120, c.b, C_TEXT, DT_LEFT);
     text(dc, buf, 6, sy, c.r - 6, c.b, C_DIM, DT_RIGHT);

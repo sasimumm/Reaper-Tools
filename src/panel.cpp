@@ -67,19 +67,21 @@ static std::vector<Widget> widgets() {
          .optionCount = WINDOW_VOICES},
         {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_showOthers},
         {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
-        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_followTheme},
-        {.type = W_TOGGLE, .label = "Link time to arrange view (L)", .flag = &g_linkArrange},
+        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_settings.followTheme},
+        {.type = W_TOGGLE,
+         .label = "Link time to arrange view (L)",
+         .flag = &g_settings.linkArrange},
         {.type = W_HEADER, .label = "Display"},
         {.type = W_SLIDER,
          .label = "Floor",
-         .value = &g_rp.dbFloor,
+         .value = &g_settings.rp.dbFloor,
          .lo = -120,
          .hi = -20,
          .display = 1,
          .fmt = "%.0f dB"},
         {.type = W_SLIDER,
          .label = "Contrast",
-         .value = &g_rp.contrast,
+         .value = &g_settings.rp.contrast,
          .lo = 0.1,
          .hi = 3,
          .logScale = true,
@@ -87,35 +89,35 @@ static std::vector<Widget> widgets() {
          .fmt = "%.2f"},
         {.type = W_SLIDER,
          .label = "Brightness",
-         .value = &g_rp.brightness,
+         .value = &g_settings.rp.brightness,
          .lo = -1,
          .hi = 1,
          .display = 1,
          .fmt = "%+.2f"},
         {.type = W_SLIDER,
          .label = "Colour curve",
-         .value = &g_rp.bias,
+         .value = &g_settings.rp.bias,
          .lo = -2,
          .hi = 2,
          .display = 1,
          .fmt = "%+.2f"},
-        {.type = W_TOGGLE, .label = "Peaks only", .flag = &g_rp.peaksOnly},
+        {.type = W_TOGGLE, .label = "Peaks only", .flag = &g_settings.rp.peaksOnly},
         {.type = W_SLIDER,
          .label = "Peak dimming",
-         .value = &g_rp.peakDim,
+         .value = &g_settings.rp.peakDim,
          .hi = 1,
          .display = 1,
          .fmt = "%.2f"},
-        {.type = W_TOGGLE, .label = "Noise subtraction", .flag = &g_rp.subtractNoise},
+        {.type = W_TOGGLE, .label = "Noise subtraction", .flag = &g_settings.rp.subtractNoise},
         {.type = W_SLIDER,
          .label = "Noise strength",
-         .value = &g_rp.noiseAlpha,
+         .value = &g_settings.rp.noiseAlpha,
          .hi = 3,
          .display = 1,
          .fmt = "%.2f"},
         {.type = W_SLIDER,
          .label = "Noise from quietest",
-         .value = &g_rp.noiseFraction,
+         .value = &g_settings.rp.noiseFraction,
          .lo = 0.01,
          .hi = 0.5,
          .display = 100,
@@ -125,7 +127,7 @@ static std::vector<Widget> widgets() {
         {.type = W_HEADER, .label = "Analysis"},
         {.type = W_SLIDER,
          .label = "Resolution (gamma)",
-         .value = &g_np.gamma,
+         .value = &g_settings.np.gamma,
          .lo = 3,
          .hi = 40,
          .logScale = true,
@@ -134,7 +136,7 @@ static std::vector<Widget> widgets() {
          .fmt = "%.1f Hz"},
         {.type = W_SLIDER,
          .label = "Lowest frequency",
-         .value = &g_np.fmin,
+         .value = &g_settings.np.fmin,
          .lo = 20,
          .hi = 500,
          .logScale = true,
@@ -143,7 +145,7 @@ static std::vector<Widget> widgets() {
          .fmt = "%.0f Hz"},
         {.type = W_SLIDER,
          .label = "Highest frequency",
-         .value = &g_np.fmax,
+         .value = &g_settings.np.fmax,
          .lo = 1000,
          .hi = 11000,
          .logScale = true,
@@ -152,7 +154,7 @@ static std::vector<Widget> widgets() {
          .fmt = "%.0f Hz"},
         {.type = W_SLIDER,
          .label = "Bins per semitone",
-         .value = &g_binsPerSemitone,
+         .value = &g_settings.binsPerSemitone,
          .lo = 1,
          .hi = 10,
          .analysis = true,
@@ -161,16 +163,16 @@ static std::vector<Widget> widgets() {
         {.type = W_CHOICE,
          .label = "Channel",
          .analysis = true,
-         .choice = &g_channel,
+         .choice = &g_settings.channel,
          .options = CHANNELS,
          .optionCount = 5},
         {.type = W_TOGGLE,
          .label = "Bass analysis (sharper low notes)",
-         .flag = &g_np.bass,
+         .flag = &g_settings.np.bass,
          .analysis = true},
         {.type = W_SLIDER,
          .label = "Bass crossover",
-         .value = &g_np.bassCrossover,
+         .value = &g_settings.np.bassCrossover,
          .lo = 80,
          .hi = 500,
          .logScale = true,
@@ -179,43 +181,47 @@ static std::vector<Widget> widgets() {
          .fmt = "%.0f Hz"},
         {.type = W_BUTTON, .label = "Reset to defaults", .button = B_RESET},
         {.type = W_HEADER, .label = "Guides"},
-        {.type = W_TOGGLE, .label = "Overtone ghosts (H)", .flag = &g_ghosts},
-        {.type = W_TOGGLE, .label = "Explain away drawn notes (X)", .flag = &g_explain},
+        {.type = W_TOGGLE, .label = "Overtone ghosts (H)", .flag = &g_settings.ghosts},
+        {.type = W_TOGGLE, .label = "Explain away drawn notes (X)", .flag = &g_settings.explain},
         {.type = W_SLIDER,
          .label = "Overtones",
-         .value = &g_harmonics,
+         .value = &g_settings.harmonics,
          .lo = 2,
          .hi = 16,
          .display = 1,
          .fmt = "%.0f"},
         {.type = W_SLIDER,
          .label = "Guide opacity",
-         .value = &g_guideOpacity,
+         .value = &g_settings.guideOpacity,
          .hi = 1,
          .display = 1,
          .fmt = "%.2f"},
-        {.type = W_TOGGLE, .label = "Pitch contour (P)", .flag = &g_showContour},
-        {.type = W_TOGGLE, .label = "Suggested notes (N, A: accept all)", .flag = &g_suggest},
+        {.type = W_TOGGLE, .label = "Pitch contour (P)", .flag = &g_settings.showContour},
+        {.type = W_TOGGLE,
+         .label = "Suggested notes (N, A: accept all)",
+         .flag = &g_settings.suggest},
         {.type = W_CHOICE,
          .label = "Suggest from",
-         .choice = &g_suggestFrom,
+         .choice = &g_settings.suggestFrom,
          .options = SUGGEST_FROM,
          .optionCount = 2},
         {.type = W_TOGGLE,
          .label = "Estimator: front-end vote (slower)",
-         .flag = &g_estimateVote,
+         .flag = &g_settings.estimateVote,
          .analysis = true},
-        {.type = W_TOGGLE, .label = "Note pitch from contour", .flag = &g_pitchFromContour},
+        {.type = W_TOGGLE,
+         .label = "Note pitch from contour",
+         .flag = &g_settings.pitchFromContour},
         {.type = W_HEADER, .label = "Quantise"},
         {.type = W_SLIDER,
          .label = "Quantise strength",
-         .value = &g_quantStrength,
+         .value = &g_settings.quantStrength,
          .hi = 1,
          .display = 100,
          .fmt = "%.0f%%"},
         {.type = W_BUTTON, .label = "Quantise selected notes (Q)", .button = B_QUANTISE},
         {.type = W_HEADER, .label = "Playback"},
-        {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &g_audition},
+        {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &g_settings.audition},
         {.type = W_CHOICE,
          .label = "Speed",
          .choice = &g_speed,
@@ -246,7 +252,7 @@ static int widgetHeight(WidgetType t) {
 
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) {
-    return p >= (const void *)&g_rp && p < (const void *)(&g_rp + 1);
+    return p >= (const void *)&g_settings.rp && p < (const void *)(&g_settings.rp + 1);
 }
 
 static double sliderFrac(const Widget &w, double v) {
@@ -290,7 +296,7 @@ static void autoCalibrateView() {
     const Rect n = noteArea();
     const int f0 = (int)((g_view.t(n.l) - g_audioPos) * g_spec.frameRate());
     const int f1 = (int)((g_view.t(n.r) - g_audioPos) * g_spec.frameRate()) + 1;
-    autoCalibrate(g_spec, g_rp, f0, f1);
+    autoCalibrate(g_spec, g_settings.rp, f0, f1);
 }
 
 static void applyNotesVolume();
@@ -301,8 +307,8 @@ static void changedSetting(const Widget &w) {
         redraw();
         return;
     } // recomputed on mouse up
-    if (w.value == &g_rp.noiseFraction) {
-        estimateNoise(g_spec, g_rp.noiseFraction);
+    if (w.value == &g_settings.rp.noiseFraction) {
+        estimateNoise(g_spec, g_settings.rp.noiseFraction);
     }
     if (w.value == &g_notesDb) {
         applyNotesVolume();
@@ -316,13 +322,13 @@ static void changedSetting(const Widget &w) {
 
 static void applyPreset(int i) {
     if (i == 0) {
-        g_channel = CH_CENTRE, g_rp.subtractNoise = true, g_np.fmin = 60, g_np.fmax = 5000,
-        g_np.gamma = 11;
+        g_settings.channel = CH_CENTRE, g_settings.rp.subtractNoise = true, g_settings.np.fmin = 60,
+        g_settings.np.fmax = 5000, g_settings.np.gamma = 11;
     } else if (i == 1) {
-        g_channel = CH_MIX, g_rp.subtractNoise = false, g_np.fmin = 60, g_np.fmax = 6000,
-        g_np.gamma = 11;
+        g_settings.channel = CH_MIX, g_settings.rp.subtractNoise = false, g_settings.np.fmin = 60,
+        g_settings.np.fmax = 6000, g_settings.np.gamma = 11;
     } else if (i == 2) {
-        g_np.gamma = 25; // wider bands, shorter windows: sharper timing for fast runs
+        g_settings.np.gamma = 25; // wider bands, shorter windows: sharper timing for fast runs
     }
     requestAnalysis(true);
 }
@@ -352,7 +358,7 @@ static void pressButton(int b) {
         return;
     }
     if (b == B_AUTO_ALL) {
-        autoCalibrate(g_spec, g_rp);
+        autoCalibrate(g_spec, g_settings.rp);
     } else if (b == B_AUTO_VIEW) {
         autoCalibrateView();
     } else if (b == B_RESET) {

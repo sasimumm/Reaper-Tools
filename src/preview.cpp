@@ -38,7 +38,7 @@ void stopPreviews(bool onlyFinished) {
 }
 
 void previewPitch(int pitch) {
-    if (!g_audition || pitch < 0 || pitch > 127 || !g_midi ||
+    if (!g_settings.audition || pitch < 0 || pitch > 127 || !g_midi ||
         !ValidatePtr2(NULL, g_midi, "MediaItem*")) {
         return;
     }

@@ -52,9 +52,6 @@ struct OtherVoice {
 inline OtherVoice g_others[WINDOW_VOICES];
 inline double g_audioPos, g_audioLen, g_audioOffs, g_audioRate;
 
-inline NSGTParams g_np;
-inline double g_binsPerSemitone = 5; // slider for g_np.binsPerOctave, applied in requestAnalysis()
-inline RenderParams g_rp;
 inline Spectrogram g_spec;
 inline std::vector<unsigned char> g_val; // renderValues() output, one byte per cell
 inline unsigned int g_lut[256];
@@ -66,7 +63,6 @@ inline std::string g_hash;
 // Snapping: onsets (and note changes in the pitch contour) by default, since recordings are
 // usually free tempo and the grid means nothing until a tempo map is fitted.
 enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
-inline int g_snapMode = SNAP_ONSETS;
 
 inline Contour g_contour;
 inline std::vector<Segment>
@@ -76,26 +72,35 @@ inline std::vector<Segment>
 inline std::vector<int> g_estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
 inline std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
 inline std::string g_analysisError; // why there is no analysis (failed, or the item is too long)
-inline int g_suggestFrom;
-inline bool g_estimateVote = true; // the estimator's front-end vote (EstimateParams::vote)
 const std::vector<Segment> &suggestions();
 int suggestionVoice(size_t i);
 
 inline std::vector<int> g_onsets;       // frames
 inline std::vector<double> g_snapTimes; // onsets and segment edges, project time, sorted
-inline bool g_showContour = true, g_suggest = true, g_pitchFromContour = true;
 enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
-inline int g_channel = CH_MIX;
-inline double g_quantStrength = 1;
+
+// Everything remembered per item (settings.cpp saves and loads it): the defaults are here only.
+struct Settings {
+    NSGTParams np;
+    double binsPerSemitone = 5; // slider for np.binsPerOctave, applied in requestAnalysis()
+    RenderParams rp;
+    int channel = CH_MIX;
+    int snapMode = SNAP_ONSETS;
+    double quantStrength = 1;
+    bool ghosts = true; // faint outlines at each note's overtones
+    double harmonics = 8, guideOpacity = 0.4;
+    // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
+    // bright is what still needs transcribing.
+    bool explain = false;
+    bool showContour = true, suggest = true, pitchFromContour = true;
+    int suggestFrom = 0;      // SUGGEST_FROM
+    bool estimateVote = true; // the estimator's front-end vote (EstimateParams::vote)
+    bool audition = true;     // play a note through the notes track when clicked or drawn
+    bool followTheme = true;  // else the built-in dark colours
+    bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
+};
+inline Settings g_settings;
 inline bool g_panel = true;
-inline bool g_ghosts = true;      // faint outlines at each note's overtones
-inline bool g_audition = true;    // play a note through the notes track when clicked or drawn
-inline bool g_followTheme = true; // else the built-in dark colours
-inline bool g_linkArrange;        // keep the visible time range in sync with REAPER's arrange view
-inline double g_harmonics = 8, g_guideOpacity = 0.4;
-// Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
-// bright is what still needs transcribing.
-inline bool g_explain;
 inline int g_notesVersion; // bumped whenever notes are loaded
 
 inline HWND g_edit; // lyric edit field while typing; identifies its note by start and pitch
