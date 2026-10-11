@@ -10,6 +10,7 @@
 #include <thread>
 
 #include "fft.h"
+#include "parallel.h"
 
 static const int SR = 22050, HOP = 256;
 
@@ -449,24 +450,17 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
         }
     };
     const int threads = std::max(1, std::min(chunks, (int)std::thread::hardware_concurrency()));
-    std::vector<std::thread> pool;
-    for (int t = 1; t < threads; t++) {
-        pool.emplace_back(worker);
-    }
-    // the calling thread works too, and reports progress between its chunks
-    {
-        std::thread self(worker);
-        while (finished < chunks && !cancel) {
-            if (progress && !progress((double)finished / chunks)) {
-                cancel = true;
+    // the calling thread reports progress until the chunks are done, or a worker failed
+    parallel(
+        threads, cancel, [&](int) { worker(); },
+        [&] {
+            while (finished < chunks && !cancel) {
+                if (progress && !progress((double)finished / chunks)) {
+                    cancel = true;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        }
-        self.join();
-    }
-    for (std::thread &t : pool) {
-        t.join();
-    }
+        });
     if (cancel) {
         return roll;
     }
@@ -1196,28 +1190,20 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
             }
             return !cancelled;
         };
-        std::vector<std::thread> threads;
-        threads.reserve(3);
-        for (int i = 0; i < 3; i++) {
-            threads.emplace_back([&, i] {
-                const Voter &v = VOTERS[i];
-                const Spectrogram fe =
-                    v.cfp ? computeCFP(mono, v.bpo) : computeCQT(mono, v.bpo, v.scale);
-                if (cancelled) {
-                    return;
-                }
-                const std::vector<float> vr =
-                    nmfRoll(fe, lo, hi, false, voterProgress, v.cfp ? 1 : NH);
-                if (cancelled) {
-                    return;
-                }
-                Activity va = activity(vr, F, n, gp, v.abs, ep.rel, ep.oct);
-                voters[i] = runs(va);
-            });
-        }
-        for (std::thread &t : threads) {
-            t.join();
-        }
+        parallel(3, cancelled, [&](int i) {
+            const Voter &v = VOTERS[i];
+            const Spectrogram fe =
+                v.cfp ? computeCFP(mono, v.bpo) : computeCQT(mono, v.bpo, v.scale);
+            if (cancelled) {
+                return;
+            }
+            const std::vector<float> vr = nmfRoll(fe, lo, hi, false, voterProgress, v.cfp ? 1 : NH);
+            if (cancelled) {
+                return;
+            }
+            Activity va = activity(vr, F, n, gp, v.abs, ep.rel, ep.oct);
+            voters[(size_t)i] = runs(va);
+        });
         if (cancelled) {
             return {};
         }

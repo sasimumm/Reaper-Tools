@@ -8,6 +8,10 @@
 #include <vector>
 
 #include "../src/estimate.h"
+#include "../src/parallel.h"
+
+#include <atomic>
+#include <stdexcept>
 
 static const double SR = 22050;
 
@@ -68,6 +72,41 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
 }
 
 int main() {
+    // parallel(): a worker's exception stops the others and reaches the caller, after every thread
+    // has been joined (an exception escaping a thread would terminate REAPER)
+    {
+        std::atomic<bool> stop{false};
+        std::atomic<int> stopped{0}, polls{0};
+        bool caught = false;
+        try {
+            parallel(
+                4, stop,
+                [&](int i) {
+                    if (i == 1) {
+                        throw std::runtime_error("out of something");
+                    }
+                    while (!stop) {
+                        std::this_thread::yield();
+                    }
+                    stopped++;
+                },
+                [&] {
+                    while (!stop) {
+                        polls++;
+                        std::this_thread::yield();
+                    }
+                });
+        } catch (const std::runtime_error &e) {
+            caught = std::string(e.what()) == "out of something";
+        }
+        assert(caught && stopped == 3);
+        std::atomic<bool> fine{false};
+        std::atomic<int> done{0};
+        parallel(8, fine, [&](int) { done++; });
+        assert(done == 8 && !fine);
+        printf("parallel: failures reach the caller, the other workers stop\n");
+    }
+
     const int lo = 40, hi = 86, n = hi - lo + 1;
 
     // Voices: a held top line over a moving lower one stay in their strands; the lead is the busier strand
