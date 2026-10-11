@@ -12,6 +12,9 @@ See `docs/piano-roll.md` for the full feature plan.
 
 Restart REAPER after deploying.
 
+Voices: the lead goes on "Reascribe notes"; voices 2–4 (harmonies, backing) go on "Reascribe
+voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
+
 Settings are remembered per audio item; "Save as default" makes the current ones the starting
 point for new items. Presets: "Vocal in mix" (centre channel, noise subtraction, 60 Hz–5 kHz),
 "Solo vocal", "Fast runs" (sharper timing). Scroll over the panel to see all settings.
@@ -51,6 +54,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | A | accept all suggested notes in view |
 | cmd+V | paste lyrics: one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
 | S | settings panel |
+| 1–4 | edit voice 1 (lead) to 4; the other voices are shown dimmed |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
 | X | explain away: dim energy on drawn notes and their overtones, so what is still bright needs transcribing |
 | Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |

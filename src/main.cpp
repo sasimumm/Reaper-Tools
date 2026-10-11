@@ -176,7 +176,9 @@ static void openSelected()
     ShowMessageBox("Select an audio item (or a MIDI item on a \"Reascribe notes\" track) first.", "Reascribe", 0);
     return;
   }
-  Window_Open(audio, VoiceItem(audio, 0, true));
+  const int voice = take && TakeIsMIDI(take) ? voiceOfTrack(GetMediaItem_Track(item)) : 0;
+  if (voice == 0) VoiceItem(audio, 0, true); // the lead's track and item, so there is somewhere to listen
+  Window_Open(audio, voice);
 }
 
 static int g_cmdOpen;

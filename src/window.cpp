@@ -31,6 +31,8 @@ static const int GUIDE_THICKNESS = 3;  // overtone hover marks, pixels
 // Colours, 0xRRGGBB.
 static const unsigned int C_BG = 0x1b1b1b, C_RULER = 0x262626, C_TEXT = 0xd0d0d0, C_DIM = 0x8a8a8a;
 static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd, C_SEL_EDGE = 0x2ec4b6;
+static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0x2ec4b6, 0xf4a261, 0xe56fd8, 0x9ee05a};
+static const char *const VOICES[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
 static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_ACCENT = 0x7fd6ff;
 
 // --- state ---------------------------------------------------------------------
@@ -38,6 +40,15 @@ static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_
 static HWND g_hwnd;
 static MediaItem *g_audio, *g_midi; // g_midi: the active voice's notes item
 static int g_voice;                 // active voice, 0 = lead
+static int g_voicePick;             // panel buttons; applied through selectVoice()
+static bool g_showOthers = true;    // show the other voices' notes, dimmed
+struct OtherVoice
+{
+  MediaItem *item = NULL;
+  std::string hash;
+  std::vector<Note> notes;
+};
+static OtherVoice g_others[WINDOW_VOICES];
 static double g_audioPos, g_audioLen, g_audioOffs, g_audioRate;
 
 static NSGTParams g_np;
@@ -382,9 +393,14 @@ static void renderLayer(const Rect &n)
     if (g_explain)
     {
       const double ta = g_view.t(n.l + x), tb = g_view.t(n.l + x + 1);
-      for (const Note &nt : g_ed.notes)
+      auto add = [&](const Note &nt) {
         if (nt.start < tb && nt.end > ta)
           for (int hh = 1; hh <= nh; hh++) explained.push_back(nt.pitch + 12 * log2((double)hh));
+      };
+      for (const Note &nt : g_ed.notes) add(nt);
+      for (int v = 0; v < WINDOW_VOICES; v++)
+        if (v != g_voice)
+          for (const Note &nt : g_others[v].notes) add(nt);
     }
     const double fa = (g_view.t(n.l + x) - g_audioPos) * s.frameRate();
     const double fb = (g_view.t(n.l + x + 1) - g_audioPos) * s.frameRate();
@@ -464,6 +480,32 @@ static void loadNotes()
   g_hash = takeHash(take);
   g_notesVersion++;
   redraw();
+}
+
+// Reads the other voices' notes (display only), when their items changed.
+static void loadOtherVoices(bool force)
+{
+  for (int v = 0; v < WINDOW_VOICES; v++)
+  {
+    OtherVoice &o = g_others[v];
+    if (v == g_voice) { o = OtherVoice(); continue; }
+    MediaItem *item = VoiceItem(g_audio, v, false);
+    MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
+    const std::string h = takeHash(take);
+    if (!force && item == o.item && h == o.hash) continue;
+    o.item = item, o.hash = h, o.notes.clear();
+    int cnt = 0;
+    if (take) MIDI_CountEvts(take, &cnt, NULL, NULL);
+    for (int i = 0; i < cnt; i++)
+    {
+      double st = 0, en = 0;
+      int pitch = 0;
+      MIDI_GetNote(take, i, NULL, NULL, &st, &en, NULL, &pitch, NULL);
+      o.notes.push_back({MIDI_GetProjTimeFromPPQPos(take, st), MIDI_GetProjTimeFromPPQPos(take, en), pitch, false, i});
+    }
+    g_notesVersion++;
+    redraw();
+  }
 }
 
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
@@ -756,6 +798,8 @@ static std::vector<Widget> widgets()
   return {
       {W_BUTTONS, "Presets", NULL, NULL, 0, 0, false, false, 0, NULL, B_PRESET, NULL, PRESETS, 3},
       {W_BUTTONS, "Settings for new items", NULL, NULL, 0, 0, false, false, 0, NULL, B_SAVE_DEFAULT, NULL, DEFAULTS, 2},
+      {W_CHOICE, "Voice (1-4)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_voicePick, VOICES, WINDOW_VOICES},
+      {W_TOGGLE, "Show other voices", NULL, &g_showOthers},
       {W_HEADER, "Display"},
       {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
       {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
@@ -923,6 +967,7 @@ static void resetSettings()
 }
 
 static void setupEditorSnap();
+static void selectVoice(int v);
 static std::string g_savedSettings; // last written to the item, to only write on change
 
 // Per-item settings live in the project's extended state under the item's GUID (that API takes
@@ -1031,6 +1076,7 @@ static void panelMouse(int x, int y, bool down)
     if (i == *w.choice) return;
     *w.choice = i;
     if (w.choice == &g_speed) applySpeed();
+    else if (w.choice == &g_voicePick) g_voicePick = g_voice, selectVoice(i);
     else if (w.analysis) requestAnalysis(false);
   }
 }
@@ -1122,8 +1168,9 @@ static void drawGhosts(Canvas &cv)
     {
       const double y = g_view.y(overtonePitch(nt.pitch, h)), hh = std::max(1.0, g_view.rowH * 0.3);
       const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 2;
-      cv.fill(x0, y0, x1, y0 + 2, C_NOTE, a), cv.fill(x0, y1 - 2, x1, y1, C_NOTE, a);
-      cv.fill(x0, y0, x0 + 2, y1, C_NOTE, a), cv.fill(x1 - 2, y0, x1, y1, C_NOTE, a);
+      const unsigned int col = VOICE_COLOURS[g_voice];
+      cv.fill(x0, y0, x1, y0 + 2, col, a), cv.fill(x0, y1 - 2, x1, y1, col, a);
+      cv.fill(x0, y0, x0 + 2, y1, col, a), cv.fill(x1 - 2, y0, x1, y1, col, a);
     }
   }
 }
@@ -1310,16 +1357,28 @@ static void paint(HDC hdc)
   drawSuggestions(cv, n);
   drawHoverGuides(cv, dc, n);
 
+  // other voices, dimmed and not editable
+  if (g_showOthers)
+    for (int v = 0; v < WINDOW_VOICES; v++)
+      for (const Note &nt : g_others[v].notes)
+      {
+        const int x0 = (int)lround(g_view.x(nt.start)), x1 = std::max(x0 + 2, (int)lround(g_view.x(nt.end)));
+        const int y0 = (int)lround(g_view.y(nt.pitch + 0.5)), y1 = std::max(y0 + 3, (int)lround(g_view.y(nt.pitch - 0.5)));
+        cv.fill(x0, y0, x1, y1, VOICE_COLOURS[v], 80);
+        cv.frame(x0, y0, x1, y1, VOICE_COLOURS[v]);
+      }
+
   // notes
   const int drawing = g_ed.drawing();
+  const unsigned int noteColour = VOICE_COLOURS[g_voice];
   for (size_t i = 0; i < g_ed.notes.size(); i++)
   {
     const Note &nt = g_ed.notes[i];
     const int x0 = (int)lround(g_view.x(nt.start)), x1 = std::max(x0 + 2, (int)lround(g_view.x(nt.end)));
     const int y0 = (int)lround(g_view.y(nt.pitch + 0.5)), y1 = std::max(y0 + 3, (int)lround(g_view.y(nt.pitch - 0.5)));
     const bool sel = nt.sel || (int)i == drawing;
-    cv.fill(x0, y0, x1, y1, sel ? C_SEL : C_NOTE, 235);
-    cv.frame(x0, y0, x1, y1, sel ? C_SEL_EDGE : C_NOTE_EDGE, sel && y1 - y0 > 6 ? 2 : 1);
+    cv.fill(x0, y0, x1, y1, sel ? C_SEL : noteColour, 235);
+    cv.frame(x0, y0, x1, y1, sel ? noteColour : C_NOTE_EDGE, sel && y1 - y0 > 6 ? 2 : 1);
   }
   // lyrics: inside the note when it is tall enough, else just below it
   for (const Note &nt : g_ed.notes)
@@ -1707,6 +1766,18 @@ static void endLyric(bool commit, int dir)
   redraw();
 }
 
+static void selectVoice(int v)
+{
+  if (v < 0 || v >= WINDOW_VOICES || v == g_voice) return;
+  if (g_edit) endLyric(true, 0);
+  g_ed.cancel();
+  g_voice = g_voicePick = v;
+  g_midi = VoiceItem(g_audio, v, false); // created with the first note
+  loadNotes();
+  loadOtherVoices(true);
+  redraw();
+}
+
 static int firstSelected()
 {
   int best = -1;
@@ -1835,6 +1906,7 @@ static bool onKey(int key)
   else if (key == 'G' && !m) g_snapMode = (g_snapMode + 1) % 3, setupEditorSnap();
   else if (key == 'P' && !m) g_showContour = !g_showContour;
   else if (key == 'X' && !m) g_explain = !g_explain;
+  else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) selectVoice(key - '1');
   else if (key == 'Q' && !m) quantiseSelected();
   else if (key == 'B' && !m) selectionIs(true);
   else if (key == 'N' && !m) g_suggest = !g_suggest;
@@ -1863,6 +1935,7 @@ static bool isOurKey(int key, int flags)
     return true;
   case 'A': return true;
   case 'V': return cmd;
+  case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
   case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'B': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
@@ -2065,19 +2138,21 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 // --- lifecycle ---------------------------------------------------------------------
 
-void Window_Open(MediaItem *audio, MediaItem *midi)
+void Window_Open(MediaItem *audio, int voice)
 {
+  voice = std::max(0, std::min(WINDOW_VOICES - 1, voice));
   if (g_hwnd && audio == g_audio)
   {
-    g_midi = midi;
-    loadNotes();
+    selectVoice(voice);
     ShowWindow(g_hwnd, SW_SHOW);
     SetForegroundWindow(g_hwnd);
     return;
   }
   Window_Close();
   clearCache();
-  g_audio = audio, g_midi = midi;
+  g_audio = audio, g_voice = g_voicePick = voice;
+  g_midi = VoiceItem(audio, voice, false);
+  for (OtherVoice &o : g_others) o = OtherVoice();
   g_audioPos = GetMediaItemInfo_Value(audio, "D_POSITION");
   g_audioLen = GetMediaItemInfo_Value(audio, "D_LENGTH");
   MediaItem_Take *take = GetActiveTake(audio);
@@ -2089,6 +2164,7 @@ void Window_Open(MediaItem *audio, MediaItem *midi)
   requestAnalysis(!hadSettings);
   setupEditorSnap();
   loadNotes();
+  loadOtherVoices(true);
 
   // 0x400001: SWELL's "no dialog resource, resizable top-level window"
   g_hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
@@ -2132,6 +2208,8 @@ void Window_Timer()
     requestAnalysis(false);
   }
   if (!g_ed.active() && takeHash(midiTake()) != g_hash) loadNotes(); // edited elsewhere, undo, ...
+  if (!g_midi && !g_ed.active() && (g_midi = VoiceItem(g_audio, g_voice, false))) loadNotes(); // created elsewhere
+  loadOtherVoices(false);
 
   const int state = GetPlayState(), change = GetProjectStateChangeCount(NULL);
   const double playPos = GetPlayPosition2(), cursor = GetCursorPosition();
