@@ -12,6 +12,10 @@ See `docs/piano-roll.md` for the full feature plan.
 
 Restart REAPER after deploying.
 
+Settings are remembered per audio item; "Save as default" makes the current ones the starting
+point for new items. Presets: "Vocal in mix" (centre channel, noise subtraction, 60 Hz–5 kHz),
+"Solo vocal", "Fast runs" (sharper timing). Scroll over the panel to see all settings.
+
 The settings panel also has the analysis channel (Centre = mid minus side, which helps pull a
 centre-panned lead vocal out of a mix) and playback speed (100/75/50 %, pitch preserved).
 

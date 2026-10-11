@@ -729,8 +729,11 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
 // --- settings panel --------------------------------------------------------------
 
-enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE };
-enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE };
+enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE, W_BUTTONS };
+enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE, B_SAVE_DEFAULT, B_LOAD_DEFAULT,
+       B_PRESET = 100 };
+static const char *const PRESETS[] = {"Vocal in mix", "Solo vocal", "Fast runs"};
+static const char *const DEFAULTS[] = {"Save as default", "Load default"};
 struct Widget
 {
   WidgetType type;
@@ -750,6 +753,8 @@ struct Widget
 static std::vector<Widget> widgets()
 {
   return {
+      {W_BUTTONS, "Presets", NULL, NULL, 0, 0, false, false, 0, NULL, B_PRESET, NULL, PRESETS, 3},
+      {W_BUTTONS, "Settings for new items", NULL, NULL, 0, 0, false, false, 0, NULL, B_SAVE_DEFAULT, NULL, DEFAULTS, 2},
       {W_HEADER, "Display"},
       {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
       {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
@@ -788,7 +793,7 @@ static std::vector<Widget> widgets()
   };
 }
 
-static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE ? 20 : t == W_CHOICE ? 42 : 24; }
+static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE ? 20 : t == W_CHOICE || t == W_BUTTONS ? 42 : 24; }
 
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) { return p >= (const void *)&g_rp && p < (const void *)(&g_rp + 1); }
@@ -803,10 +808,26 @@ static double sliderValue(const Widget &w, double f)
   return w.logScale ? w.lo * pow(w.hi / w.lo, f) : w.lo + (w.hi - w.lo) * f;
 }
 
+static int g_panelScroll; // pixels the panel is scrolled down
+
+static int panelContentHeight()
+{
+  int h = 16;
+  for (const Widget &w : widgets()) h += widgetHeight(w.type);
+  return h + 70; // room for the key help
+}
+
+static void scrollPanel(int dy)
+{
+  const Rect p = panelArea();
+  g_panelScroll = std::max(0, std::min(g_panelScroll + dy, panelContentHeight() - (p.b - p.t)));
+  redraw();
+}
+
 static int widgetAt(int y)
 {
   std::vector<Widget> ws = widgets();
-  int top = 8;
+  int top = 8 - g_panelScroll;
   for (size_t i = 0; i < ws.size(); i++)
   {
     const int h = widgetHeight(ws[i].type);
@@ -832,8 +853,122 @@ static void changedSetting(const Widget &w)
   else redraw();
 }
 
+// Settings are remembered per audio item (item extended state) and as defaults for new items
+// (REAPER extended state), as "name=value;" pairs.
+struct Setting
+{
+  const char *name;
+  double *d;
+  bool *b;
+  int *i;
+  double lo, hi; // loaded values are clamped to this range
+};
+static const Setting SETTINGS[] = {
+    {"gamma", &g_np.gamma, NULL, NULL, 3, 40}, {"fmin", &g_np.fmin, NULL, NULL, 20, 500},
+    {"fmax", &g_np.fmax, NULL, NULL, 1000, 11000}, {"channel", NULL, NULL, &g_channel, 0, CH_CENTRE},
+    {"floor", &g_rp.dbFloor, NULL, NULL, -120, -20}, {"contrast", &g_rp.contrast, NULL, NULL, 0.1, 3},
+    {"brightness", &g_rp.brightness, NULL, NULL, -1, 1}, {"bias", &g_rp.bias, NULL, NULL, -2, 2},
+    {"peaks", NULL, &g_rp.peaksOnly}, {"peakdim", &g_rp.peakDim, NULL, NULL, 0, 1},
+    {"denoise", NULL, &g_rp.subtractNoise}, {"noisealpha", &g_rp.noiseAlpha, NULL, NULL, 0, 3},
+    {"noisefrac", &g_rp.noiseFraction, NULL, NULL, 0.01, 0.5}, {"ghosts", NULL, &g_ghosts},
+    {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
+    {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
+    {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
+    {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
+};
+static const char *SETTINGS_KEY = "P_EXT:reascribe_settings", *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
+
+static std::string saveSettings()
+{
+  std::string out;
+  char buf[64];
+  for (const Setting &st : SETTINGS)
+  {
+    if (st.d) snprintf(buf, sizeof(buf), "%s=%.6g;", st.name, *st.d);
+    else if (st.b) snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.b ? 1 : 0);
+    else snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.i);
+    out += buf;
+  }
+  return out;
+}
+
+// Unknown names are ignored; values are clamped (they come from the project file).
+static void loadSettings(const char *str)
+{
+  for (const char *p = str; p && *p;)
+  {
+    const char *eq = strchr(p, '='), *end = strchr(p, ';');
+    if (!eq || !end || eq > end) break;
+    const std::string name(p, eq - p);
+    const double v = atof(eq + 1);
+    for (const Setting &st : SETTINGS)
+      if (name == st.name)
+      {
+        const double c = v >= st.lo ? std::min(v, st.hi) : st.lo; // NaN -> lo
+        if (st.d) *st.d = c;
+        else if (st.b) *st.b = v != 0;
+        else *st.i = (int)c;
+      }
+    p = end + 1;
+  }
+}
+
+static void resetSettings()
+{
+  g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
+  g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
+  g_showContour = g_suggest = g_pitchFromContour = g_audition = true;
+  g_snapMode = SNAP_ONSETS, g_quantStrength = 1;
+}
+
+static void setupEditorSnap();
+static std::string g_savedSettings; // last written to the item, to only write on change
+
+// Returns true if the item had saved settings.
+static bool loadItemSettings()
+{
+  resetSettings();
+  loadSettings(GetExtState(EXT_SECTION, EXT_DEFAULTS));
+  static char buf[65536]; // "NeedBig" API: no size is passed, so leave plenty of room
+  buf[0] = 0;
+  const bool has = GetSetMediaItemInfo_String(g_audio, SETTINGS_KEY, buf, false) && *buf;
+  buf[sizeof(buf) - 1] = 0;
+  if (has) loadSettings(buf);
+  g_savedSettings = saveSettings();
+  return has;
+}
+
+static void saveItemSettings()
+{
+  if (!g_audio || !ValidatePtr2(NULL, g_audio, "MediaItem*")) return;
+  const std::string cur = saveSettings();
+  if (cur == g_savedSettings) return;
+  static char buf[65536];
+  snprintf(buf, sizeof(buf), "%s", cur.c_str());
+  GetSetMediaItemInfo_String(g_audio, SETTINGS_KEY, buf, true);
+  g_savedSettings = cur;
+}
+
+static void applyPreset(int i)
+{
+  if (i == 0) g_channel = CH_CENTRE, g_rp.subtractNoise = true, g_np.fmin = 60, g_np.fmax = 5000, g_np.gamma = 11;
+  else if (i == 1) g_channel = CH_MIX, g_rp.subtractNoise = false, g_np.fmin = 60, g_np.fmax = 6000, g_np.gamma = 11;
+  else if (i == 2) g_np.gamma = 25; // wider bands, shorter windows: sharper timing for fast runs
+  requestAnalysis(true);
+}
+
 static void pressButton(int b)
 {
+  if (b >= B_PRESET) { applyPreset(b - B_PRESET); return; }
+  if (b == B_SAVE_DEFAULT) { SetExtState(EXT_SECTION, EXT_DEFAULTS, saveSettings().c_str(), true); return; }
+  if (b == B_LOAD_DEFAULT)
+  {
+    resetSettings();
+    loadSettings(GetExtState(EXT_SECTION, EXT_DEFAULTS));
+    setupEditorSnap();
+    requestAnalysis(true);
+    return;
+  }
   if (b == B_BAR || b == B_BEAT) { selectionIs(b == B_BAR); return; }
   if (b == B_TEMPO_MARKER) { tempoMarkerAtCursor(); return; }
   if (b == B_QUANTISE) { quantiseSelected(); return; }
@@ -841,7 +976,8 @@ static void pressButton(int b)
   else if (b == B_AUTO_VIEW) autoCalibrateView();
   else if (b == B_RESET)
   {
-    g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
+    resetSettings();
+    setupEditorSnap();
     requestAnalysis(true);
   }
   updateValues();
@@ -877,6 +1013,8 @@ static void panelMouse(int x, int y, bool down)
     else redraw();
   }
   else if (down && w.type == W_BUTTON) pressButton(w.button);
+  else if (down && w.type == W_BUTTONS)
+    pressButton(w.button + std::max(0, std::min(w.optionCount - 1, (x - p.l - 12) * w.optionCount / std::max(1, p.r - p.l - 24))));
   else if (down && w.type == W_CHOICE)
   {
     const int i = std::max(0, std::min(w.optionCount - 1, (x - p.l - 12) * w.optionCount / std::max(1, p.r - p.l - 24)));
@@ -898,7 +1036,7 @@ static void drawPanel(Canvas &cv, HDC dc)
   for (int i = 0; i < 3; i++)
     if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) g_speed = i;
   std::vector<Widget> ws = widgets();
-  int top = 8;
+  int top = 8 - g_panelScroll;
   char buf[64];
   const int l = p.l + 12, r = p.r - 12;
   for (const Widget &w : ws)
@@ -921,13 +1059,13 @@ static void drawPanel(Canvas &cv, HDC dc)
       if (*w.flag) cv.fill(l + 3, top + 8, l + 9, top + 14, C_NOTE);
       text(dc, w.label, l + 18, top, r, top + 22, C_TEXT, DT_LEFT);
     }
-    else if (w.type == W_CHOICE)
+    else if (w.type == W_CHOICE || w.type == W_BUTTONS)
     {
       text(dc, w.label, l, top, r, top + 16, C_TEXT, DT_LEFT);
       for (int i = 0; i < w.optionCount; i++)
       {
         const int bl = l + (r - l) * i / w.optionCount, br = l + (r - l) * (i + 1) / w.optionCount;
-        const bool on = i == *w.choice;
+        const bool on = w.choice && i == *w.choice;
         cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : 0x333333);
         text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : C_TEXT, DT_CENTER);
       }
@@ -939,11 +1077,9 @@ static void drawPanel(Canvas &cv, HDC dc)
     }
     top += h;
   }
-  if (top + 70 > p.b) return;
-  text(dc, "Keys: S panel, G snap, F fit, Z zoom to", l, p.b - 66, r, p.b - 50, C_DIM, DT_LEFT);
-  text(dc, "selection, H ghosts, Enter lyric,", l, p.b - 50, r, p.b - 34, C_DIM, DT_LEFT);
-  text(dc, "[ ] brightness, - = contrast,", l, p.b - 34, r, p.b - 18, C_DIM, DT_LEFT);
-  text(dc, ", . resolution", l, p.b - 18, r, p.b - 2, C_DIM, DT_LEFT);
+  const char *help[] = {"Keys: S panel, G snap, F fit, Z zoom to", "selection, H ghosts, X explain, Enter lyric,",
+                        "[ ] brightness, - = contrast, , . resolution", "Scroll here to see more settings."};
+  for (const char *line : help) text(dc, line, l, top + 6, r, top + 22, C_DIM, DT_LEFT), top += 16;
 }
 
 // --- overtone guides ------------------------------------------------------------------
@@ -1873,6 +2009,11 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     syncViewOrigin();
     const double steps = (short)HIWORD(wParam) / 120.0;
     const int m = mods();
+    if (panelShown() && panelArea().in(pt.x, pt.y))
+    {
+      if (msg == WM_MOUSEWHEEL) scrollPanel((int)lround(-steps * 30));
+      return 0;
+    }
     if (msg == WM_MOUSEHWHEEL) g_view.t0 -= steps * 40 / g_view.pps;
     else if (m & MOD_CMD) zoomTime(pow(WHEEL_ZOOM, steps), pt.x);
     else if (m & MOD_ALT) zoomPitch(pow(WHEEL_ZOOM, steps), pt.y);
@@ -1900,6 +2041,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     DestroyWindow(hwnd);
     return 0;
   case WM_DESTROY:
+    saveItemSettings();
     stopPreviews(false);
     cancelJob();
     clearCache();
@@ -1932,8 +2074,9 @@ void Window_Open(MediaItem *audio, MediaItem *midi)
   g_audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
   g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
   g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(), g_snapTimes.clear();
+  const bool hadSettings = loadItemSettings();
   updateValues();
-  requestAnalysis(true);
+  requestAnalysis(!hadSettings);
   setupEditorSnap();
   loadNotes();
 
@@ -1958,6 +2101,7 @@ void Window_Timer()
   stopPreviews(true);
   if (!g_hwnd) return;
   pollJob();
+  if (g_drag == DRAG_NONE) saveItemSettings();
   if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) { Window_Close(); return; }
 
   // the item may have been moved, trimmed, slipped or sped up: re-analyze

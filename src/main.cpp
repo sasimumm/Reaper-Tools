@@ -76,6 +76,9 @@
 #define REAPERAPI_WANT_SetMediaItemInfo_Value
 #define REAPERAPI_WANT_SetMediaItemTakeInfo_Value
 #define REAPERAPI_WANT_MIDI_SetTextSysexEvt
+#define REAPERAPI_WANT_SetExtState
+#define REAPERAPI_WANT_GetExtState
+#define REAPERAPI_WANT_GetSetMediaItemInfo_String
 #define REAPERAPI_WANT_ValidatePtr2
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
