@@ -98,7 +98,8 @@ static std::string g_savedSettings; // last written to the item, to only write o
 // Per-item settings live in the project's extended state under the item's GUID (that API takes
 // a buffer size, unlike item P_EXT strings).
 static bool itemKey(char *key) {
-    const GUID *g = g_audio ? (const GUID *)GetSetMediaItemInfo(g_audio, "GUID", NULL) : NULL;
+    const GUID *g =
+        g_session.audio ? (const GUID *)GetSetMediaItemInfo(g_session.audio, "GUID", NULL) : NULL;
     if (!g) {
         return false;
     }
@@ -123,7 +124,7 @@ bool loadItemSettings() {
 }
 
 void saveItemSettings() {
-    if (!g_audio || !ValidatePtr2(NULL, g_audio, "MediaItem*")) {
+    if (!g_session.audio || !ValidatePtr2(NULL, g_session.audio, "MediaItem*")) {
         return;
     }
     const std::string cur = saveSettings();

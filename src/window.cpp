@@ -16,13 +16,13 @@ static double g_lastPlayPos, g_lastCursor;
 
 Rect clientRect() {
     RECT r = {0, 0, 0, 0};
-    if (g_hwnd) {
-        GetClientRect(g_hwnd, &r);
+    if (g_ui.hwnd) {
+        GetClientRect(g_ui.hwnd, &r);
     }
     return {0, 0, (int)r.right, (int)r.bottom};
 }
 
-bool panelShown() { return g_panel && clientRect().r >= KB_W + PANEL_W + 100; }
+bool panelShown() { return g_ui.panel && clientRect().r >= KB_W + PANEL_W + 100; }
 Rect noteArea() {
     Rect c = clientRect();
     return {
@@ -53,12 +53,12 @@ Rect panelArea() {
 
 void syncViewOrigin() {
     Rect n = noteArea();
-    g_view.x0 = n.l, g_view.y0 = n.t;
+    g_ui.view.x0 = n.l, g_ui.view.y0 = n.t;
 }
 
 void redraw() {
-    if (g_hwnd) {
-        InvalidateRect(g_hwnd, NULL, FALSE);
+    if (g_ui.hwnd) {
+        InvalidateRect(g_ui.hwnd, NULL, FALSE);
     }
 }
 static void toggleDock();
@@ -68,17 +68,17 @@ static void toggleDock();
 static void fitItem() {
     syncViewOrigin();
     const Rect n = noteArea();
-    g_view.pps = std::max(5.0, (n.r - n.l) / std::max(0.1, g_audioLen * 1.02));
-    g_view.t0 = g_audioPos - 0.01 * g_audioLen;
-    g_view.rowH = std::max(3.0, (double)(n.b - n.t) / (84 - 40 + 1)); // vocal range E2..C6
-    g_view.pitchTop = 84.5;
+    g_ui.view.pps = std::max(5.0, (n.r - n.l) / std::max(0.1, g_session.audioLen * 1.02));
+    g_ui.view.t0 = g_session.audioPos - 0.01 * g_session.audioLen;
+    g_ui.view.rowH = std::max(3.0, (double)(n.b - n.t) / (84 - 40 + 1)); // vocal range E2..C6
+    g_ui.view.pitchTop = 84.5;
     redraw();
 }
 
 static void zoomToSelection() {
     double a = 1e30, b = -1e30;
     int lo = 128, hi = -1;
-    for (const Note &nt : g_ed.notes) {
+    for (const Note &nt : g_session.ed.notes) {
         if (nt.sel) {
             a = std::min(a, nt.start), b = std::max(b, nt.end), lo = std::min(lo, nt.pitch),
             hi = std::max(hi, nt.pitch);
@@ -89,36 +89,37 @@ static void zoomToSelection() {
     }
     const Rect n = noteArea();
     const double len = std::max(0.2, b - a);
-    g_view.pps = std::min(3000.0, (n.r - n.l) / (len * 1.2));
-    g_view.t0 = a - len * 0.1;
-    g_view.rowH = std::min(60.0, std::max(3.0, (double)(n.b - n.t) / (hi - lo + 7)));
-    g_view.pitchTop = hi + 3.5;
+    g_ui.view.pps = std::min(3000.0, (n.r - n.l) / (len * 1.2));
+    g_ui.view.t0 = a - len * 0.1;
+    g_ui.view.rowH = std::min(60.0, std::max(3.0, (double)(n.b - n.t) / (hi - lo + 7)));
+    g_ui.view.pitchTop = hi + 3.5;
     redraw();
 }
 
 static void centreOn(double t) {
     const Rect n = noteArea();
-    g_view.t0 = t - 0.5 * (n.r - n.l) / g_view.pps - (n.l - g_view.x0) / g_view.pps;
+    g_ui.view.t0 = t - 0.5 * (n.r - n.l) / g_ui.view.pps - (n.l - g_ui.view.x0) / g_ui.view.pps;
     redraw();
 }
 
 static void zoomTime(double factor, int x) {
-    const double t = g_view.t(x);
-    g_view.pps = std::min(3000.0, std::max(2.0, g_view.pps * factor));
-    g_view.t0 = t - (x - g_view.x0) / g_view.pps;
+    const double t = g_ui.view.t(x);
+    g_ui.view.pps = std::min(3000.0, std::max(2.0, g_ui.view.pps * factor));
+    g_ui.view.t0 = t - (x - g_ui.view.x0) / g_ui.view.pps;
     redraw();
 }
 
 static void zoomPitch(double factor, int y) {
-    const double p = g_view.p(y);
-    g_view.rowH = std::min(60.0, std::max(3.0, g_view.rowH * factor));
-    g_view.pitchTop = p + (y - g_view.y0) / g_view.rowH;
+    const double p = g_ui.view.p(y);
+    g_ui.view.rowH = std::min(60.0, std::max(3.0, g_ui.view.rowH * factor));
+    g_ui.view.pitchTop = p + (y - g_ui.view.y0) / g_ui.view.rowH;
     redraw();
 }
 
 static void scrollPitch(double semitones) {
-    g_view.pitchTop = std::min(128.0, std::max(g_view.pitchTop + semitones,
-                                               (noteArea().b - noteArea().t) / g_view.rowH - 0.5));
+    g_ui.view.pitchTop =
+        std::min(128.0, std::max(g_ui.view.pitchTop + semitones,
+                                 (noteArea().b - noteArea().t) / g_ui.view.rowH - 0.5));
     redraw();
 }
 
@@ -139,26 +140,26 @@ static void syncArrange() {
         return;
     }
     if (a != g_arrA || b != g_arrB) {
-        g_view.pps = (n.r - n.l) / (b - a), g_view.t0 = a;
+        g_ui.view.pps = (n.r - n.l) / (b - a), g_ui.view.t0 = a;
         redraw();
-    } else if (g_view.t(n.l) != g_ourA || g_view.t(n.r) != g_ourB) {
-        a = g_view.t(n.l), b = g_view.t(n.r);
+    } else if (g_ui.view.t(n.l) != g_ourA || g_ui.view.t(n.r) != g_ourB) {
+        a = g_ui.view.t(n.l), b = g_ui.view.t(n.r);
         GetSet_ArrangeView2(NULL, true, 0, 0, &a, &b);
         GetSet_ArrangeView2(NULL, false, 0, 0, &a, &b); // read back what REAPER made of it
     }
-    g_arrA = a, g_arrB = b, g_ourA = g_view.t(n.l), g_ourB = g_view.t(n.r);
+    g_arrA = a, g_arrB = b, g_ourA = g_ui.view.t(n.l), g_ourB = g_ui.view.t(n.r);
 }
 
 void selectVoice(int v) {
-    if (v < 0 || v >= WINDOW_VOICES || v == g_voice) {
+    if (v < 0 || v >= WINDOW_VOICES || v == g_session.voice) {
         return;
     }
-    if (g_edit) {
+    if (g_ui.edit) {
         endLyric(true, 0);
     }
-    g_ed.cancel();
-    g_voice = g_voicePick = v;
-    g_midi = VoiceItem(g_audio, v, false); // created with the first note
+    g_session.ed.cancel();
+    g_session.voice = g_ui.voicePick = v;
+    g_session.midi = VoiceItem(g_session.audio, v, false); // created with the first note
     loadNotes();
     loadOtherVoices(true);
     redraw();
@@ -186,30 +187,30 @@ static int keyCode(int key, int flags) { return (flags & FVIRTKEY) ? key : key |
 static bool onKey(int key) {
     const int m = mods();
     if (key == VK_DELETE || key == VK_BACK) {
-        if (g_ed.deleteSelected()) {
+        if (g_session.ed.deleteSelected()) {
             commitNotes();
         }
     } else if (key == VK_ESCAPE) {
-        if (g_ed.active()) {
-            g_ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture();
-        } else if (g_ed.selectAll(false)) {
+        if (g_session.ed.active()) {
+            g_session.ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture();
+        } else if (g_session.ed.selectAll(false)) {
             commitNotes();
         }
     } else if (key == 'A' && (m & MOD_CMD)) {
-        if (g_ed.selectAll(true)) {
+        if (g_session.ed.selectAll(true)) {
             commitNotes();
         }
     } else if (key == VK_RETURN) {
         int i = firstSelected();
         if (i < 0) {
-            g_ed.hitTest(g_view, g_mouseX, g_mouseY,
-                         &i); // nothing selected: the note under the mouse
+            g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY,
+                                 &i); // nothing selected: the note under the mouse
         }
         beginLyric(i);
     } else if (key == 'H' && !m) {
         g_settings.ghosts = !g_settings.ghosts;
     } else if (key == 'S' && !m) {
-        g_panel = !g_panel;
+        g_ui.panel = !g_ui.panel;
     } else if (key == 'G' && !m) {
         g_settings.snapMode = (g_settings.snapMode + 1) % 3, setupEditorSnap();
     } else if (key == 'P' && !m) {
@@ -221,7 +222,7 @@ static bool onKey(int key) {
     } else if (key == 'Q' && !m) {
         quantiseSelected();
     } else if (key == 'D' && !m) {
-        g_dockPending = true;
+        g_ui.dockPending = true;
     } else if (key == 'L' && !m) {
         g_settings.linkArrange = !g_settings.linkArrange;
     } else if (key == 'N' && !m) {
@@ -235,7 +236,7 @@ static bool onKey(int key) {
     } else if (key == 'X' && (m & MOD_CMD)) {
         copyNotes(true);
     } else if (key == 'D' && (m & MOD_CMD)) {
-        if (g_ed.duplicateSelected()) {
+        if (g_session.ed.duplicateSelected()) {
             commitNotes();
         }
     } else if (key == 'K' && !m) {
@@ -245,7 +246,7 @@ static bool onKey(int key) {
     } else if (key == 'B' && !m) {
         swapListen();
     } else if (key == 'J' && !m) {
-        if (g_ed.joinSelected()) {
+        if (g_session.ed.joinSelected()) {
             commitNotes();
         }
     } else if (key == 'F' && !m) {
@@ -311,10 +312,10 @@ static bool isOurKey(int key, int flags) {
 }
 
 int Window_TranslateAccel(MSG *msg) {
-    if (!g_hwnd || (msg->hwnd != g_hwnd && !IsChild(g_hwnd, msg->hwnd))) {
+    if (!g_ui.hwnd || (msg->hwnd != g_ui.hwnd && !IsChild(g_ui.hwnd, msg->hwnd))) {
         return 0;
     }
-    if (g_edit && msg->hwnd != g_hwnd) {
+    if (g_ui.edit && msg->hwnd != g_ui.hwnd) {
         // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes to the field
         if (msg->message == WM_KEYDOWN) {
             const int key = (int)msg->wParam, flags = (int)msg->lParam;
@@ -329,9 +330,9 @@ int Window_TranslateAccel(MSG *msg) {
             if (key == '-' && !(flags & FVIRTKEY)) // hyphen: this syllable joins the next one
             {
                 char buf[1024] = "";
-                GetWindowText(g_edit, buf, sizeof(buf) - 1);
+                GetWindowText(g_ui.edit, buf, sizeof(buf) - 1);
                 strlcat(buf, "-", sizeof(buf));
-                SetWindowText(g_edit, buf);
+                SetWindowText(g_ui.edit, buf);
                 endLyric(true, 1);
                 return 1;
             }
@@ -374,16 +375,16 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_LBUTTONDOWN: {
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
         syncViewOrigin();
-        if (g_edit) {
+        if (g_ui.edit) {
             endLyric(true, 0); // clicking elsewhere finishes the lyric
         }
         SetFocus(hwnd);
         if (x < KB_W && y >= noteArea().t && y < noteArea().b) {
-            previewPitch(g_view.pitchAt(y));
+            previewPitch(g_ui.view.pitchAt(y));
             return 0;
         }
         if (x < KB_W && y < RULER_H) {
-            g_panel = !g_panel;
+            g_ui.panel = !g_ui.panel;
             redraw();
             return 0;
         }
@@ -392,10 +393,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         } else if (rulerArea().in(x, y) && (mods() & MOD_SHIFT)) {
             // shift+drag in the ruler: time selection, snapped like notes
             g_drag = DRAG_RULER_SELECT;
-            g_selectAnchor = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
+            g_selectAnchor =
+                (mods() & MOD_ALT) ? g_ui.view.t(x) : g_session.ed.snap(g_ui.view.t(x));
             setSelection(g_selectAnchor, g_selectAnchor);
         } else if (rulerArea().in(x, y)) {
-            g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
+            g_drag = DRAG_RULER, SetEditCurPos(g_ui.view.t(x), false, true);
         } else if (overviewArea().in(x, y)) {
             g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
         } else if (lyricsArea().in(x, y)) {
@@ -403,17 +405,17 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             return 0;
         } else if (noteArea().in(x, y)) {
             int sug = -1;
-            if (g_ed.hitTest(g_view, x, y, NULL) == NoteEditor::NONE &&
+            if (g_session.ed.hitTest(g_ui.view, x, y, NULL) == NoteEditor::NONE &&
                 !(mods() & (MOD_SHIFT | MOD_CMD)) && (sug = suggestionAt(x, y)) >= 0) {
                 acceptSuggestion(sug); // click a suggested note to make it a note
                 return 0;
             }
-            g_drag = DRAG_NOTES, g_ed.mouseDown(g_view, x, y, mods());
+            g_drag = DRAG_NOTES, g_session.ed.mouseDown(g_ui.view, x, y, mods());
             int hit = -1;
-            if (g_ed.hitTest(g_view, x, y, &hit) != NoteEditor::NONE) {
-                previewPitch(g_ed.notes[hit].pitch);
+            if (g_session.ed.hitTest(g_ui.view, x, y, &hit) != NoteEditor::NONE) {
+                previewPitch(g_session.ed.notes[hit].pitch);
             }
-            g_lastDragPitch = hit >= 0 ? g_ed.notes[hit].pitch : -1;
+            previewDragStarted(hit >= 0 ? g_session.ed.notes[hit].pitch : -1);
         } else {
             return 0;
         }
@@ -423,13 +425,14 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_MOUSEMOVE: {
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-        g_mouseX = x, g_mouseY = y;
+        g_ui.mouseX = x, g_ui.mouseY = y;
         if (g_drag == DRAG_NOTES) {
-            g_ed.mouseMove(g_view, x, y, mods()), previewDragged();
+            g_session.ed.mouseMove(g_ui.view, x, y, mods()), previewDragged();
         } else if (g_drag == DRAG_RULER) {
-            SetEditCurPos(g_view.t(x), false, true);
+            SetEditCurPos(g_ui.view.t(x), false, true);
         } else if (g_drag == DRAG_RULER_SELECT) {
-            const double t = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
+            const double t =
+                (mods() & MOD_ALT) ? g_ui.view.t(x) : g_session.ed.snap(g_ui.view.t(x));
             setSelection(std::min(t, g_selectAnchor), std::max(t, g_selectAnchor));
         } else if (g_drag == DRAG_PANEL) {
             panelMouse(x, y, false);
@@ -444,11 +447,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const Drag d = g_drag;
         g_drag = DRAG_NONE;
         ReleaseCapture();
-        const int drawn = d == DRAG_NOTES ? g_ed.drawing() : -1;
-        if (d == DRAG_NOTES && g_ed.mouseUp(g_view, x, y, mods())) {
-            if (drawn >= 0 && drawn < (int)g_ed.notes.size() && g_settings.pitchFromContour &&
-                !(mods() & MOD_ALT)) {
-                pitchFromContour(g_ed.notes[drawn]);
+        const int drawn = d == DRAG_NOTES ? g_session.ed.drawing() : -1;
+        if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
+            if (drawn >= 0 && drawn < (int)g_session.ed.notes.size() &&
+                g_settings.pitchFromContour && !(mods() & MOD_ALT)) {
+                pitchFromContour(g_session.ed.notes[drawn]);
             }
             commitNotes();
         }
@@ -462,14 +465,16 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         // double-click a note to type its lyric
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
         int hit = -1;
-        if (noteArea().in(x, y) && g_ed.hitTest(g_view, x, y, &hit) != NoteEditor::NONE) {
+        if (noteArea().in(x, y) &&
+            g_session.ed.hitTest(g_ui.view, x, y, &hit) != NoteEditor::NONE) {
             beginLyric(hit);
         }
         return 0;
     }
     case WM_RBUTTONDOWN: {
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-        if (noteArea().in(x, y) && !g_ed.active() && g_ed.deleteAt(g_view, x, y)) {
+        if (noteArea().in(x, y) && !g_session.ed.active() &&
+            g_session.ed.deleteAt(g_ui.view, x, y)) {
             commitNotes();
         }
         return 0;
@@ -489,7 +494,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         if (msg == WM_MOUSEHWHEEL || ((m & MOD_SHIFT) && !(m & (MOD_CMD | MOD_ALT)))) {
-            g_view.t0 -= steps * 40 / g_view.pps;
+            g_ui.view.t0 -= steps * 40 / g_ui.view.pps;
         } else if (m & MOD_CMD) {
             zoomTime(pow(WHEEL_ZOOM, steps), pt.x);
         } else if (m & MOD_ALT) {
@@ -525,15 +530,12 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         }
         saveItemSettings();
         stopPreviews(false);
-        g_edit = NULL; // destroyed with the window
+        g_ui.edit = NULL; // destroyed with the window
         if (!g_recreating) {
             cancelJob(), clearCache();
         }
-        if (g_memdc) {
-            SWELL_DeleteGfxContext(g_memdc);
-        }
-        g_memdc = NULL, g_memw = g_memh = 0, g_hwnd = NULL, g_layerValid = false,
-        g_drag = DRAG_NONE;
+        releasePaintCache();
+        g_ui.hwnd = NULL, g_drag = DRAG_NONE;
         return 0;
     }
     return 0;
@@ -549,65 +551,61 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 // (SWELL makes a child view when there is no dialog resource and no 0x400001 style).
 static void createWindow() {
     if (g_docked) {
-        g_hwnd = CreateDialog(NULL, NULL, GetMainHwnd(), dlgProc);
-        if (!g_hwnd) {
+        g_ui.hwnd = CreateDialog(NULL, NULL, GetMainHwnd(), dlgProc);
+        if (!g_ui.hwnd) {
             return;
         }
-        DockWindowAddEx(g_hwnd, "ReaTrace", "reatrace_editor", true);
-        DockWindowActivate(g_hwnd);
+        DockWindowAddEx(g_ui.hwnd, "ReaTrace", "reatrace_editor", true);
+        DockWindowActivate(g_ui.hwnd);
     } else {
         // 0x400001: SWELL's "no dialog resource, resizable top-level window"
-        g_hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
-        if (!g_hwnd) {
+        g_ui.hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
+        if (!g_ui.hwnd) {
             return;
         }
-        SetWindowPos(g_hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
+        SetWindowPos(g_ui.hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
     }
     char title[512];
-    MediaItem_Take *take = GetActiveTake(g_audio);
+    MediaItem_Take *take = GetActiveTake(g_session.audio);
     snprintf(title, sizeof(title), "ReaTrace - %s", take ? GetTakeName(take) : "");
-    SetWindowText(g_hwnd, title);
-    ShowWindow(g_hwnd, SW_SHOW);
+    SetWindowText(g_ui.hwnd, title);
+    ShowWindow(g_ui.hwnd, SW_SHOW);
     fitItem();
 }
 
 static void toggleDock() {
-    const ViewMap view = g_view;
+    const ViewMap view = g_ui.view;
     g_recreating = true;
-    if (g_hwnd) {
-        DestroyWindow(g_hwnd);
+    if (g_ui.hwnd) {
+        DestroyWindow(g_ui.hwnd);
     }
     g_recreating = false;
     g_docked = !g_docked;
     SetExtState(EXT_SECTION, "docked", g_docked ? "1" : "0", true);
     createWindow();
-    g_view = view;
+    g_ui.view = view;
     redraw();
 }
 
 void Window_Open(MediaItem *audio, int voice) {
     voice = std::max(0, std::min(WINDOW_VOICES - 1, voice));
-    if (g_hwnd && audio == g_audio) {
+    if (g_ui.hwnd && audio == g_session.audio) {
         selectVoice(voice);
-        ShowWindow(g_hwnd, SW_SHOW);
-        SetForegroundWindow(g_hwnd);
+        ShowWindow(g_ui.hwnd, SW_SHOW);
+        SetForegroundWindow(g_ui.hwnd);
         return;
     }
     Window_Close();
     clearCache();
-    g_audio = audio, g_voice = g_voicePick = voice;
-    g_midi = VoiceItem(audio, voice, false);
-    for (OtherVoice &o : g_others) {
-        o = OtherVoice();
-    }
-    g_audioPos = GetMediaItemInfo_Value(audio, "D_POSITION");
-    g_audioLen = GetMediaItemInfo_Value(audio, "D_LENGTH");
+    g_session = Session();
+    g_session.audio = audio, g_session.voice = g_ui.voicePick = voice;
+    g_session.midi = VoiceItem(audio, voice, false);
+    g_session.audioPos = GetMediaItemInfo_Value(audio, "D_POSITION");
+    g_session.audioLen = GetMediaItemInfo_Value(audio, "D_LENGTH");
     MediaItem_Take *take = GetActiveTake(audio);
-    g_audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
-    g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
-    g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(),
-    g_snapTimes.clear();
-    g_estimated.clear(), g_estimatedVoice.clear(), g_estimateNote.clear(), g_analysisError.clear();
+    g_session.audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
+    g_session.audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
+    clearAnalysis();
     const bool hadSettings = loadItemSettings();
     updateValues();
     requestAnalysis(!hadSettings);
@@ -621,20 +619,20 @@ void Window_Open(MediaItem *audio, int voice) {
 }
 
 void Window_Close() {
-    if (g_hwnd) {
-        DestroyWindow(g_hwnd);
+    if (g_ui.hwnd) {
+        DestroyWindow(g_ui.hwnd);
     }
 }
 
 void Window_Timer() {
     stopPreviews(true);
-    if (!g_hwnd) {
+    if (!g_ui.hwnd) {
         return;
     }
-    if (g_dockPending) {
-        g_dockPending = false;
+    if (g_ui.dockPending) {
+        g_ui.dockPending = false;
         toggleDock();
-        if (!g_hwnd) {
+        if (!g_ui.hwnd) {
             return;
         }
     }
@@ -643,30 +641,33 @@ void Window_Timer() {
     if (g_drag == DRAG_NONE) {
         saveItemSettings();
     }
-    if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) {
+    if (!ValidatePtr2(NULL, g_session.audio, "MediaItem*")) {
         Window_Close();
         return;
     }
 
     // the item may have been moved, trimmed, slipped or sped up: re-analyze
-    MediaItem_Take *take = GetActiveTake(g_audio);
-    const double pos = GetMediaItemInfo_Value(g_audio, "D_POSITION"),
-                 len = GetMediaItemInfo_Value(g_audio, "D_LENGTH");
+    MediaItem_Take *take = GetActiveTake(g_session.audio);
+    const double pos = GetMediaItemInfo_Value(g_session.audio, "D_POSITION"),
+                 len = GetMediaItemInfo_Value(g_session.audio, "D_LENGTH");
     const double offs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
     const double rate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
     static double s_changedAt = -1; // re-analyze once the item has stopped changing for a moment
-    if (pos != g_audioPos || len != g_audioLen || offs != g_audioOffs || rate != g_audioRate) {
-        g_audioPos = pos, g_audioLen = len, g_audioOffs = offs, g_audioRate = rate;
+    if (pos != g_session.audioPos || len != g_session.audioLen || offs != g_session.audioOffs ||
+        rate != g_session.audioRate) {
+        g_session.audioPos = pos, g_session.audioLen = len, g_session.audioOffs = offs,
+        g_session.audioRate = rate;
         s_changedAt = time_precise();
         redraw();
     } else if (s_changedAt >= 0 && time_precise() - s_changedAt > 0.3) {
         s_changedAt = -1;
         requestAnalysis(false);
     }
-    if (!g_ed.active() && takeHash(midiTake()) != g_hash) {
+    if (!g_session.ed.active() && takeHash(midiTake()) != g_session.hash) {
         loadNotes(); // edited elsewhere, undo, ...
     }
-    if (!g_midi && !g_ed.active() && (g_midi = VoiceItem(g_audio, g_voice, false))) {
+    if (!g_session.midi && !g_session.ed.active() &&
+        (g_session.midi = VoiceItem(g_session.audio, g_session.voice, false))) {
         loadNotes(); // created elsewhere
     }
     loadOtherVoices(false);

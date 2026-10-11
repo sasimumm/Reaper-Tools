@@ -38,8 +38,8 @@ void stopPreviews(bool onlyFinished) {
 }
 
 void previewPitch(int pitch) {
-    if (!g_settings.audition || pitch < 0 || pitch > 127 || !g_midi ||
-        !ValidatePtr2(NULL, g_midi, "MediaItem*")) {
+    if (!g_settings.audition || pitch < 0 || pitch > 127 || !g_session.midi ||
+        !ValidatePtr2(NULL, g_session.midi, "MediaItem*")) {
         return;
     }
     stopPreviews(true);
@@ -86,7 +86,7 @@ void previewPitch(int pitch) {
         return;
     }
     slot->reg.m_out_chan = -1; // -1: play through preview_track
-    slot->reg.preview_track = GetMediaItem_Track(g_midi);
+    slot->reg.preview_track = GetMediaItem_Track(g_session.midi);
     slot->reg.curpos = 0, slot->reg.loop = false, slot->reg.volume = 1;
     slot->playing = PlayTrackPreview2Ex(NULL, &slot->reg, 0, 0) != 0;
     slot->started = time_precise();
@@ -95,10 +95,14 @@ void previewPitch(int pitch) {
     }
 }
 
+static int g_lastDragPitch = -1;
+
+void previewDragStarted(int pitch) { g_lastDragPitch = pitch; }
+
 // While drawing or moving, play the dragged note again whenever its pitch changes.
 void previewDragged() {
-    const int dn = g_ed.dragNote();
-    const int pitch = dn >= 0 ? g_ed.notes[dn].pitch : -1;
+    const int dn = g_session.ed.dragNote();
+    const int pitch = dn >= 0 ? g_session.ed.notes[dn].pitch : -1;
     if (pitch >= 0 && pitch != g_lastDragPitch) {
         previewPitch(pitch);
     }

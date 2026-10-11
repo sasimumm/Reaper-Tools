@@ -3,13 +3,13 @@
 // --- spectrogram ---------------------------------------------------------------
 
 void updateValues() {
-    renderValues(g_spec, g_settings.rp, g_val);
-    makeColormap(g_settings.rp.bias, g_lut);
-    g_valVersion++;
+    renderValues(g_analysis.spec, g_settings.rp, g_analysis.val);
+    makeColormap(g_settings.rp.bias, g_analysis.lut);
+    g_analysis.valVersion++;
     redraw();
 }
 
-double frameTime(double f) { return g_audioPos + f / g_spec.frameRate(); }
+double frameTime(double f) { return g_session.audioPos + f / g_analysis.spec.frameRate(); }
 
 // What an analysis depends on: if any of it changes, that channel is recomputed.
 struct AnalysisKey {
@@ -249,23 +249,25 @@ void cancelJob() {
 }
 
 static void install(const ChannelCache &c) {
-    g_spec = c.spec;
-    g_contour = c.vocal.contour, g_segments = c.vocal.segments, g_onsets = c.vocal.onsets;
-    g_estimated = c.vocal.estimated, g_estimatedVoice = c.vocal.estimatedVoice,
-    g_estimateNote = c.vocal.estimateNote;
-    g_snapTimes.clear();
-    for (int f : g_onsets) {
-        g_snapTimes.push_back(frameTime(f));
+    g_analysis.spec = c.spec;
+    g_analysis.contour = c.vocal.contour, g_analysis.segments = c.vocal.segments,
+    g_analysis.onsets = c.vocal.onsets;
+    g_analysis.estimated = c.vocal.estimated, g_analysis.estimatedVoice = c.vocal.estimatedVoice,
+    g_analysis.estimateNote = c.vocal.estimateNote;
+    g_analysis.snapTimes.clear();
+    for (int f : g_analysis.onsets) {
+        g_analysis.snapTimes.push_back(frameTime(f));
     }
-    for (const Segment &sg : g_segments) {
-        g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
+    for (const Segment &sg : g_analysis.segments) {
+        g_analysis.snapTimes.push_back(frameTime(sg.f0)),
+            g_analysis.snapTimes.push_back(frameTime(sg.f1 + 1));
     }
-    std::sort(g_snapTimes.begin(), g_snapTimes.end());
-    estimateNoise(g_spec, g_settings.rp.noiseFraction);
+    std::sort(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end());
+    estimateNoise(g_analysis.spec, g_settings.rp.noiseFraction);
     if (g_autoOnInstall) {
-        autoCalibrate(g_spec, g_settings.rp), g_autoOnInstall = false;
+        autoCalibrate(g_analysis.spec, g_settings.rp), g_autoOnInstall = false;
     }
-    g_analysisDirty = false;
+    g_ui.analysisDirty = false;
     updateValues();
 }
 
@@ -275,22 +277,22 @@ static const double MAX_ANALYSIS_SECONDS = 15 * 60;
 
 // Starts (or reuses from the cache) the analysis for the current channel and settings.
 void requestAnalysis(bool autoCalibrateAfter) {
-    MediaItem_Take *take = GetActiveTake(g_audio);
+    MediaItem_Take *take = GetActiveTake(g_session.audio);
     if (!take) {
         return;
     }
     g_autoOnInstall |= autoCalibrateAfter;
     g_settings.np.binsPerOctave = 12 * (int)lround(g_settings.binsPerSemitone);
     cancelJob();
-    g_analysisError.clear();
-    if (g_audioLen > MAX_ANALYSIS_SECONDS) {
-        g_analysisError =
+    g_analysis.error.clear();
+    if (g_session.audioLen > MAX_ANALYSIS_SECONDS) {
+        g_analysis.error =
             "not analysed: items over 15 minutes need too much memory; split the item";
         redraw();
         return;
     }
-    const AnalysisKey key = {g_settings.np, g_audioPos,  g_audioLen,
-                             g_audioOffs,   g_audioRate, g_settings.estimateVote};
+    const AnalysisKey key = {g_settings.np,       g_session.audioPos,  g_session.audioLen,
+                             g_session.audioOffs, g_session.audioRate, g_settings.estimateVote};
     const int ch = g_settings.channel;
     if (cached(ch, key) && g_cache[ch].vocalValid) {
         install(g_cache[ch]);
@@ -315,12 +317,12 @@ void requestAnalysis(bool autoCalibrateAfter) {
         job->need[CH_MIX] = job->need[CH_SIDE] = false;
         job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
     }
-    readAudio(take, g_audioLen, g_settings.np.sampleRate, job->left,
+    readAudio(take, g_session.audioLen, g_settings.np.sampleRate, job->left,
               job->right); // the note estimator always needs it
     Job *j = job.get();
     job->thread = std::thread([j] { j->run(); });
     g_job = std::move(job);
-    g_analysisDirty = false;
+    g_ui.analysisDirty = false;
     redraw();
 }
 
@@ -336,7 +338,7 @@ void pollJob() {
     g_job->thread.join();
     Job &j = *g_job;
     if (!j.error.empty()) {
-        g_analysisError = "analysis failed: " + j.error;
+        g_analysis.error = "analysis failed: " + j.error;
         g_job.reset();
         redraw();
         return;
@@ -357,3 +359,5 @@ void pollJob() {
 
 // Progress of the running analysis in permille, -1 if none.
 int analysisProgress() { return g_job ? g_job->permille.load() : -1; }
+
+void clearAnalysis() { g_analysis = AnalysisResult(); }

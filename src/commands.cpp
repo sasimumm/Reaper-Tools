@@ -2,20 +2,23 @@
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
 const std::vector<Segment> &suggestions() {
-    return g_settings.suggestFrom ? g_segments : g_estimated;
+    return g_settings.suggestFrom ? g_analysis.segments : g_analysis.estimated;
 }
 // The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the active voice's.
 int suggestionVoice(size_t i) {
-    return g_settings.suggestFrom || i >= g_estimatedVoice.size() ? g_voice : g_estimatedVoice[i];
+    return g_settings.suggestFrom || i >= g_analysis.estimatedVoice.size()
+               ? g_session.voice
+               : g_analysis.estimatedVoice[i];
 }
 
 // --- grid ------------------------------------------------------------------------
 
 // Finest straight division (in quarter notes) at least 10 px apart, or 0 for "measures".
 double gridStepQN() {
-    const double tMid = g_view.t(g_view.x0 + 200), qn = TimeMap2_timeToQN(NULL, tMid);
+    const double tMid = g_ui.view.t(g_ui.view.x0 + 200), qn = TimeMap2_timeToQN(NULL, tMid);
     for (double step : {0.125, 0.25, 0.5, 1.0}) {
-        if ((TimeMap2_QNToTime(NULL, qn + step) - TimeMap2_QNToTime(NULL, qn)) * g_view.pps >= 10) {
+        if ((TimeMap2_QNToTime(NULL, qn + step) - TimeMap2_QNToTime(NULL, qn)) * g_ui.view.pps >=
+            10) {
             return step;
         }
     }
@@ -37,14 +40,14 @@ static double snapToGrid(double t) {
 // Moves selected notes' starts and ends towards the grid by the quantise strength.
 void quantiseSelected() {
     bool any = false;
-    for (Note &n : g_ed.notes) {
+    for (Note &n : g_session.ed.notes) {
         if (!n.sel) {
             continue;
         }
         const double s = n.start + (snapToGrid(n.start) - n.start) * g_settings.quantStrength;
         double e = n.end + (snapToGrid(n.end) - n.end) * g_settings.quantStrength;
-        if (e < s + g_ed.minLen) {
-            e = std::max(n.end - n.start + s, s + g_ed.minLen);
+        if (e < s + g_session.ed.minLen) {
+            e = std::max(n.end - n.start + s, s + g_session.ed.minLen);
         }
         any |= s != n.start || e != n.end;
         n.start = s, n.end = e;
@@ -64,14 +67,14 @@ bool covered(const Segment &sg) {
         return fabs(n.pitch - sg.pitch) <= 1 &&
                std::min(b, n.end) - std::max(a, n.start) > 0.3 * (b - a);
     };
-    for (const Note &n : g_ed.notes) {
+    for (const Note &n : g_session.ed.notes) {
         if (covers(n)) {
             return true;
         }
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        for (const Note &n : g_others[v].notes) {
-            if (v != g_voice && covers(n)) {
+        for (const Note &n : g_session.others[v].notes) {
+            if (v != g_session.voice && covers(n)) {
                 return true;
             }
         }
@@ -81,9 +84,10 @@ bool covered(const Segment &sg) {
 
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
     const int p = (int)lround(sg.pitch);
-    *x0 = (int)lround(g_view.x(frameTime(sg.f0))),
-    *x1 = std::max(*x0 + 2, (int)lround(g_view.x(frameTime(sg.f1 + 1))));
-    *y0 = (int)lround(g_view.y(p + 0.5)), *y1 = std::max(*y0 + 3, (int)lround(g_view.y(p - 0.5)));
+    *x0 = (int)lround(g_ui.view.x(frameTime(sg.f0))),
+    *x1 = std::max(*x0 + 2, (int)lround(g_ui.view.x(frameTime(sg.f1 + 1))));
+    *y0 = (int)lround(g_ui.view.y(p + 0.5)),
+    *y1 = std::max(*y0 + 3, (int)lround(g_ui.view.y(p - 0.5)));
 }
 
 int suggestionAt(int x, int y) {
@@ -103,8 +107,9 @@ int suggestionAt(int x, int y) {
 
 int firstSelected() {
     int best = -1;
-    for (size_t i = 0; i < g_ed.notes.size(); i++) {
-        if (g_ed.notes[i].sel && (best < 0 || g_ed.notes[i].start < g_ed.notes[best].start)) {
+    for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
+        if (g_session.ed.notes[i].sel &&
+            (best < 0 || g_session.ed.notes[i].start < g_session.ed.notes[best].start)) {
             best = (int)i;
         }
     }
@@ -112,12 +117,12 @@ int firstSelected() {
 }
 
 static double snapToOnsets(double t) {
-    auto it = std::lower_bound(g_snapTimes.begin(), g_snapTimes.end(), t);
+    auto it = std::lower_bound(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end(), t);
     double best = t, dist = ONSET_SNAP_RANGE;
-    if (it != g_snapTimes.end() && *it - t <= dist) {
+    if (it != g_analysis.snapTimes.end() && *it - t <= dist) {
         best = *it, dist = *it - t;
     }
-    if (it != g_snapTimes.begin() && t - *(it - 1) < dist) {
+    if (it != g_analysis.snapTimes.begin() && t - *(it - 1) < dist) {
         best = *(it - 1);
     }
     return best;
@@ -125,20 +130,21 @@ static double snapToOnsets(double t) {
 
 void setupEditorSnap() {
     if (g_settings.snapMode == SNAP_GRID) {
-        g_ed.snap = snapToGrid;
+        g_session.ed.snap = snapToGrid;
     } else if (g_settings.snapMode == SNAP_ONSETS) {
-        g_ed.snap = snapToOnsets;
+        g_session.ed.snap = snapToOnsets;
     } else {
-        g_ed.snap = [](double t) { return t; };
+        g_session.ed.snap = [](double t) { return t; };
     }
 }
 
 void acceptSuggestion(int i) {
     const Segment &sg = suggestions()[i];
-    for (Note &o : g_ed.notes) {
+    for (Note &o : g_session.ed.notes) {
         o.sel = false;
     }
-    g_ed.notes.push_back({frameTime(sg.f0), frameTime(sg.f1 + 1), (int)lround(sg.pitch), true, -1});
+    g_session.ed.notes.push_back(
+        {frameTime(sg.f0), frameTime(sg.f1 + 1), (int)lround(sg.pitch), true, -1});
     previewPitch((int)lround(sg.pitch));
     commitNotes();
 }
@@ -152,25 +158,26 @@ void acceptVisibleSuggestions() {
         const Segment &sg = sug[i];
         const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
         const int v = suggestionVoice(i);
-        if (v < 0 || b < g_view.t(n.l) || a > g_view.t(n.r) || covered(sg)) {
+        if (v < 0 || b < g_ui.view.t(n.l) || a > g_ui.view.t(n.r) || covered(sg)) {
             continue;
         }
         byVoice[v].push_back({a, b, (int)lround(sg.pitch), false, -1});
     }
     bool others = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        others |= v != g_voice && !byVoice[v].empty();
+        others |= v != g_session.voice && !byVoice[v].empty();
     }
     if (others) {
         Undo_BeginBlock2(NULL);
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (v != g_voice && !byVoice[v].empty()) {
+        if (v != g_session.voice && !byVoice[v].empty()) {
             insertIntoVoice(v, byVoice[v]);
         }
     }
-    if (!byVoice[g_voice].empty()) {
-        g_ed.notes.insert(g_ed.notes.end(), byVoice[g_voice].begin(), byVoice[g_voice].end());
+    if (!byVoice[g_session.voice].empty()) {
+        g_session.ed.notes.insert(g_session.ed.notes.end(), byVoice[g_session.voice].begin(),
+                                  byVoice[g_session.voice].end());
         commitNotes();
     }
     if (others) {
@@ -182,10 +189,11 @@ void acceptVisibleSuggestions() {
 
 // A freshly drawn note takes the median sung pitch under it when that is within two semitones.
 void pitchFromContour(Note &nt) {
-    const double fr = g_spec.frameRate();
+    const double fr = g_analysis.spec.frameRate();
     double sung = 0;
-    if (contourMedian(g_contour, (int)lround((nt.start - g_audioPos) * fr),
-                      (int)lround((nt.end - g_audioPos) * fr), (int)lround(0.05 * fr), &sung) &&
+    if (contourMedian(g_analysis.contour, (int)lround((nt.start - g_session.audioPos) * fr),
+                      (int)lround((nt.end - g_session.audioPos) * fr), (int)lround(0.05 * fr),
+                      &sung) &&
         fabs(sung - nt.pitch) <= 2) {
         nt.pitch = (int)lround(sung);
     }
@@ -197,12 +205,12 @@ static std::vector<Note> g_noteClip;
 static std::string g_noteClipText;
 
 void copyNotes(bool cut) {
-    std::vector<Note> clip = g_ed.copySelected();
+    std::vector<Note> clip = g_session.ed.copySelected();
     if (clip.empty()) {
         return;
     }
     g_noteClip = clip, g_noteClipText = clipboardText();
-    if (cut && g_ed.deleteSelected()) {
+    if (cut && g_session.ed.deleteSelected()) {
         commitNotes();
     }
 }
@@ -213,7 +221,7 @@ void paste() {
         pasteLyrics(text);
         return;
     }
-    g_ed.paste(g_noteClip, GetCursorPosition());
+    g_session.ed.paste(g_noteClip, GetCursorPosition());
     commitNotes();
 }
 
@@ -230,7 +238,7 @@ void loopPlay() {
         return;
     }
     double a = 1e30, b = -1e30;
-    for (const Note &nt : g_ed.notes) {
+    for (const Note &nt : g_session.ed.notes) {
         if (nt.sel) {
             a = std::min(a, nt.start), b = std::max(b, nt.end);
         }
@@ -252,14 +260,14 @@ void loopPlay() {
 void splitNotes() {
     const Rect n = noteArea();
     int hit = -1;
-    const bool inArea = n.in(g_mouseX, g_mouseY);
+    const bool inArea = n.in(g_ui.mouseX, g_ui.mouseY);
     if (inArea) {
-        g_ed.hitTest(g_view, g_mouseX, g_mouseY, &hit);
+        g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &hit);
     }
-    const double t = inArea
-                         ? ((mods() & MOD_ALT) ? g_view.t(g_mouseX) : g_ed.snap(g_view.t(g_mouseX)))
-                         : GetCursorPosition();
-    if (g_ed.splitAt(t, hit)) {
+    const double t = inArea ? ((mods() & MOD_ALT) ? g_ui.view.t(g_ui.mouseX)
+                                                  : g_session.ed.snap(g_ui.view.t(g_ui.mouseX)))
+                            : GetCursorPosition();
+    if (g_session.ed.splitAt(t, hit)) {
         commitNotes();
     }
 }

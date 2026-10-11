@@ -62,10 +62,10 @@ static std::vector<Widget> widgets() {
          .optionCount = 2},
         {.type = W_CHOICE,
          .label = "Voice (1-4)",
-         .choice = &g_voicePick,
+         .choice = &g_ui.voicePick,
          .options = VOICES,
          .optionCount = WINDOW_VOICES},
-        {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_showOthers},
+        {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_ui.showOthers},
         {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
         {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_settings.followTheme},
         {.type = W_TOGGLE,
@@ -294,21 +294,21 @@ static int widgetAt(int y) {
 
 static void autoCalibrateView() {
     const Rect n = noteArea();
-    const int f0 = (int)((g_view.t(n.l) - g_audioPos) * g_spec.frameRate());
-    const int f1 = (int)((g_view.t(n.r) - g_audioPos) * g_spec.frameRate()) + 1;
-    autoCalibrate(g_spec, g_settings.rp, f0, f1);
+    const int f0 = (int)((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec.frameRate());
+    const int f1 = (int)((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec.frameRate()) + 1;
+    autoCalibrate(g_analysis.spec, g_settings.rp, f0, f1);
 }
 
 static void applyNotesVolume();
 
 static void changedSetting(const Widget &w) {
     if (w.analysis) {
-        g_analysisDirty = true;
+        g_ui.analysisDirty = true;
         redraw();
         return;
     } // recomputed on mouse up
     if (w.value == &g_settings.rp.noiseFraction) {
-        estimateNoise(g_spec, g_settings.rp.noiseFraction);
+        estimateNoise(g_analysis.spec, g_settings.rp.noiseFraction);
     }
     if (w.value == &g_notesDb) {
         applyNotesVolume();
@@ -339,7 +339,7 @@ static void pressButton(int b) {
         return;
     }
     if (b == B_DOCK) {
-        g_dockPending = true;
+        g_ui.dockPending = true;
         return;
     }
     if (b == B_SAVE_DEFAULT) {
@@ -358,7 +358,7 @@ static void pressButton(int b) {
         return;
     }
     if (b == B_AUTO_ALL) {
-        autoCalibrate(g_spec, g_settings.rp);
+        autoCalibrate(g_analysis.spec, g_settings.rp);
     } else if (b == B_AUTO_VIEW) {
         autoCalibrateView();
     } else if (b == B_RESET) {
@@ -385,7 +385,7 @@ static void applySpeed() {
 static std::vector<MediaTrack *> voiceTracks() {
     std::vector<MediaTrack *> out;
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (MediaItem *it = VoiceItem(g_audio, v, false)) {
+        if (MediaItem *it = VoiceItem(g_session.audio, v, false)) {
             out.push_back(GetMediaItem_Track(it));
         }
     }
@@ -393,7 +393,7 @@ static std::vector<MediaTrack *> voiceTracks() {
 }
 
 static void applyListen() {
-    if (MediaTrack *a = GetMediaItem_Track(g_audio)) {
+    if (MediaTrack *a = GetMediaItem_Track(g_session.audio)) {
         SetMediaTrackInfo_Value(a, "B_MUTE", g_listen == LISTEN_NOTES);
     }
     for (MediaTrack *t : voiceTracks()) {
@@ -417,7 +417,7 @@ static void applyNotesVolume() {
 
 // Mutes and volume can also change in REAPER: show what the tracks say.
 static void readBalance() {
-    MediaTrack *a = GetMediaItem_Track(g_audio);
+    MediaTrack *a = GetMediaItem_Track(g_session.audio);
     const std::vector<MediaTrack *> vt = voiceTracks();
     const bool audioMuted = a && GetMediaTrackInfo_Value(a, "B_MUTE") != 0;
     const bool notesMuted = !vt.empty() && GetMediaTrackInfo_Value(vt[0], "B_MUTE") != 0;
@@ -470,8 +470,8 @@ void panelMouse(int x, int y, bool down) {
             applySpeed();
         } else if (w.choice == &g_listen) {
             applyListen();
-        } else if (w.choice == &g_voicePick) {
-            g_voicePick = g_voice, selectVoice(i);
+        } else if (w.choice == &g_ui.voicePick) {
+            g_ui.voicePick = g_session.voice, selectVoice(i);
         } else if (w.analysis) {
             requestAnalysis(false);
         }
@@ -483,7 +483,7 @@ void drawPanel(Canvas &cv, HDC dc) {
     if (p.r <= p.l) {
         return;
     }
-    cv.fill(p.l, p.t, p.r, p.b, C_PANEL);
+    cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
     cv.fill(p.l, p.t, p.l + 1, p.b, 0x000000);
     // show the actual playrate, which can also be changed elsewhere
     const double rate = Master_GetPlayRate(NULL);
@@ -502,34 +502,34 @@ void drawPanel(Canvas &cv, HDC dc) {
         if (w.type == W_HEADER) {
             text(dc, w.label, l, top + 4, r, top + h, C_ACCENT, DT_LEFT);
         } else if (w.type == W_SLIDER) {
-            text(dc, w.label, l, top, r, top + 16, C_TEXT, DT_LEFT);
+            text(dc, w.label, l, top, r, top + 16, g_theme.text, DT_LEFT);
             snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
-            text(dc, buf, l, top, r, top + 16, C_DIM, DT_RIGHT);
+            text(dc, buf, l, top, r, top + 16, g_theme.dim, DT_RIGHT);
             const int by = top + 20,
                       bx = l + (int)lround((r - l) *
                                            std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
-            cv.fill(l, by + 3, r, by + 7, C_TRACK);
-            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_analysisDirty ? 0xc0a040 : 0x3a8a84);
-            cv.fill(bx - 3, by, bx + 3, by + 10, C_TEXT);
+            cv.fill(l, by + 3, r, by + 7, g_theme.track);
+            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? 0xc0a040 : 0x3a8a84);
+            cv.fill(bx - 3, by, bx + 3, by + 10, g_theme.text);
         } else if (w.type == W_TOGGLE) {
-            cv.frame(l, top + 5, l + 12, top + 17, C_TEXT);
+            cv.frame(l, top + 5, l + 12, top + 17, g_theme.text);
             if (*w.flag) {
                 cv.fill(l + 3, top + 8, l + 9, top + 14, C_NOTE);
             }
-            text(dc, w.label, l + 18, top, r, top + 22, C_TEXT, DT_LEFT);
+            text(dc, w.label, l + 18, top, r, top + 22, g_theme.text, DT_LEFT);
         } else if (w.type == W_CHOICE || w.type == W_BUTTONS) {
-            text(dc, w.label, l, top, r, top + 16, C_TEXT, DT_LEFT);
+            text(dc, w.label, l, top, r, top + 16, g_theme.text, DT_LEFT);
             for (int i = 0; i < w.optionCount; i++) {
                 const int bl = l + (r - l) * i / w.optionCount,
                           br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
-                cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : C_BUTTON);
-                text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : C_TEXT,
+                cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : g_theme.button);
+                text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : g_theme.text,
                      DT_CENTER);
             }
         } else {
-            cv.fill(l, top + 2, r, top + h - 2, C_BUTTON);
-            text(dc, w.label, l, top + 2, r, top + h - 2, C_TEXT, DT_CENTER);
+            cv.fill(l, top + 2, r, top + h - 2, g_theme.button);
+            text(dc, w.label, l, top + 2, r, top + h - 2, g_theme.text, DT_CENTER);
         }
         top += h;
     }
@@ -538,12 +538,12 @@ void drawPanel(Canvas &cv, HDC dc) {
         "[ ] brightness, - = contrast, , . resolution", "Scroll here to see more settings."
     };
     for (const char *line : help) {
-        text(dc, line, l, top + 6, r, top + 22, C_DIM, DT_LEFT), top += 16;
+        text(dc, line, l, top + 6, r, top + 22, g_theme.dim, DT_LEFT), top += 16;
     }
 }
 
 void finishPanelDrag() {
-    if (g_analysisDirty) {
+    if (g_ui.analysisDirty) {
         requestAnalysis(false);
     }
     g_panelWidget = -1;

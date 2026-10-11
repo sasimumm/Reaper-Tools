@@ -31,52 +31,28 @@
 // Layout, in pixels.
 static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18,
                  OVERVIEW_H = 28, CHORDS_H = 20;
-inline unsigned int C_BG, C_RULER, C_TEXT, C_DIM, C_PANEL, C_BUTTON, C_TRACK;
+// Colours that follow REAPER's theme (paint.cpp's applyTheme), 0xRRGGBB.
+struct Theme {
+    unsigned int bg = 0, ruler = 0, text = 0, dim = 0, panel = 0, button = 0, track = 0;
+};
+inline Theme g_theme;
 static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd;
 static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_ACCENT = 0x7fd6ff;
 
 // --- state ---------------------------------------------------------------------
 
-inline HWND g_hwnd;
-inline MediaItem *g_audio, *g_midi; // g_midi: the active voice's notes item
-inline int g_voice;                 // active voice, 0 = lead
-inline int g_voicePick;             // panel buttons; applied through selectVoice()
-inline bool
-    g_dockPending; // toggle docking on the next timer tick, outside the window's own handlers
-inline bool g_showOthers = true; // show the other voices' notes, dimmed
 struct OtherVoice {
     MediaItem *item = NULL;
     std::string hash;
     std::vector<Note> notes;
 };
-inline OtherVoice g_others[WINDOW_VOICES];
-inline double g_audioPos, g_audioLen, g_audioOffs, g_audioRate;
-
-inline Spectrogram g_spec;
-inline std::vector<unsigned char> g_val; // renderValues() output, one byte per cell
-inline unsigned int g_lut[256];
-inline int g_valVersion;
-
-inline ViewMap g_view;
-inline NoteEditor g_ed;
-inline std::string g_hash;
 // Snapping: onsets (and note changes in the pitch contour) by default, since recordings are
 // usually free tempo and the grid means nothing until a tempo map is fitted.
 enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
 
-inline Contour g_contour;
-inline std::vector<Segment>
-    g_segments; // stable-pitch stretches of the contour (snapping; suggestions if chosen)
-inline std::vector<Segment>
-    g_estimated; // notes from the estimator (estimate.h), the default suggestions
-inline std::vector<int> g_estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
-inline std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
-inline std::string g_analysisError; // why there is no analysis (failed, or the item is too long)
 const std::vector<Segment> &suggestions();
 int suggestionVoice(size_t i);
 
-inline std::vector<int> g_onsets;       // frames
-inline std::vector<double> g_snapTimes; // onsets and segment edges, project time, sorted
 enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
 
 // Everything remembered per item (settings.cpp saves and loads it): the defaults are here only.
@@ -100,17 +76,52 @@ struct Settings {
     bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
 };
 inline Settings g_settings;
-inline bool g_panel = true;
-inline int g_notesVersion; // bumped whenever notes are loaded
 
-inline HWND g_edit; // lyric edit field while typing; identifies its note by start and pitch
-inline bool g_analysisDirty;
-inline int g_mouseX = -1, g_mouseY = -1;
+// The item being transcribed and the active voice's notes (window.cpp opens it, takesync.cpp syncs it).
+struct Session {
+    MediaItem *audio = NULL, *midi = NULL; // midi: the active voice's notes item
+    int voice = 0;                         // active voice, 0 = lead
+    OtherVoice others[WINDOW_VOICES];
+    double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1; // as analysed
+    NoteEditor ed;
+    std::string hash;     // the take's MIDI hash when the notes were loaded
+    int notesVersion = 0; // bumped whenever notes are loaded
+};
+inline Session g_session;
 
-// Drawing happens in device pixels: g_scale per point (2 on Retina). Layout stays in points.
-inline HDC g_memdc;
-inline int g_memw, g_memh, g_scale = 1, g_fontScale;
-inline bool g_layerValid;
+// The installed analysis of the item (written only by analysis.cpp's install()).
+struct AnalysisResult {
+    Spectrogram spec;
+    std::vector<unsigned char> val; // renderValues() output, one byte per cell
+    unsigned int lut[256] = {};
+    int valVersion = 0;
+    Contour contour;
+    std::vector<Segment>
+        segments; // stable-pitch stretches of the contour (snapping; suggestions if chosen)
+    std::vector<Segment>
+        estimated; // notes from the estimator (estimate.h), the default suggestions
+    std::vector<int> estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
+    std::vector<int> onsets;         // frames
+    std::vector<double> snapTimes;   // onsets and segment edges, project time, sorted
+    std::string estimateNote;        // why the estimator ran without basic-pitch, if it did
+    std::string error;               // why there is no analysis (failed, or the item is too long)
+};
+inline AnalysisResult g_analysis;
+
+// The window and what's on screen.
+struct WindowState {
+    HWND hwnd = NULL;
+    ViewMap view;
+    bool panel = true;
+    bool showOthers = true; // show the other voices' notes, dimmed
+    int voicePick = 0;      // panel buttons; applied through selectVoice()
+    bool dockPending =
+        false;        // toggle docking on the next timer tick, outside the window's own handlers
+    HWND edit = NULL; // lyric edit field while typing; identifies its note by start and pitch
+    bool analysisDirty = false; // an analysis slider moved; recomputed on mouse up
+    int mouseX = -1, mouseY = -1;
+};
+inline WindowState g_ui;
 
 struct Rect {
     int l, t, r, b;
@@ -129,6 +140,7 @@ void redraw();
 void updateValues();
 double frameTime(double f);
 void clearCache();
+void clearAnalysis(); // before analysing another item
 void cancelJob();
 void requestAnalysis(bool autoCalibrateAfter);
 void pollJob();
@@ -149,9 +161,10 @@ struct Canvas {
     unsigned int *px;
     int w, h;
     Rect clip;
+    int scale; // device pixels per point
 
     void fill(int x0, int y0, int x1, int y1, unsigned int col, int a = 256) {
-        const int s = g_scale;
+        const int s = scale;
         x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
         x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
         for (int y = y0; y < y1; y++) {
@@ -193,11 +206,12 @@ void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1);
 int suggestionAt(int x, int y);
 int lyricAt(int x);
 void paint(HDC hdc);
+void releasePaintCache(); // the window is going away
 void stopPreviews(bool onlyFinished);
 void previewPitch(int pitch);
 
-inline int g_lastDragPitch = -1;
 void previewDragged();
+void previewDragStarted(int pitch); // a drag starts on a note already heard at this pitch
 void placeEdit();
 void beginLyric(int i);
 void endLyric(bool commit, int dir);

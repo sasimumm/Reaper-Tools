@@ -7,10 +7,10 @@ static std::vector<Note> g_loaded; // notes as read from the take, by take index
 // --- notes <-> MIDI take ---------------------------------------------------------
 
 MediaItem_Take *midiTake() {
-    if (g_midi && !ValidatePtr2(NULL, g_midi, "MediaItem*")) {
-        g_midi = NULL;
+    if (g_session.midi && !ValidatePtr2(NULL, g_session.midi, "MediaItem*")) {
+        g_session.midi = NULL;
     }
-    return g_midi ? GetActiveTake(g_midi) : NULL;
+    return g_session.midi ? GetActiveTake(g_session.midi) : NULL;
 }
 
 std::string takeHash(MediaItem_Take *take) {
@@ -73,7 +73,7 @@ class ReaperTake : public Take {
 };
 
 void loadNotes() {
-    g_ed.cancel();
+    g_session.ed.cancel();
     MediaItem_Take *take = midiTake();
     if (take) {
         ReaperTake t(take);
@@ -81,22 +81,22 @@ void loadNotes() {
     } else {
         g_loaded.clear();
     }
-    g_ed.notes = g_loaded;
-    g_ed.deleted.clear();
-    g_hash = takeHash(take);
-    g_notesVersion++;
+    g_session.ed.notes = g_loaded;
+    g_session.ed.deleted.clear();
+    g_session.hash = takeHash(take);
+    g_session.notesVersion++;
     redraw();
 }
 
 // Reads the other voices' notes (display only), when their items changed.
 void loadOtherVoices(bool force) {
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        OtherVoice &o = g_others[v];
-        if (v == g_voice) {
+        OtherVoice &o = g_session.others[v];
+        if (v == g_session.voice) {
             o = OtherVoice();
             continue;
         }
-        MediaItem *item = VoiceItem(g_audio, v, false);
+        MediaItem *item = VoiceItem(g_session.audio, v, false);
         MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
         const std::string h = takeHash(take);
         if (!force && item == o.item && h == o.hash) {
@@ -110,24 +110,25 @@ void loadOtherVoices(bool force) {
                 n.sel = false;
             }
         }
-        g_notesVersion++;
+        g_session.notesVersion++;
         redraw();
     }
 }
 
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
 void commitNotes() {
-    const NoteChanges changes = diffNotes(g_loaded, g_ed.notes, g_ed.deleted);
+    const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
     if (changes.data) {
         Undo_BeginBlock2(NULL);
     }
     MediaItem_Take *take = midiTake();
-    if (!take && changes.data && (g_midi = VoiceItem(g_audio, g_voice, true))) {
-        take = GetActiveTake(g_midi);
+    if (!take && changes.data &&
+        (g_session.midi = VoiceItem(g_session.audio, g_session.voice, true))) {
+        take = GetActiveTake(g_session.midi);
     }
     if (take) {
         ReaperTake t(take);
-        writeNotes(t, g_loaded, g_ed.notes, g_ed.deleted, g_ed.velocity);
+        writeNotes(t, g_loaded, g_session.ed.notes, g_session.ed.deleted, g_session.ed.velocity);
     }
     if (changes.data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
@@ -138,10 +139,10 @@ void commitNotes() {
 
 // Notes straight into another voice's take (its track and item are created if needed).
 void insertIntoVoice(int v, const std::vector<Note> &notes) {
-    MediaItem *item = VoiceItem(g_audio, v, true);
+    MediaItem *item = VoiceItem(g_session.audio, v, true);
     MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
     if (take) {
         ReaperTake t(take);
-        appendNotes(t, notes, g_ed.velocity);
+        appendNotes(t, notes, g_session.ed.velocity);
     }
 }
