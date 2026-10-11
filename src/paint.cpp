@@ -349,16 +349,20 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         if (v >= 0 && (g_ui.hiddenVoices >> v & 1)) {
             continue;
         }
-        // a dashed outline in the colour of the voice A puts it in: not a note yet
+        // dashed in the colour of the voice A puts it in (not a note yet), on a dark outline and
+        // a tint so it stands out from bright energy
         const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;
-        const int a = v >= 0 ? 220 : 160;
-        for (int x = x0 + 1; x < x1 - 1; x += 7) {
-            cv.fill(x, y0, std::min(x + 4, x1 - 1), y0 + 1, col, a),
-                cv.fill(x, y1 - 1, std::min(x + 4, x1 - 1), y1, col, a);
+        const int a = v >= 0 ? 256 : 180, t = y1 - y0 >= 8 ? 2 : 1; // dash thickness
+        cv.rounded(x0, y0, x1, y1, col, v >= 0 ? 60 : 30);
+        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 0x000000, 1, 170);
+        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, 0x000000, 1, 110);
+        for (int x = x0 + 1; x < x1 - 1; x += 8) {
+            cv.fill(x, y0, std::min(x + 5, x1 - 1), y0 + t, col, a),
+                cv.fill(x, y1 - t, std::min(x + 5, x1 - 1), y1, col, a);
         }
-        for (int y = y0 + 1; y < y1 - 1; y += 5) {
-            cv.fill(x0, y, x0 + 1, std::min(y + 3, y1 - 1), col, a),
-                cv.fill(x1 - 1, y, x1, std::min(y + 3, y1 - 1), col, a);
+        for (int y = y0 + 1; y < y1 - 1; y += 6) {
+            cv.fill(x0, y, x0 + t, std::min(y + 4, y1 - 1), col, a),
+                cv.fill(x1 - t, y, x1, std::min(y + 4, y1 - 1), col, a);
         }
     }
 }
