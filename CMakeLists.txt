@@ -23,6 +23,7 @@ endif()
 
 add_library(reaper_reatrace MODULE
   src/main.cpp
+  src/chords.cpp
   src/nsgt.cpp
   src/editor.cpp
   src/window.cpp

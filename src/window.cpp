@@ -17,6 +17,7 @@
 #undef min
 #undef max
 
+#include "chords.h"
 #include "contour.h"
 #include "editor.h"
 #include "estimate.h"
@@ -24,7 +25,7 @@
 
 // Layout, in pixels.
 static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18,
-                 OVERVIEW_H = 28;
+                 OVERVIEW_H = 28, CHORDS_H = 20;
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
 static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
@@ -168,19 +169,24 @@ static Rect clientRect() {
     return {0, 0, (int)r.right, (int)r.bottom};
 }
 // Below this size only the background is drawn, so the areas below always fit in the client rect.
-static const int MIN_W = KB_W + 40, MIN_H = RULER_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
+static const int MIN_W = KB_W + 40,
+                 MIN_H = RULER_H + CHORDS_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
 
 static bool panelShown() { return g_panel && clientRect().r >= KB_W + PANEL_W + 100; }
 static Rect noteArea() {
     Rect c = clientRect();
     return {
-        KB_W, RULER_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)),
-        std::max(RULER_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
+        KB_W, RULER_H + CHORDS_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)),
+        std::max(RULER_H + CHORDS_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
     };
 }
 static Rect rulerArea() {
     Rect n = noteArea();
     return {n.l, 0, n.r, RULER_H};
+}
+static Rect chordsArea() {
+    Rect n = noteArea();
+    return {n.l, RULER_H, n.r, n.t};
 }
 static Rect lyricsArea() {
     Rect n = noteArea();
@@ -2080,6 +2086,26 @@ static void paint(HDC hdc) {
     cv.fill(0, 0, KB_W, RULER_H, C_BUTTON);
     text(dc, g_panel ? "Hide (S)" : "Settings", 0, 0, KB_W, RULER_H, C_TEXT, DT_CENTER);
 
+    // chords lane: the chord items' chords, edited in the arrange view
+    {
+        const Rect ch = chordsArea();
+        cv.clip = {0, ch.t, KB_W, ch.b};
+        cv.fill(0, ch.t, KB_W, ch.b, C_BUTTON);
+        text(dc, "Chords", 0, ch.t, KB_W, ch.b, C_DIM, DT_CENTER);
+        cv.clip = ch;
+        cv.fill(ch.l, ch.t, ch.r, ch.b, C_RULER);
+        for (const ChordSpan &span : Chords_Spans()) {
+            const int xa = (int)lround(g_view.x(span.start)), xb = (int)lround(g_view.x(span.end));
+            if (xb < ch.l || xa > ch.r) {
+                continue;
+            }
+            cv.fill(xa, ch.t, xa + 1, ch.b, 0xa0a0a0);
+            text(dc, span.name.c_str(), std::max(xa + 3, ch.l), ch.t, std::min(xb - 1, ch.r), ch.b,
+                 C_TEXT, DT_LEFT);
+        }
+        cv.fill(ch.l, ch.b - 1, ch.r, ch.b, 0x000000);
+    }
+
     // time selection
     cv.clip = {n.l, 0, n.r, n.b};
     double selA = 0, selB = 0;
@@ -3011,7 +3037,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             endLyric(true, 0); // clicking elsewhere finishes the lyric
         }
         SetFocus(hwnd);
-        if (x < KB_W && y >= RULER_H && y < noteArea().b) {
+        if (x < KB_W && y >= noteArea().t && y < noteArea().b) {
             previewPitch(g_view.pitchAt(y));
             return 0;
         }

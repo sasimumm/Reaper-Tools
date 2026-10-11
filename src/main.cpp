@@ -85,9 +85,27 @@
 #define REAPERAPI_WANT_DockWindowRemove
 #define REAPERAPI_WANT_DockWindowActivate
 #define REAPERAPI_WANT_ValidatePtr2
+#define REAPERAPI_WANT_AddMediaItemToTrack
+#define REAPERAPI_WANT_AddTakeToMediaItem
+#define REAPERAPI_WANT_CountMediaItems
+#define REAPERAPI_WANT_GetMediaItem
+#define REAPERAPI_WANT_GetSelectedTrack
+#define REAPERAPI_WANT_GetSetMediaItemTakeInfo_String
+#define REAPERAPI_WANT_LICE_CreateFont
+#define REAPERAPI_WANT_LICE_FillRect
+#define REAPERAPI_WANT_LICE_Line
+#define REAPERAPI_WANT_LICE__DrawText
+#define REAPERAPI_WANT_LICE__GetHeight
+#define REAPERAPI_WANT_LICE__GetWidth
+#define REAPERAPI_WANT_LICE__SetFromHFont
+#define REAPERAPI_WANT_LICE__SetTextColor
+#define REAPERAPI_WANT_SetMediaItemTake_Source
+#define REAPERAPI_WANT_SnapToGrid
+#define REAPERAPI_WANT_Undo_OnStateChange
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
 
+#include "chords.h"
 #include "window.h"
 
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
@@ -213,6 +231,9 @@ static void openSelected() {
 static int g_cmdOpen;
 
 static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
+    if (Chords_OnAction(command)) {
+        return true;
+    }
     if (command != g_cmdOpen) {
         return false;
     }
@@ -220,7 +241,17 @@ static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
     return true;
 }
 
-static int translateAccel(MSG *msg, accelerator_register_t *) { return Window_TranslateAccel(msg); }
+static int translateAccel(MSG *msg, accelerator_register_t *) {
+    if (int r = Chords_TranslateAccel(msg)) {
+        return r;
+    }
+    return Window_TranslateAccel(msg);
+}
+
+static void timer() {
+    Chords_Timer();
+    Window_Timer();
+}
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
@@ -239,8 +270,9 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     if (!(g_cmdOpen = rec->Register("custom_action", &a))) {
         return 0;
     }
+    Chords_Register(rec);
     rec->Register("hookcommand2", (void *)onAction);
     rec->Register("accelerator", &g_accel);
-    rec->Register("timer", (void *)Window_Timer);
+    rec->Register("timer", (void *)timer);
     return 1;
 }
