@@ -12,6 +12,7 @@ static const char *const CHANNELS[] = {
 }; // centre: mid minus side
 
 static const char *const SPEEDS[] = {"100%", "75%", "50%"};
+static const char *const COLORMAPS[] = {"Graphite", "Magma"}; // COLORMAP_*
 static const double SPEED_RATES[] = {1, 0.75, 0.5};
 static int g_speed;
 // Balance: which of audio and notes is heard (track mutes), and the voice tracks' volume.
@@ -105,6 +106,11 @@ static std::vector<Widget> widgets() {
          .hi = 2,
          .display = 1,
          .fmt = "%+.2f"},
+        {.type = W_CHOICE,
+         .label = "Colours",
+         .choice = &g_settings.rp.colormap,
+         .options = COLORMAPS,
+         .optionCount = 2},
         {.type = W_TOGGLE, .label = "Peaks only", .flag = &g_settings.rp.peaksOnly},
         {.type = W_SLIDER,
          .label = "Peak dimming",
@@ -476,6 +482,8 @@ void panelMouse(int x, int y, bool down) {
             applyListen();
         } else if (w.choice == &g_ui.voicePick) {
             g_ui.voicePick = g_session.voice, selectVoice(i);
+        } else if (isRenderParam(w.choice)) {
+            updateValues();
         } else if (w.analysis) {
             requestAnalysis(false);
         }
@@ -513,12 +521,12 @@ void drawPanel(Canvas &cv, HDC dc) {
                       bx = l + (int)lround((r - l) *
                                            std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
             cv.fill(l, by + 3, r, by + 7, g_theme.track);
-            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? 0xc0a040 : 0x3a8a84);
+            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? 0xc0a040 : C_ACCENT);
             cv.fill(bx - 3, by, bx + 3, by + 10, g_theme.text);
         } else if (w.type == W_TOGGLE) {
             cv.frame(l, top + 5, l + 12, top + 17, g_theme.text);
             if (*w.flag) {
-                cv.fill(l + 3, top + 8, l + 9, top + 14, C_NOTE);
+                cv.fill(l + 3, top + 8, l + 9, top + 14, C_ACCENT);
             }
             text(dc, w.label, l + 18, top, r, top + 22, g_theme.text, DT_LEFT);
         } else if (w.type == W_CHOICE || w.type == W_BUTTONS) {
@@ -527,8 +535,8 @@ void drawPanel(Canvas &cv, HDC dc) {
                 const int bl = l + (r - l) * i / w.optionCount,
                           br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
-                cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : g_theme.button);
-                text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : g_theme.text,
+                cv.fill(bl, top + 18, br - 2, top + 40, on ? C_ACCENT : g_theme.button);
+                text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0x14161c : g_theme.text,
                      DT_CENTER);
             }
         } else {

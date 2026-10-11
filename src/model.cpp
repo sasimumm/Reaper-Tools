@@ -27,6 +27,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "contrast", .d = &s.rp.contrast, .lo = 0.1, .hi = 3},
         {.name = "brightness", .d = &s.rp.brightness, .lo = -1, .hi = 1},
         {.name = "bias", .d = &s.rp.bias, .lo = -2, .hi = 2},
+        {.name = "colormap", .i = &s.rp.colormap, .lo = 0, .hi = COLORMAP_MAGMA},
         {.name = "peaks", .b = &s.rp.peaksOnly},
         {.name = "peakdim", .d = &s.rp.peakDim, .lo = 0, .hi = 1},
         {.name = "denoise", .b = &s.rp.subtractNoise},

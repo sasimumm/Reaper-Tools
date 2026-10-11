@@ -278,12 +278,20 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
     }
 }
 
-void makeColormap(double bias, unsigned int lut[256]) {
+// Graphite (default): a neutral grey ramp with a slight blue bias, so the voices' colours stay
+// readable over it. Magma: the perceptual colormap, brighter but orange and yellow at the top.
+void makeColormap(double bias, unsigned int lut[256], int colormap) {
+    static const float graphite[9][3] = {
+        {0.055f, 0.059f, 0.078f}, {0.098f, 0.106f, 0.141f}, {0.150f, 0.163f, 0.216f},
+        {0.230f, 0.248f, 0.318f}, {0.352f, 0.375f, 0.460f}, {0.500f, 0.528f, 0.620f},
+        {0.651f, 0.678f, 0.771f}, {0.790f, 0.812f, 0.885f}, {0.933f, 0.941f, 0.973f},
+    };
     static const float magma[9][3] = {
         {0.001f, 0.000f, 0.014f}, {0.090f, 0.048f, 0.228f}, {0.232f, 0.060f, 0.438f},
         {0.390f, 0.100f, 0.502f}, {0.550f, 0.161f, 0.506f}, {0.716f, 0.214f, 0.475f},
         {0.868f, 0.340f, 0.443f}, {0.967f, 0.534f, 0.498f}, {0.987f, 0.991f, 0.750f},
     };
+    const float (*ramp)[3] = colormap == COLORMAP_MAGMA ? magma : graphite;
     const double exponent = pow(2.0, -bias);
     for (int i = 0; i < 256; i++) {
         const double t = pow(i / 255.0, exponent) * 8;
@@ -291,7 +299,7 @@ void makeColormap(double bias, unsigned int lut[256]) {
         const double fr = t - k;
         unsigned int c = 0;
         for (int ch = 0; ch < 3; ch++) {
-            double v = magma[k][ch] + (magma[k + 1][ch] - magma[k][ch]) * fr;
+            double v = ramp[k][ch] + (ramp[k + 1][ch] - ramp[k][ch]) * fr;
             c = (c << 8) | (unsigned int)std::max(0.0, std::min(255.0, v * 255));
         }
         lut[i] = c;

@@ -10,7 +10,7 @@
 
 void updateValues() {
     renderValues(g_analysis.spec, g_settings.rp, g_analysis.val);
-    makeColormap(g_settings.rp.bias, g_analysis.lut);
+    makeColormap(g_settings.rp.bias, g_analysis.lut, g_settings.rp.colormap);
     g_analysis.valVersion++;
     redraw();
 }

@@ -12,7 +12,11 @@ static const int GUIDE_THICKNESS = 3; // overtone hover marks, pixels
 // Colours, 0xRRGGBB.
 // The note area stays dark under the spectrogram; the rest follows REAPER's theme (applyTheme).
 static const unsigned int C_AREA = 0x1b1b1b;
-static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0x2ec4b6, 0xf4a261, 0xe56fd8, 0x9ee05a};
+// Voices in the Okabe-Ito palette (colour-blind safe), readable over the graphite spectrogram.
+static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0xe69f00, 0x56b4e9, 0xcc79a7, 0x009e73};
+static const unsigned int C_CONTOUR = 0xf0e442; // yellow: never white like the play cursor
+static const unsigned int C_OUTLINE = 0xf4f6ff; // selected notes
+static const unsigned int C_CROWDED = 0x8b91a3; // suggestions with no voice left
 static const double EXPLAIN_DIM = 0.25;
 // Drawing happens in device pixels: g_scale per point (2 on Retina). Layout stays in points.
 static HDC g_memdc;
@@ -267,10 +271,8 @@ static void drawGhosts(Canvas &cv) {
         for (int h = 2; h <= n; h++) {
             const double y = g_ui.view.y(overtonePitch(nt.pitch, h)),
                          hh = std::max(1.0, g_ui.view.rowH * 0.3);
-            const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 2;
-            const unsigned int col = VOICE_COLOURS[g_session.voice];
-            cv.fill(x0, y0, x1, y0 + 2, col, a), cv.fill(x0, y1 - 2, x1, y1, col, a);
-            cv.fill(x0, y0, x0 + 2, y1, col, a), cv.fill(x1 - 2, y0, x1, y1, col, a);
+            const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 1;
+            cv.roundedFrame(x0, y0, x1, y1, VOICE_COLOURS[g_session.voice], 1, a / (h - 1) + a / 2);
         }
     }
 }
@@ -304,9 +306,9 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
             continue;
         }
         const int t = GUIDE_THICKNESS + (h == 1 ? 1 : 0);
-        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, 0xffffff, h == 1 ? 256 : a);
+        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, VOICE_COLOURS[g_session.voice], h == 1 ? 256 : a);
         snprintf(buf, sizeof(buf), "%d", h);
-        text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, 0xffffff, DT_LEFT);
+        text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, g_theme.text, DT_LEFT);
     }
     const double own = levelDb(p0, tA, tB);
     static const struct {
@@ -343,21 +345,21 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
             continue;
         }
         const int v = suggestionVoice(i);
-        const unsigned int col =
-            v >= 0 ? VOICE_COLOURS[v] : 0x909090; // in the colour of the voice A puts it in
-        cv.fill(x0, y0, x1, y1, col, 50);
-        for (int x = x0; x < x1; x += 6) {
-            cv.fill(x, y0, std::min(x + 3, x1), y0 + 1, col),
-                cv.fill(x, y1 - 1, std::min(x + 3, x1), y1, col);
+        // a dashed outline in the colour of the voice A puts it in: not a note yet
+        const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;
+        const int a = v >= 0 ? 220 : 160;
+        for (int x = x0 + 1; x < x1 - 1; x += 7) {
+            cv.fill(x, y0, std::min(x + 4, x1 - 1), y0 + 1, col, a),
+                cv.fill(x, y1 - 1, std::min(x + 4, x1 - 1), y1, col, a);
         }
-        for (int y = y0; y < y1; y += 4) {
-            cv.fill(x0, y, x0 + 1, std::min(y + 2, y1), col),
-                cv.fill(x1 - 1, y, x1, std::min(y + 2, y1), col);
+        for (int y = y0 + 1; y < y1 - 1; y += 5) {
+            cv.fill(x0, y, x0 + 1, std::min(y + 3, y1 - 1), col, a),
+                cv.fill(x1 - 1, y, x1, std::min(y + 3, y1 - 1), col, a);
         }
     }
 }
 
-// The sung pitch as a white line with a dark edge, one pixel column at a time.
+// The sung pitch as a yellow line with a dark edge, one pixel column at a time.
 static void drawContour(Canvas &cv, const Rect &n) {
     if (!g_settings.showContour || g_analysis.contour.pitch.empty()) {
         return;
@@ -398,8 +400,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
         }
         prev = pitchAt(fb) >= 0 ? pitchAt(fb) : hi;
         const int y0 = (int)lround(g_ui.view.y(hi)), y1 = (int)lround(g_ui.view.y(lo));
-        cv.fill(x, y0 - 2, x + 1, y1 + 3, 0x000000, 180);
-        cv.fill(x, y0 - 1, x + 1, y1 + 2, 0xffffff);
+        cv.fill(x, y0 - 2, x + 1, y1 + 3, 0x000000, 150);
+        cv.fill(x, y0 - 1, x + 1, y1 + 2, C_CONTOUR);
     }
 }
 
@@ -503,7 +505,10 @@ void paint(HDC hdc) {
     const int pLo = (int)floor(g_ui.view.p(n.b)), pHi = (int)ceil(g_ui.view.p(n.t));
     for (int p = pLo; p <= pHi; p++) {
         const int y = (int)lround(g_ui.view.y(p - 0.5)); // boundary below pitch p
-        cv.fill(n.l, y, n.r, y + 1, 0xffffff, p % 12 == 0 ? 60 : 16);
+        if (isBlack(p)) { // shaded like a piano roll, to read pitch away from the keyboard
+            cv.fill(n.l, (int)lround(g_ui.view.y(p + 0.5)), n.r, y, 0x000000, 40);
+        }
+        cv.fill(n.l, y, n.r, y + 1, 0xffffff, p % 12 == 0 ? 50 : 10);
     }
     std::vector<GridLine> grid = gridLines(n);
     for (const GridLine &g : grid) {
@@ -523,8 +528,8 @@ void paint(HDC hdc) {
                           x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
                 const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
                           y1 = std::max(y0 + 3, (int)lround(g_ui.view.y(nt.pitch - 0.5)));
-                cv.fill(x0, y0, x1, y1, VOICE_COLOURS[v], 80);
-                cv.frame(x0, y0, x1, y1, VOICE_COLOURS[v]);
+                cv.rounded(x0, y0, x1, y1, VOICE_COLOURS[v], 70);
+                cv.roundedFrame(x0, y0, x1, y1, VOICE_COLOURS[v]);
             }
         }
     }
@@ -538,9 +543,13 @@ void paint(HDC hdc) {
                   x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
         const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
                   y1 = std::max(y0 + 3, (int)lround(g_ui.view.y(nt.pitch - 0.5)));
+        // solid with a darker edge; selected ones get a light outline, so lyrics stay readable
         const bool sel = nt.sel || (int)i == drawing;
-        cv.fill(x0, y0, x1, y1, sel ? C_SEL : noteColour, 235);
-        cv.frame(x0, y0, x1, y1, sel ? noteColour : C_NOTE_EDGE, sel && y1 - y0 > 6 ? 2 : 1);
+        cv.rounded(x0, y0, x1, y1, noteColour, 245);
+        cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, 0x000000, 0.55));
+        if (sel) {
+            cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, C_OUTLINE, y1 - y0 > 6 ? 2 : 1);
+        }
     }
     // lyrics: inside the note when it is tall enough, else just below it
     for (const Note &nt : g_session.ed.notes) {
@@ -557,7 +566,7 @@ void paint(HDC hdc) {
         }
         if (y1 - y0 >= 12) {
             text(dc, nt.lyric.c_str(), l, std::max(y0, n.t), std::min(x1 - 1, n.r),
-                 std::min(y1, n.b), nt.sel ? 0x0b3d3a : 0x04201e, DT_LEFT);
+                 std::min(y1, n.b), mix(noteColour, 0x000000, 0.85), DT_LEFT);
         } else if (y1 + 14 <= n.b) {
             text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, 0xffffff, DT_LEFT);
         }
