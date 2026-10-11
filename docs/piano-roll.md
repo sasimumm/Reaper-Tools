@@ -166,7 +166,7 @@ field, so non-ASCII letters, dead keys and paste work.
 | LYR-4 | P0 | ✅ | Lyric events move, resize and delete with their note, and are re-read when edited elsewhere in REAPER. |
 | LYR-5 | P1 | ✅ | **Paste lyrics** (cmd+V): split into syllables (spaces, and after hyphens) and assigned in order to the selected notes, or from the selected note onwards. |
 | LYR-6 | P1 | — | Automatic hyphenation suggestion for pasting plain words (dictionary-based, English first). |
-| LYR-7 | P1 | — | Lyrics lane: a strip under the notes showing the lyric line for the visible range, so the text can be read as a sentence while placing notes. |
+| LYR-7 | P1 | ✅ | Lyrics lane: a strip under the notes showing the lyric line for the visible range, so the text can be read as a sentence while placing notes. Each syllable starts at its note's start (with a tick in the voice colour) and is cut off at the next one; selected notes' syllables are white; clicking one edits it. Active voice only. |
 | LYR-8 | P2 | — | Lyrics without notes yet (e.g. spoken passages) placed on the time ruler and later attached to notes. |
 
 ## 6. Time, grid and quantisation

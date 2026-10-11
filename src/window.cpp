@@ -22,7 +22,7 @@
 #include "nsgt.h"
 
 // Layout, in pixels.
-static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, OVERVIEW_H = 28;
+static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18, OVERVIEW_H = 28;
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
 static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
@@ -146,16 +146,17 @@ static Rect clientRect()
   return {0, 0, (int)r.right, (int)r.bottom};
 }
 // Below this size only the background is drawn, so the areas below always fit in the client rect.
-static const int MIN_W = KB_W + 40, MIN_H = RULER_H + OVERVIEW_H + STATUS_H + 20;
+static const int MIN_W = KB_W + 40, MIN_H = RULER_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
 
 static bool panelShown() { return g_panel && clientRect().r >= KB_W + PANEL_W + 100; }
 static Rect noteArea()
 {
   Rect c = clientRect();
-  return {KB_W, RULER_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)), std::max(RULER_H + 1, c.b - STATUS_H - OVERVIEW_H)};
+  return {KB_W, RULER_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)), std::max(RULER_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)};
 }
 static Rect rulerArea() { Rect n = noteArea(); return {n.l, 0, n.r, RULER_H}; }
-static Rect overviewArea() { Rect n = noteArea(); return {n.l, n.b, n.r, n.b + OVERVIEW_H}; }
+static Rect lyricsArea() { Rect n = noteArea(); return {n.l, n.b, n.r, n.b + LYRICS_H}; }
+static Rect overviewArea() { Rect n = noteArea(); return {n.l, n.b + LYRICS_H, n.r, n.b + LYRICS_H + OVERVIEW_H}; }
 static Rect panelArea() { Rect c = clientRect(), n = noteArea(); return {n.r, 0, c.r, c.b}; }
 
 static void syncViewOrigin()
@@ -1303,6 +1304,26 @@ static void drawContour(Canvas &cv, const Rect &n)
   }
 }
 
+// Notes with lyrics, by start time.
+static std::vector<int> lyricOrder()
+{
+  std::vector<int> out;
+  for (size_t i = 0; i < g_ed.notes.size(); i++)
+    if (!g_ed.notes[i].lyric.empty()) out.push_back((int)i);
+  std::sort(out.begin(), out.end(), [](int a, int b) { return g_ed.notes[a].start < g_ed.notes[b].start; });
+  return out;
+}
+
+// The note whose syllable is shown at x in the lyrics lane, -1 if none.
+static int lyricAt(int x)
+{
+  const double t = g_view.t(x);
+  int best = -1;
+  for (int i : lyricOrder())
+    if (g_ed.notes[i].start <= t) best = i;
+  return best;
+}
+
 // --- paint -------------------------------------------------------------------------
 
 static void placeEdit();
@@ -1482,6 +1503,23 @@ static void paint(HDC hdc)
     cv.fill(x, 0, x + 1, n.b, C_PLAY_CURSOR);
   }
 
+  // lyrics lane: the visible lyric line as text, each syllable at its note's start
+  {
+    const Rect ly = lyricsArea();
+    cv.clip = ly;
+    cv.fill(ly.l, ly.t, ly.r, ly.b, C_RULER);
+    const std::vector<int> order = lyricOrder();
+    for (size_t k = 0; k < order.size(); k++)
+    {
+      const Note &nt = g_ed.notes[order[k]];
+      const int x = (int)lround(g_view.x(nt.start));
+      const int next = k + 1 < order.size() ? (int)lround(g_view.x(g_ed.notes[order[k + 1]].start)) : ly.r;
+      if (next < ly.l || x > ly.r) continue;
+      cv.fill(x, ly.t, x + 1, ly.t + 4, noteColour);
+      text(dc, nt.lyric.c_str(), std::max(x + 2, ly.l), ly.t, std::min(next - 1, ly.r), ly.b, nt.sel ? 0xffffff : C_TEXT, DT_LEFT);
+    }
+  }
+
   // overview: whole item, notes, and the visible range
   {
     const Rect o = overviewArea();
@@ -1501,7 +1539,7 @@ static void paint(HDC hdc)
   }
 
   // status line: pitch, frequency, cents of the strongest nearby peak, time, bar.beat, level
-  const int sy = n.b + OVERVIEW_H; // status line top
+  const int sy = n.b + LYRICS_H + OVERVIEW_H; // status line top
   cv.clip = {0, n.b, n.l, sy};
   cv.fill(0, n.b, n.l, sy, C_BUTTON);
   cv.clip = {0, sy, c.r, c.b};
@@ -2133,6 +2171,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     }
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
     else if (overviewArea().in(x, y)) g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
+    else if (lyricsArea().in(x, y)) { beginLyric(lyricAt(x)); return 0; }
     else if (noteArea().in(x, y))
     {
       int sug = -1;

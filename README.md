@@ -65,6 +65,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | click a piano key | play that pitch through the notes track |
 | [ ] , - = , , . | brightness, contrast, resolution |
 | click the ruler | move the edit cursor |
+| click a syllable in the lyrics lane | type that note's lyric |
 | click/drag the overview strip | scroll to that part of the item |
 | shift+drag the ruler | time selection (snapped like notes) |
 | Q | quantise selected notes to the grid (strength in the panel) |
