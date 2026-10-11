@@ -1,44 +1,28 @@
-// Internals of the ReaTrace window, shared by its source files (window.cpp, paint.cpp, panel.cpp,
-// analysis.cpp, takesync.cpp, settings.cpp, preview.cpp, lyrics.cpp, commands.cpp).
+// The ReaTrace window's state and layout, shared by its source files; each module's functions
+// are in its own header (analysis.h, paint.h, panel.h, ...).
 #pragma once
 
 #include "window.h"
 
 #include <algorithm>
-#include <atomic>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <fcntl.h>
-#include <memory>
 #include <string>
-#include <thread>
-#include <unistd.h>
 #include <vector>
 
 #include "reaper_plugin_functions.h"
 #undef min
 #undef max
 
-#include "chords.h"
 #include "contour.h"
 #include "editor.h"
-#include "estimate.h"
-#include "guard.h"
 #include "nsgt.h"
 
 // Layout, in pixels.
 static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18,
                  OVERVIEW_H = 28, CHORDS_H = 20;
-// Colours that follow REAPER's theme (paint.cpp's applyTheme), 0xRRGGBB.
-struct Theme {
-    unsigned int bg = 0, ruler = 0, text = 0, dim = 0, panel = 0, button = 0, track = 0;
-};
-inline Theme g_theme;
-static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd;
-static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_ACCENT = 0x7fd6ff;
-
 // --- state ---------------------------------------------------------------------
 
 struct OtherVoice {
@@ -50,8 +34,6 @@ struct OtherVoice {
 // usually free tempo and the grid means nothing until a tempo map is fitted.
 enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
 
-const std::vector<Segment> &suggestions();
-int suggestionVoice(size_t i);
 
 enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
 
@@ -127,6 +109,8 @@ struct Rect {
     int l, t, r, b;
     bool in(int x, int y) const { return x >= l && x < r && y >= t && y < b; }
 };
+
+// window.cpp
 Rect clientRect();
 bool panelShown();
 Rect noteArea();
@@ -137,97 +121,5 @@ Rect overviewArea();
 Rect panelArea();
 void syncViewOrigin();
 void redraw();
-void updateValues();
-double frameTime(double f);
-void clearCache();
-void clearAnalysis(); // before analysing another item
-void cancelJob();
-void requestAnalysis(bool autoCalibrateAfter);
-void pollJob();
-int analysisProgress();
-double overviewTime(int x);
-MediaItem_Take *midiTake();
-std::string takeHash(MediaItem_Take *take);
-void loadNotes();
-void loadOtherVoices(bool force);
-void commitNotes();
-double gridStepQN();
-void quantiseSelected();
-
-// --- drawing helpers -------------------------------------------------------------
-
-// Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
-struct Canvas {
-    unsigned int *px;
-    int w, h;
-    Rect clip;
-    int scale; // device pixels per point
-
-    void fill(int x0, int y0, int x1, int y1, unsigned int col, int a = 256) {
-        const int s = scale;
-        x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
-        x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
-        for (int y = y0; y < y1; y++) {
-            unsigned int *p = px + (size_t)y * w;
-            for (int x = x0; x < x1; x++) {
-                if (a >= 256) {
-                    p[x] = 0xff000000 | col;
-                    continue;
-                }
-                const unsigned int d = p[x];
-                const unsigned int r =
-                    (((d >> 16) & 255) * (256 - a) + ((col >> 16) & 255) * a) >> 8;
-                const unsigned int g = (((d >> 8) & 255) * (256 - a) + ((col >> 8) & 255) * a) >> 8;
-                const unsigned int b = ((d & 255) * (256 - a) + (col & 255) * a) >> 8;
-                p[x] = 0xff000000 | (r << 16) | (g << 8) | b;
-            }
-        }
-    }
-    void frame(int x0, int y0, int x1, int y1, unsigned int col, int t = 1) {
-        fill(x0, y0, x1, y0 + t, col), fill(x0, y1 - t, x1, y1, col);
-        fill(x0, y0, x0 + t, y1, col), fill(x1 - t, y0, x1, y1, col);
-    }
-};
-void text(HDC dc, const char *s, int l, int t, int r, int b, unsigned int col, int flags);
-void scrollPanel(int dy);
-
-static const char *EXT_SECTION = "reatrace", *EXT_DEFAULTS = "defaults";
-const char *globalState(const char *key);
-std::string saveSettings();
-void loadSettings(const char *str);
-void resetSettings();
-bool loadItemSettings();
-void saveItemSettings();
-void swapListen();
-void panelMouse(int x, int y, bool down);
-void drawPanel(Canvas &cv, HDC dc);
-bool covered(const Segment &sg);
-void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1);
-int suggestionAt(int x, int y);
-int lyricAt(int x);
-void paint(HDC hdc);
-void releasePaintCache(); // the window is going away
-void stopPreviews(bool onlyFinished);
-void previewPitch(int pitch);
-
-void previewDragged();
-void previewDragStarted(int pitch); // a drag starts on a note already heard at this pitch
-void placeEdit();
-void beginLyric(int i);
-void endLyric(bool commit, int dir);
 void selectVoice(int v);
-int firstSelected();
 int mods();
-void setupEditorSnap();
-void acceptSuggestion(int i);
-void insertIntoVoice(int v, const std::vector<Note> &notes);
-void acceptVisibleSuggestions();
-void pitchFromContour(Note &nt);
-std::string clipboardText();
-void copyNotes(bool cut);
-void paste();
-void setSelection(double a, double b);
-void loopPlay();
-void splitNotes();
-void pasteLyrics(const std::string &text);
-void finishPanelDrag();

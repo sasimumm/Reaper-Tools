@@ -1,4 +1,8 @@
-#include "ui.h"
+#include "panel.h"
+
+#include "analysis.h"
+#include "commands.h"
+#include "settings.h"
 
 static const char *const VOICES[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
 static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};

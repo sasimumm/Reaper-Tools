@@ -1,4 +1,16 @@
-#include "ui.h"
+#include "window.h"
+
+#include "state.h"
+
+#include "analysis.h"
+#include "commands.h"
+#include "guard.h"
+#include "lyrics.h"
+#include "paint.h"
+#include "panel.h"
+#include "preview.h"
+#include "settings.h"
+#include "takesync.h"
 
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;

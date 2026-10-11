@@ -1,4 +1,9 @@
-#include "ui.h"
+#include "commands.h"
+
+#include "analysis.h"
+#include "lyrics.h"
+#include "preview.h"
+#include "takesync.h"
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
 const std::vector<Segment> &suggestions() {

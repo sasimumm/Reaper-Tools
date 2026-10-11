@@ -1,4 +1,4 @@
-#include "ui.h"
+#include "settings.h"
 
 // Settings are remembered per audio item (item extended state) and as defaults for new items
 // (REAPER extended state), as "name=value;" pairs.

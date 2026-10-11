@@ -1,4 +1,6 @@
-#include "ui.h"
+#include "lyrics.h"
+
+#include "takesync.h"
 
 static double g_editStart;
 static int g_editPitch;

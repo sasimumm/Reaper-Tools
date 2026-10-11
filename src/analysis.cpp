@@ -1,4 +1,10 @@
-#include "ui.h"
+#include "analysis.h"
+
+#include <atomic>
+#include <memory>
+#include <thread>
+
+#include "estimate.h"
 
 // --- spectrogram ---------------------------------------------------------------
 

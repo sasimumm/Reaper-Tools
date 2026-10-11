@@ -1,4 +1,7 @@
-#include "ui.h"
+#include "preview.h"
+
+#include <fcntl.h>
+#include <unistd.h>
 
 // --- note preview ----------------------------------------------------------------------
 
