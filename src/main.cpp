@@ -69,6 +69,9 @@
 #define REAPERAPI_WANT_UpdateArrange
 #define REAPERAPI_WANT_GetSet_LoopTimeRange2
 #define REAPERAPI_WANT_GetSet_ArrangeView2
+#define REAPERAPI_WANT_GetSetRepeat
+#define REAPERAPI_WANT_OnPlayButton
+#define REAPERAPI_WANT_OnStopButton
 #define REAPERAPI_WANT_SetMediaItemInfo_Value
 #define REAPERAPI_WANT_SetExtState
 #define REAPERAPI_WANT_GetExtState

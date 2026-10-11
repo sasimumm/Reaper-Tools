@@ -1990,6 +1990,28 @@ static void paste()
   commitNotes();
 }
 
+// Time selection and loop points together, whether or not REAPER links them.
+static void setSelection(double a, double b)
+{
+  GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
+  GetSet_LoopTimeRange2(NULL, true, true, &a, &b, false);
+}
+
+// R: loop the selected notes' range (else the time selection) from its start; again to stop.
+static void loopPlay()
+{
+  if (GetPlayState() & 1) { OnStopButton(); return; }
+  double a = 1e30, b = -1e30;
+  for (const Note &nt : g_ed.notes)
+    if (nt.sel) a = std::min(a, nt.start), b = std::max(b, nt.end);
+  if (b > a) setSelection(a, b);
+  GetSet_LoopTimeRange2(NULL, false, false, &a, &b, false);
+  if (b <= a) return;
+  GetSetRepeat(1);
+  SetEditCurPos(a, false, false);
+  OnPlayButton();
+}
+
 // Split: the note under the mouse at the (snapped) mouse time, else the selected notes there; with
 // the mouse outside the notes, the selected notes at the edit cursor.
 static void splitNotes()
@@ -2061,6 +2083,7 @@ static bool onKey(int key)
   else if (key == 'X' && (m & MOD_CMD)) copyNotes(true);
   else if (key == 'D' && (m & MOD_CMD)) { if (g_ed.duplicateSelected()) commitNotes(); }
   else if (key == 'K' && !m) splitNotes();
+  else if (key == 'R' && !m) loopPlay();
   else if (key == 'J' && !m) { if (g_ed.joinSelected()) commitNotes(); }
   else if (key == 'F' && !m) fitItem();
   else if (key == 'Z' && !m) zoomToSelection();
@@ -2087,7 +2110,7 @@ static bool isOurKey(int key, int flags)
   case 'V': case 'C': return cmd;
   case 'X': case 'D': return cmd || !(flags & (FALT | FSHIFT));
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'Q': case 'L': case 'K': case 'J': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'Q': case 'L': case 'K': case 'J': case 'R': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -2166,8 +2189,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       // shift+drag in the ruler: time selection, snapped like notes
       g_drag = DRAG_RULER_SELECT;
       g_selectAnchor = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
-      double a = g_selectAnchor, b = g_selectAnchor;
-      GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
+      setSelection(g_selectAnchor, g_selectAnchor);
     }
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
     else if (overviewArea().in(x, y)) g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
@@ -2199,8 +2221,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     else if (g_drag == DRAG_RULER_SELECT)
     {
       const double t = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
-      double a = std::min(t, g_selectAnchor), b = std::max(t, g_selectAnchor);
-      GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
+      setSelection(std::min(t, g_selectAnchor), std::max(t, g_selectAnchor));
     }
     else if (g_drag == DRAG_PANEL) panelMouse(x, y, false);
     else if (g_drag == DRAG_OVERVIEW) centreOn(overviewTime(x));
