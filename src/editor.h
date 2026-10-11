@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <functional>
+#include <string>
 #include <vector>
 
 struct Note
@@ -11,6 +12,8 @@ struct Note
   int pitch;
   bool sel;
   int idx; // index in the MIDI take, -1 for notes not written yet
+  std::string lyric;
+  int lyricIdx = -1; // index of the lyric text event in the take, -1 if none
 };
 
 // Maps window pixels to time (seconds) and continuous MIDI pitch. Note row P spans P-0.5 .. P+0.5.
@@ -56,6 +59,8 @@ public:
 
   bool marquee(double r[4]) const; // marquee rectangle while selecting
   int drawing() const { return mode == DRAW ? drawIndex : -1; }
+  // the note being drawn, moved or resized, -1 if none
+  int dragNote() const { return mode == DRAW ? drawIndex : mode == MOVE || mode == RESIZE_L || mode == RESIZE_R ? anchor : -1; }
 
 private:
   enum Mode { IDLE, PENDING_DRAW, DRAW, PENDING_DRAG, MOVE, RESIZE_L, RESIZE_R, MARQUEE };

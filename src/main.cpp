@@ -44,6 +44,12 @@
 #define REAPERAPI_WANT_MIDI_InsertNote
 #define REAPERAPI_WANT_MIDI_SetNote
 #define REAPERAPI_WANT_MIDI_Sort
+#define REAPERAPI_WANT_MIDI_GetTextSysexEvt
+#define REAPERAPI_WANT_MIDI_InsertTextSysexEvt
+#define REAPERAPI_WANT_MIDI_DeleteTextSysexEvt
+#define REAPERAPI_WANT_PCM_Source_CreateFromFile
+#define REAPERAPI_WANT_PlayTrackPreview2Ex
+#define REAPERAPI_WANT_StopTrackPreview2
 #define REAPERAPI_WANT_SetEditCurPos
 #define REAPERAPI_WANT_ShowMessageBox
 #define REAPERAPI_WANT_TakeIsMIDI

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -44,6 +45,13 @@ static std::vector<Note> g_loaded; // notes as read from the take, by take index
 static std::string g_hash;
 static bool g_snapGrid;            // off by default: recordings are usually free tempo
 static bool g_panel = true;
+static bool g_ghosts = true;   // faint outlines at each note's overtones
+static bool g_audition = true; // play a note through the notes track when clicked or drawn
+static double g_harmonics = 8, g_guideOpacity = 0.4;
+
+static HWND g_edit;            // lyric edit field while typing; identifies its note by start and pitch
+static double g_editStart;
+static int g_editPitch;
 
 enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_PANEL };
 static Drag g_drag;
@@ -191,17 +199,21 @@ static MediaItem_Take *midiTake()
 static std::string takeHash(MediaItem_Take *take)
 {
   char h[128] = "";
-  if (take) MIDI_GetHash(take, true, h, sizeof(h));
+  if (take) MIDI_GetHash(take, false, h, sizeof(h)); // includes text events, so lyric edits count
   return h;
 }
 
+static const int LYRIC_EVENT = 5; // MIDI meta event type used by REAPER's notation lyrics
+
+// Lyrics are MIDI lyric events at a note's start; each attaches to the first note starting there.
 static void loadNotes()
 {
   g_ed.cancel();
   g_loaded.clear();
   MediaItem_Take *take = midiTake();
-  int cnt = 0;
-  if (take) MIDI_CountEvts(take, &cnt, NULL, NULL);
+  int cnt = 0, textCnt = 0;
+  if (take) MIDI_CountEvts(take, &cnt, NULL, &textCnt);
+  std::vector<double> startPPQ;
   for (int i = 0; i < cnt; i++)
   {
     bool sel = false;
@@ -209,6 +221,21 @@ static void loadNotes()
     int pitch = 0;
     MIDI_GetNote(take, i, &sel, NULL, &s, &e, NULL, &pitch, NULL);
     g_loaded.push_back({MIDI_GetProjTimeFromPPQPos(take, s), MIDI_GetProjTimeFromPPQPos(take, e), pitch, sel, i});
+    startPPQ.push_back(s);
+  }
+  for (int i = 0; i < textCnt; i++)
+  {
+    char msg[1024];
+    int sz = sizeof(msg) - 1, type = 0;
+    double ppq = 0;
+    if (!MIDI_GetTextSysexEvt(take, i, NULL, NULL, &ppq, &type, msg, &sz) || type != LYRIC_EVENT) continue;
+    msg[std::max(0, std::min(sz, (int)sizeof(msg) - 1))] = 0;
+    for (size_t n = 0; n < g_loaded.size(); n++)
+      if (g_loaded[n].lyricIdx < 0 && fabs(startPPQ[n] - ppq) < 0.5)
+      {
+        g_loaded[n].lyric = msg, g_loaded[n].lyricIdx = i;
+        break;
+      }
   }
   g_ed.notes = g_loaded;
   g_ed.deleted.clear();
@@ -219,15 +246,18 @@ static void loadNotes()
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
 static void commitNotes()
 {
-  bool dataChanged = !g_ed.deleted.empty();
+  bool dataChanged = !g_ed.deleted.empty(), lyricsChanged = false;
+  for (int i : g_ed.deleted) lyricsChanged |= g_loaded[i].lyricIdx >= 0;
   for (const Note &n : g_ed.notes)
   {
-    if (n.idx < 0) dataChanged = true;
-    else if (n.idx < (int)g_loaded.size())
+    if (n.idx < 0 || n.idx >= (int)g_loaded.size())
     {
-      const Note &o = g_loaded[n.idx];
-      dataChanged |= n.start != o.start || n.end != o.end || n.pitch != o.pitch;
+      dataChanged = true, lyricsChanged |= !n.lyric.empty();
+      continue;
     }
+    const Note &o = g_loaded[n.idx];
+    dataChanged |= n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
+    lyricsChanged |= n.lyric != o.lyric || (n.start != o.start && !n.lyric.empty());
   }
   if (dataChanged) Undo_BeginBlock2(NULL);
   MediaItem_Take *take = midiTake();
@@ -250,6 +280,19 @@ static void commitNotes()
       if (n.idx < 0)
         MIDI_InsertNote(take, n.sel, false, MIDI_GetPPQPosFromProjTime(take, n.start),
                         MIDI_GetPPQPosFromProjTime(take, n.end), 0, n.pitch, g_ed.velocity, &noSort);
+    if (lyricsChanged)
+    {
+      // rewrite the lyric events attached to notes; unattached text events are left alone
+      std::vector<int> old;
+      for (const Note &o : g_loaded)
+        if (o.lyricIdx >= 0) old.push_back(o.lyricIdx);
+      std::sort(old.rbegin(), old.rend());
+      for (int i : old) MIDI_DeleteTextSysexEvt(take, i);
+      for (const Note &n : g_ed.notes)
+        if (!n.lyric.empty())
+          MIDI_InsertTextSysexEvt(take, false, false, MIDI_GetPPQPosFromProjTime(take, n.start), LYRIC_EVENT,
+                                  n.lyric.c_str(), (int)n.lyric.size());
+    }
     MIDI_Sort(take);
   }
   if (dataChanged)
@@ -395,10 +438,18 @@ static std::vector<Widget> widgets()
       {W_SLIDER, "Lowest frequency", &g_np.fmin, NULL, 20, 500, true, true, 1, "%.0f Hz"},
       {W_SLIDER, "Highest frequency", &g_np.fmax, NULL, 1000, 11000, true, true, 1, "%.0f Hz"},
       {W_BUTTON, "Reset to defaults", NULL, NULL, 0, 0, false, false, 0, NULL, B_RESET},
+      {W_HEADER, "Guides"},
+      {W_TOGGLE, "Overtone ghosts (H)", NULL, &g_ghosts},
+      {W_SLIDER, "Overtones", &g_harmonics, NULL, 2, 16, false, false, 1, "%.0f"},
+      {W_SLIDER, "Guide opacity", &g_guideOpacity, NULL, 0, 1, false, false, 1, "%.2f"},
+      {W_TOGGLE, "Play notes when clicked", NULL, &g_audition},
   };
 }
 
-static int widgetHeight(WidgetType t) { return t == W_HEADER ? 24 : t == W_SLIDER ? 36 : t == W_TOGGLE ? 22 : 26; }
+static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE ? 20 : 24; }
+
+// Spectrogram settings need the display values recomputed; guide settings only a redraw.
+static bool isRenderParam(const void *p) { return p >= (const void *)&g_rp && p < (const void *)(&g_rp + 1); }
 
 static double sliderFrac(const Widget &w, double v)
 {
@@ -435,7 +486,8 @@ static void changedSetting(const Widget &w)
 {
   if (w.analysis) { g_analysisDirty = true; redraw(); return; } // recomputed on mouse up
   if (w.value == &g_rp.noiseFraction) estimateNoise(g_spec, g_rp.noiseFraction);
-  updateValues();
+  if (isRenderParam(w.value)) updateValues();
+  else redraw();
 }
 
 static void pressButton(int b)
@@ -463,7 +515,12 @@ static void panelMouse(int x, int y, bool down)
     const double v = sliderValue(w, (double)(x - p.l - 12) / (p.r - p.l - 24));
     if (v != *w.value) *w.value = v, changedSetting(w);
   }
-  else if (down && w.type == W_TOGGLE) *w.flag = !*w.flag, updateValues();
+  else if (down && w.type == W_TOGGLE)
+  {
+    *w.flag = !*w.flag;
+    if (isRenderParam(w.flag)) updateValues();
+    else redraw();
+  }
   else if (down && w.type == W_BUTTON) pressButton(w.button);
 }
 
@@ -504,12 +561,98 @@ static void drawPanel(Canvas &cv, HDC dc)
     }
     top += h;
   }
-  text(dc, "Keys: S panel, G snap, F fit, Z zoom to", l, p.b - 58, r, p.b - 42, C_DIM, DT_LEFT);
-  text(dc, "selection, [ ] brightness, - = contrast,", l, p.b - 42, r, p.b - 26, C_DIM, DT_LEFT);
-  text(dc, ", . resolution", l, p.b - 26, r, p.b - 10, C_DIM, DT_LEFT);
+  if (top + 70 > p.b) return;
+  text(dc, "Keys: S panel, G snap, F fit, Z zoom to", l, p.b - 66, r, p.b - 50, C_DIM, DT_LEFT);
+  text(dc, "selection, H ghosts, Enter lyric,", l, p.b - 50, r, p.b - 34, C_DIM, DT_LEFT);
+  text(dc, "[ ] brightness, - = contrast,", l, p.b - 34, r, p.b - 18, C_DIM, DT_LEFT);
+  text(dc, ", . resolution", l, p.b - 18, r, p.b - 2, C_DIM, DT_LEFT);
+}
+
+// --- overtone guides ------------------------------------------------------------------
+
+// Strongest level (dB) within half a semitone of `pitch` between times a and b.
+static double levelDb(double pitch, double a, double b)
+{
+  const Spectrogram &s = g_spec;
+  if (!s.frames) return -200;
+  const int f0 = std::max(0, (int)floor((a - g_audioPos) * s.frameRate()));
+  const int f1 = std::min(s.frames - 1, (int)ceil((b - g_audioPos) * s.frameRate()));
+  const int b0 = std::max(0, (int)ceil(s.binOfPitch(pitch - 0.5))), b1 = std::min(s.bins - 1, (int)floor(s.binOfPitch(pitch + 0.5)));
+  float m = 0;
+  for (int f = f0; f <= f1; f++)
+    for (int k = b0; k <= b1; k++) m = std::max(m, s.at(f, k));
+  return 20 * log10(std::max(m, 1e-10f));
+}
+
+static double overtonePitch(double p, int h) { return p + 12 * log2((double)h); }
+
+// Note ghosts: faint outlines where each note's overtones should be.
+static void drawGhosts(Canvas &cv)
+{
+  if (!g_ghosts) return;
+  const int a = (int)lround(g_guideOpacity * 160), n = (int)lround(g_harmonics);
+  for (const Note &nt : g_ed.notes)
+  {
+    const int x0 = (int)lround(g_view.x(nt.start)), x1 = std::max(x0 + 2, (int)lround(g_view.x(nt.end)));
+    for (int h = 2; h <= n; h++)
+    {
+      const double y = g_view.y(overtonePitch(nt.pitch, h)), hh = std::max(1.0, g_view.rowH * 0.3);
+      const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 1;
+      cv.fill(x0, y0, x1, y0 + 1, C_NOTE, a), cv.fill(x0, y1 - 1, x1, y1, C_NOTE, a);
+      cv.fill(x0, y0, x0 + 1, y1, C_NOTE, a), cv.fill(x1 - 1, y0, x1, y1, C_NOTE, a);
+    }
+  }
+}
+
+// Hover guides: overtone marks for the pitch under the mouse (or the note being dragged), plus the
+// octave check: the pitches this one would be the 2nd, 3rd or 4th overtone of, with their level
+// relative to it. A strong one means the real note is probably lower.
+static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
+{
+  const int dn = g_ed.dragNote();
+  if (dn < 0 && !n.in(g_mouseX, g_mouseY)) return;
+  int p0;
+  double tA, tB;
+  int xA, xB;
+  if (dn >= 0)
+  {
+    const Note &nt = g_ed.notes[dn];
+    p0 = nt.pitch, tA = nt.start, tB = nt.end;
+    xA = (int)lround(g_view.x(tA)), xB = std::max(xA + 40, (int)lround(g_view.x(tB)));
+  }
+  else
+  {
+    p0 = g_view.pitchAt(g_mouseY), tA = g_view.t(g_mouseX) - 0.03, tB = g_view.t(g_mouseX) + 0.03;
+    xA = g_mouseX - 70, xB = g_mouseX + 70;
+  }
+  const int a = (int)lround(g_guideOpacity * 256), nh = (int)lround(g_harmonics);
+  char buf[32];
+  for (int h = 1; h <= nh; h++)
+  {
+    const int y = (int)lround(g_view.y(overtonePitch(p0, h)));
+    if (y < n.t || y >= n.b) continue;
+    cv.fill(xA, y - (h == 1 ? 1 : 0), xB, y + 1, 0xffffff, h == 1 ? 256 : a);
+    snprintf(buf, sizeof(buf), "%d", h);
+    text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, 0xffffff, DT_LEFT);
+  }
+  const double own = levelDb(p0, tA, tB);
+  static const struct { int h; const char *label; } below[] = {{2, "8vb"}, {3, "12th"}, {4, "2 oct"}};
+  for (const auto &c : below)
+  {
+    const double pc = overtonePitch(p0, 1) - 12 * log2((double)c.h);
+    const int y = (int)lround(g_view.y(pc));
+    if (y < n.t || y >= n.b || g_spec.binOfPitch(pc) < 0) continue;
+    const double rel = levelDb(pc, tA, tB) - own;
+    const bool strong = rel > -12;
+    for (int x = xA; x < xB; x += 8) cv.fill(x, y, x + 4, y + 1, strong ? 0xffa040 : 0xa0a0a0, strong ? 256 : a);
+    snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
+    text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? 0xffa040 : 0xa0a0a0, DT_LEFT);
+  }
 }
 
 // --- paint -------------------------------------------------------------------------
+
+static void placeEdit();
 
 static void paint(HDC hdc)
 {
@@ -562,6 +705,9 @@ static void paint(HDC hdc)
   std::vector<GridLine> grid = gridLines(n);
   for (const GridLine &g : grid) cv.fill(g.x, n.t, g.x + 1, n.b, 0xffffff, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
 
+  drawGhosts(cv);
+  drawHoverGuides(cv, dc, n);
+
   // notes
   const int drawing = g_ed.drawing();
   for (size_t i = 0; i < g_ed.notes.size(); i++)
@@ -573,6 +719,18 @@ static void paint(HDC hdc)
     cv.fill(x0, y0, x1, y1, sel ? C_SEL : C_NOTE, 235);
     cv.frame(x0, y0, x1, y1, sel ? C_SEL_EDGE : C_NOTE_EDGE, sel && y1 - y0 > 6 ? 2 : 1);
   }
+  // lyrics: inside the note when it is tall enough, else just below it
+  for (const Note &nt : g_ed.notes)
+  {
+    if (nt.lyric.empty()) continue;
+    const int x0 = (int)lround(g_view.x(nt.start)), x1 = std::max(x0 + 2, (int)lround(g_view.x(nt.end)));
+    const int y0 = (int)lround(g_view.y(nt.pitch + 0.5)), y1 = (int)lround(g_view.y(nt.pitch - 0.5));
+    const int l = std::max(x0 + 2, n.l), r = std::min(std::max(x1, x0 + 60), n.r);
+    if (r <= l) continue;
+    if (y1 - y0 >= 12) text(dc, nt.lyric.c_str(), l, std::max(y0, n.t), std::min(x1 - 1, n.r), std::min(y1, n.b), nt.sel ? 0x0b3d3a : 0x04201e, DT_LEFT);
+    else if (y1 + 14 <= n.b) text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, 0xffffff, DT_LEFT);
+  }
+
   double mr[4];
   if (g_ed.marquee(mr))
   {
@@ -676,6 +834,7 @@ static void paint(HDC hdc)
   if (panelShown()) drawPanel(cv, dc);
 
   BitBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, SRCCOPY);
+  if (g_edit) placeEdit(); // follow scrolling and zooming while typing a lyric
 }
 
 // --- navigation --------------------------------------------------------------------
@@ -729,6 +888,162 @@ static void scrollPitch(double semitones)
   redraw();
 }
 
+// --- note preview ----------------------------------------------------------------------
+
+// Plays a short note through the notes track (so through its synth) as a track preview, from a
+// tiny generated MIDI file per pitch; nothing needs to be armed.
+static preview_register_t g_preview;
+static bool g_previewInit, g_previewPlaying;
+
+static void stopPreview()
+{
+  if (g_previewPlaying) StopTrackPreview2(NULL, &g_preview);
+  g_previewPlaying = false;
+  delete g_preview.src;
+  g_preview.src = NULL;
+}
+
+static void previewPitch(int pitch)
+{
+  if (!g_audition || pitch < 0 || pitch > 127 || !g_midi || !ValidatePtr2(NULL, g_midi, "MediaItem*")) return;
+  const char *tmp = getenv("TMPDIR");
+  char path[1024];
+  snprintf(path, sizeof(path), "%s/reascribe-preview-%d.mid", tmp && *tmp ? tmp : "/tmp", pitch);
+  if (FILE *f = fopen(path, "rb")) fclose(f);
+  else if ((f = fopen(path, "wb")))
+  {
+    // format 0, 96 ticks per quarter; note on, note off after 77 ticks (~0.4 s at 120 bpm), end of track
+    const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 12,
+                                 0, 0x90, (unsigned char)pitch, 96, 77, 0x80, (unsigned char)pitch, 0, 0, 0xff, 0x2f, 0};
+    fwrite(smf, 1, sizeof(smf), f);
+    fclose(f);
+  }
+  stopPreview();
+  if (!g_previewInit) pthread_mutex_init(&g_preview.mutex, NULL), g_previewInit = true;
+  g_preview.src = PCM_Source_CreateFromFile(path);
+  if (!g_preview.src) return;
+  g_preview.m_out_chan = -1; // -1: play through preview_track
+  g_preview.preview_track = GetMediaItem_Track(g_midi);
+  g_preview.curpos = 0, g_preview.loop = false, g_preview.volume = 1;
+  g_previewPlaying = PlayTrackPreview2Ex(NULL, &g_preview, 0, 0) != 0;
+}
+
+static int g_lastDragPitch = -1;
+
+// While drawing or moving, play the dragged note again whenever its pitch changes.
+static void previewDragged()
+{
+  const int dn = g_ed.dragNote();
+  const int pitch = dn >= 0 ? g_ed.notes[dn].pitch : -1;
+  if (pitch >= 0 && pitch != g_lastDragPitch) previewPitch(pitch);
+  g_lastDragPitch = pitch;
+}
+
+// --- lyrics ------------------------------------------------------------------------------
+
+static int findNote(double start, int pitch)
+{
+  for (size_t i = 0; i < g_ed.notes.size(); i++)
+    if (fabs(g_ed.notes[i].start - start) < 1e-6 && g_ed.notes[i].pitch == pitch) return (int)i;
+  return -1;
+}
+
+// The note after (dir > 0) or before (dir < 0) note i in time; same-start notes ordered by pitch.
+static int neighbourNote(int i, int dir)
+{
+  const Note &c = g_ed.notes[i];
+  int best = -1;
+  for (size_t j = 0; j < g_ed.notes.size(); j++)
+  {
+    const Note &o = g_ed.notes[j];
+    const bool after = o.start > c.start || (o.start == c.start && o.pitch > c.pitch);
+    const bool before = o.start < c.start || (o.start == c.start && o.pitch < c.pitch);
+    if ((int)j == i || (dir > 0 ? !after : !before)) continue;
+    if (best < 0) { best = (int)j; continue; }
+    const Note &b = g_ed.notes[best];
+    const bool closer = dir > 0 ? (o.start < b.start || (o.start == b.start && o.pitch < b.pitch))
+                                : (o.start > b.start || (o.start == b.start && o.pitch > b.pitch));
+    if (closer) best = (int)j;
+  }
+  return best;
+}
+
+static void placeEdit()
+{
+  const int i = findNote(g_editStart, g_editPitch);
+  if (!g_edit || i < 0) return;
+  const Note &nt = g_ed.notes[i];
+  const int x = (int)lround(g_view.x(nt.start)), y = (int)lround(g_view.y(nt.pitch - 0.5));
+  const int w = std::max(90, (int)lround(g_view.x(nt.end)) - x);
+  RECT r;
+  GetWindowRect(g_edit, &r);
+  POINT pt = {r.left, r.top};
+  ScreenToClient(g_hwnd, &pt);
+  if (pt.x != x || pt.y != y + 1 || r.right - r.left != w) // moving it repaints us, so only when needed
+    SetWindowPos(g_edit, NULL, x, y + 1, w, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+static void beginLyric(int i)
+{
+  if (i < 0 || i >= (int)g_ed.notes.size()) return;
+  // scroll so the note is visible
+  const Rect n = noteArea();
+  const Note &nt = g_ed.notes[i];
+  if (g_view.x(nt.start) < n.l + 20 || g_view.x(nt.start) > n.r - 100) g_view.t0 = nt.start - 60 / g_view.pps - (n.l - g_view.x0) / g_view.pps;
+  if (g_view.y(nt.pitch) < n.t + 20 || g_view.y(nt.pitch) > n.b - 40) g_view.pitchTop = nt.pitch + 0.5 * (n.b - n.t) / g_view.rowH;
+  for (Note &o : g_ed.notes) o.sel = false;
+  g_ed.notes[i].sel = true;
+  g_editStart = nt.start, g_editPitch = nt.pitch;
+  if (!g_edit)
+  {
+    SWELL_MakeSetCurParms(1, 1, 0, 0, g_hwnd, false, false);
+    g_edit = SWELL_MakeEditField(1001, 0, 0, 90, 20, 0);
+    SWELL_MakeSetCurParms(1, 1, 0, 0, NULL, false, false);
+  }
+  if (!g_edit) return;
+  SetWindowText(g_edit, nt.lyric.c_str());
+  placeEdit();
+  ShowWindow(g_edit, SW_SHOW);
+  SetFocus(g_edit);
+  SendMessage(g_edit, EM_SETSEL, 0, -1);
+  redraw();
+}
+
+// commit: store the typed text; dir: then edit the next (1) / previous (-1) note, or stop (0)
+static void endLyric(bool commit, int dir)
+{
+  if (!g_edit) return;
+  char buf[1024] = "";
+  GetWindowText(g_edit, buf, sizeof(buf));
+  DestroyWindow(g_edit);
+  g_edit = NULL;
+  SetFocus(g_hwnd);
+  int i = findNote(g_editStart, g_editPitch);
+  if (i < 0) return;
+  std::string text = buf;
+  while (!text.empty() && isspace((unsigned char)text.back())) text.pop_back();
+  while (!text.empty() && isspace((unsigned char)text[0])) text.erase(0, 1);
+  const int next = dir ? neighbourNote(i, dir) : -1;
+  double nextStart = 0;
+  int nextPitch = -1;
+  if (next >= 0) nextStart = g_ed.notes[next].start, nextPitch = g_ed.notes[next].pitch;
+  if (commit && text != g_ed.notes[i].lyric)
+  {
+    g_ed.notes[i].lyric = text;
+    commitNotes();
+  }
+  if (nextPitch >= 0) beginLyric(findNote(nextStart, nextPitch));
+  redraw();
+}
+
+static int firstSelected()
+{
+  int best = -1;
+  for (size_t i = 0; i < g_ed.notes.size(); i++)
+    if (g_ed.notes[i].sel && (best < 0 || g_ed.notes[i].start < g_ed.notes[best].start)) best = (int)i;
+  return best;
+}
+
 // --- input -------------------------------------------------------------------------
 
 static int mods()
@@ -761,6 +1076,8 @@ static bool onKey(int key)
   if (key == VK_DELETE || key == VK_BACK) { if (g_ed.deleteSelected()) commitNotes(); }
   else if (key == VK_ESCAPE) { if (g_ed.active()) g_ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture(); else if (g_ed.selectAll(false)) commitNotes(); }
   else if (key == 'A' && (m & MOD_CMD)) { if (g_ed.selectAll(true)) commitNotes(); }
+  else if (key == VK_RETURN) beginLyric(firstSelected());
+  else if (key == 'H' && !m) g_ghosts = !g_ghosts;
   else if (key == 'S' && !m) g_panel = !g_panel;
   else if (key == 'G' && !m) g_snapGrid = !g_snapGrid, setupEditorSnap();
   else if (key == 'F' && !m) fitItem();
@@ -781,11 +1098,11 @@ static bool isOurKey(int key, int flags)
   const bool cmd = (flags & FCONTROL) != 0;
   switch (key)
   {
-  case VK_DELETE: case VK_BACK: case VK_ESCAPE:
+  case VK_DELETE: case VK_BACK: case VK_ESCAPE: case VK_RETURN:
   case '[' | CHARKEY: case ']' | CHARKEY: case '-' | CHARKEY: case '=' | CHARKEY: case ',' | CHARKEY: case '.' | CHARKEY:
     return true;
   case 'A': return cmd;
-  case 'S': case 'G': case 'F': case 'Z': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -793,6 +1110,19 @@ static bool isOurKey(int key, int flags)
 int Window_TranslateAccel(MSG *msg)
 {
   if (!g_hwnd || (msg->hwnd != g_hwnd && !IsChild(g_hwnd, msg->hwnd))) return 0;
+  if (g_edit && msg->hwnd != g_hwnd)
+  {
+    // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes to the field
+    if (msg->message == WM_KEYDOWN)
+    {
+      const int key = (int)msg->wParam, flags = (int)msg->lParam;
+      if (key == VK_TAB) { endLyric(true, (flags & FSHIFT) ? -1 : 1); return 1; }
+      if (key == VK_SPACE && (flags & FVIRTKEY)) { endLyric(true, 1); return 1; }
+      if (key == VK_RETURN) { endLyric(true, 0); return 1; }
+      if (key == VK_ESCAPE) { endLyric(false, 0); return 1; }
+    }
+    return -1;
+  }
   if (msg->message == WM_KEYDOWN && isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam)) return -1;
   return 0; // everything else (e.g. space for play/stop) goes to REAPER
 }
@@ -830,11 +1160,19 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
   {
     const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
     syncViewOrigin();
+    if (g_edit) endLyric(true, 0); // clicking elsewhere finishes the lyric
     SetFocus(hwnd);
+    if (x < KB_W && y >= RULER_H && y < noteArea().b) { previewPitch(g_view.pitchAt(y)); return 0; }
     if (x < KB_W && y < RULER_H) { g_panel = !g_panel; redraw(); return 0; }
     if (panelShown() && panelArea().in(x, y)) g_drag = DRAG_PANEL, panelMouse(x, y, true);
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
-    else if (noteArea().in(x, y)) g_drag = DRAG_NOTES, g_ed.mouseDown(g_view, x, y, mods());
+    else if (noteArea().in(x, y))
+    {
+      g_drag = DRAG_NOTES, g_ed.mouseDown(g_view, x, y, mods());
+      int hit = -1;
+      if (g_ed.hitTest(g_view, x, y, &hit) != NoteEditor::NONE) previewPitch(g_ed.notes[hit].pitch);
+      g_lastDragPitch = hit >= 0 ? g_ed.notes[hit].pitch : -1;
+    }
     else return 0;
     SetCapture(hwnd);
     redraw();
@@ -844,7 +1182,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
   {
     const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
     g_mouseX = x, g_mouseY = y;
-    if (g_drag == DRAG_NOTES) g_ed.mouseMove(g_view, x, y, mods());
+    if (g_drag == DRAG_NOTES) g_ed.mouseMove(g_view, x, y, mods()), previewDragged();
     else if (g_drag == DRAG_RULER) SetEditCurPos(g_view.t(x), false, true);
     else if (g_drag == DRAG_PANEL) panelMouse(x, y, false);
     redraw();
@@ -859,6 +1197,14 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     if (d == DRAG_NOTES && g_ed.mouseUp(g_view, x, y, mods())) commitNotes();
     if (d == DRAG_PANEL) finishPanelDrag();
     redraw();
+    return 0;
+  }
+  case WM_LBUTTONDBLCLK:
+  {
+    // double-click a note to type its lyric
+    const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+    int hit = -1;
+    if (noteArea().in(x, y) && g_ed.hitTest(g_view, x, y, &hit) != NoteEditor::NONE) beginLyric(hit);
     return 0;
   }
   case WM_RBUTTONDOWN:
@@ -903,6 +1249,8 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     DestroyWindow(hwnd);
     return 0;
   case WM_DESTROY:
+    stopPreview();
+    g_edit = NULL; // destroyed with the window
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
     g_memdc = NULL, g_memw = g_memh = 0, g_hwnd = NULL, g_layerValid = false, g_drag = DRAG_NONE;
     return 0;
