@@ -22,7 +22,7 @@
 #include "nsgt.h"
 
 // Layout, in pixels.
-static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250;
+static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, OVERVIEW_H = 28;
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
 static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
@@ -103,7 +103,7 @@ static HWND g_edit;            // lyric edit field while typing; identifies its 
 static double g_editStart;
 static int g_editPitch;
 
-enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL };
+enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL, DRAG_OVERVIEW };
 static double g_selectAnchor;
 static Drag g_drag;
 static int g_panelWidget = -1;
@@ -145,15 +145,16 @@ static Rect clientRect()
   return {0, 0, (int)r.right, (int)r.bottom};
 }
 // Below this size only the background is drawn, so the areas below always fit in the client rect.
-static const int MIN_W = KB_W + 40, MIN_H = RULER_H + STATUS_H + 20;
+static const int MIN_W = KB_W + 40, MIN_H = RULER_H + OVERVIEW_H + STATUS_H + 20;
 
 static bool panelShown() { return g_panel && clientRect().r >= KB_W + PANEL_W + 100; }
 static Rect noteArea()
 {
   Rect c = clientRect();
-  return {KB_W, RULER_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)), std::max(RULER_H + 1, c.b - STATUS_H)};
+  return {KB_W, RULER_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)), std::max(RULER_H + 1, c.b - STATUS_H - OVERVIEW_H)};
 }
 static Rect rulerArea() { Rect n = noteArea(); return {n.l, 0, n.r, RULER_H}; }
+static Rect overviewArea() { Rect n = noteArea(); return {n.l, n.b, n.r, n.b + OVERVIEW_H}; }
 static Rect panelArea() { Rect c = clientRect(), n = noteArea(); return {n.r, 0, c.r, c.b}; }
 
 static void syncViewOrigin()
@@ -452,6 +453,55 @@ static void renderLayer(const Rect &n)
       for (double ep : explained)
         if (fabs(rowPitch[y] - ep) < 0.5) { m = (unsigned char)(m * EXPLAIN_DIM); break; }
       g_layer[(size_t)y * w + x] = 0xff000000 | g_lut[m];
+    }
+  }
+}
+
+// The overview: the whole item over the overview's width, vocal range E2..C6 over its height.
+static const int OV_LOW = 40, OV_HIGH = 84;
+static std::vector<unsigned int> g_ovLayer;
+static int g_ovW, g_ovH, g_ovVersion = -1;
+static double g_ovPos, g_ovLen;
+
+static double overviewTime(int x)
+{
+  const Rect o = overviewArea();
+  return g_audioPos + g_audioLen * (x - o.l) / std::max(1, o.r - o.l);
+}
+static double overviewX(double t)
+{
+  const Rect o = overviewArea();
+  return o.l + (t - g_audioPos) / std::max(1e-9, g_audioLen) * (o.r - o.l);
+}
+static double overviewY(double pitch)
+{
+  const Rect o = overviewArea();
+  return o.b - 1 - (pitch - OV_LOW) / (OV_HIGH - OV_LOW) * (o.b - o.t - 2);
+}
+
+static void renderOverview(int w, int h)
+{
+  g_ovLayer.assign((size_t)w * h, 0xff000000 | C_AREA);
+  g_ovW = w, g_ovH = h, g_ovVersion = g_valVersion, g_ovPos = g_audioPos, g_ovLen = g_audioLen;
+  const Spectrogram &s = g_spec;
+  if (!s.frames || g_val.size() != s.mag.size()) return;
+  const double lo = s.binOfPitch(OV_LOW - 0.5), hi = s.binOfPitch(OV_HIGH + 0.5);
+  std::vector<unsigned char> col(s.bins);
+  for (int x = 0; x < w; x++)
+  {
+    const int f0 = std::max(0, (int)((double)x * s.frames / w)), f1 = std::min(s.frames, std::max(f0 + 1, (int)((double)(x + 1) * s.frames / w)));
+    std::fill(col.begin(), col.end(), 0);
+    for (int f = f0; f < f1; f++)
+    {
+      const unsigned char *v = &g_val[(size_t)f * s.bins];
+      for (int b = 0; b < s.bins; b++) col[b] = std::max(col[b], v[b]);
+    }
+    for (int y = 0; y < h; y++)
+    {
+      const int b0 = std::max(0, (int)(hi - (hi - lo) * (y + 1) / h)), b1 = std::min(s.bins - 1, (int)(hi - (hi - lo) * y / h));
+      unsigned char m = 0;
+      for (int b = b0; b <= b1; b++) m = std::max(m, col[b]);
+      g_ovLayer[(size_t)y * w + x] = 0xff000000 | g_lut[m];
     }
   }
 }
@@ -1354,7 +1404,7 @@ static void paint(HDC hdc)
 
   // keyboard
   cv.clip = {0, n.t, n.l, n.b};
-  const int hoverPitch = n.in(g_mouseX, g_mouseY) || (g_mouseX < n.l && g_mouseY >= n.t) ? g_view.pitchAt(g_mouseY) : -1;
+  const int hoverPitch = n.in(g_mouseX, g_mouseY) || (g_mouseX < n.l && g_mouseY >= n.t && g_mouseY < n.b) ? g_view.pitchAt(g_mouseY) : -1;
   for (int p = pLo; p <= pHi; p++)
   {
     const int y0 = (int)lround(g_view.y(p + 0.5)), y1 = (int)lround(g_view.y(p - 0.5));
@@ -1423,9 +1473,30 @@ static void paint(HDC hdc)
     cv.fill(x, 0, x + 1, n.b, C_PLAY_CURSOR);
   }
 
+  // overview: whole item, notes, and the visible range
+  {
+    const Rect o = overviewArea();
+    const int ow = (o.r - o.l) * S, oh = (o.b - o.t) * S;
+    if (ow != g_ovW || oh != g_ovH || g_ovVersion != g_valVersion || g_ovPos != g_audioPos || g_ovLen != g_audioLen) renderOverview(ow, oh);
+    for (int y = 0; y < oh; y++) memcpy(fb + (size_t)(o.t * S + y) * w + o.l * S, &g_ovLayer[(size_t)y * ow], ow * 4);
+    cv.clip = o;
+    for (const Note &nt : g_ed.notes)
+    {
+      const int y = (int)lround(overviewY(nt.pitch));
+      cv.fill((int)lround(overviewX(nt.start)), y - 1, std::max((int)lround(overviewX(nt.start)) + 1, (int)lround(overviewX(nt.end))), y + 1, noteColour);
+    }
+    const int va = (int)lround(overviewX(g_view.t(n.l))), vb = std::max(va + 2, (int)lround(overviewX(g_view.t(n.r))));
+    cv.fill(o.l, o.t, va, o.b, 0x000000, 120), cv.fill(vb, o.t, o.r, o.b, 0x000000, 120);
+    cv.frame(va, o.t, vb, o.b, 0xffffff);
+    cv.fill(o.l, o.t, o.r, o.t + 1, 0x000000);
+  }
+
   // status line: pitch, frequency, cents of the strongest nearby peak, time, bar.beat, level
-  cv.clip = {0, n.b, c.r, c.b};
-  cv.fill(0, n.b, c.r, c.b, C_RULER);
+  const int sy = n.b + OVERVIEW_H; // status line top
+  cv.clip = {0, n.b, n.l, sy};
+  cv.fill(0, n.b, n.l, sy, C_BUTTON);
+  cv.clip = {0, sy, c.r, c.b};
+  cv.fill(0, sy, c.r, c.b, C_RULER);
   std::string status;
   if (n.in(g_mouseX, g_mouseY))
   {
@@ -1474,11 +1545,11 @@ static void paint(HDC hdc)
     snprintf(buf, sizeof(buf), "analysing %d%%   snap: %s (G)", pm / 10, SNAP_NAMES[g_snapMode]);
     cv.clip = {0, 0, c.r, c.b};
     cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
-    cv.clip = {0, n.b, c.r, c.b};
+    cv.clip = {0, sy, c.r, c.b};
   }
   else snprintf(buf, sizeof(buf), "snap: %s (G)", SNAP_NAMES[g_snapMode]);
-  text(dc, status.c_str(), 6, n.b, c.r - 120, c.b, C_TEXT, DT_LEFT);
-  text(dc, buf, 6, n.b, c.r - 6, c.b, C_DIM, DT_RIGHT);
+  text(dc, status.c_str(), 6, sy, c.r - 120, c.b, C_TEXT, DT_LEFT);
+  text(dc, buf, 6, sy, c.r - 6, c.b, C_DIM, DT_RIGHT);
 
   cv.clip = {0, 0, c.r, c.b};
   if (panelShown()) drawPanel(cv, dc);
@@ -1513,6 +1584,13 @@ static void zoomToSelection()
   g_view.t0 = a - len * 0.1;
   g_view.rowH = std::min(60.0, std::max(3.0, (double)(n.b - n.t) / (hi - lo + 7)));
   g_view.pitchTop = hi + 3.5;
+  redraw();
+}
+
+static void centreOn(double t)
+{
+  const Rect n = noteArea();
+  g_view.t0 = t - 0.5 * (n.r - n.l) / g_view.pps - (n.l - g_view.x0) / g_view.pps;
   redraw();
 }
 
@@ -1999,6 +2077,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
     }
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
+    else if (overviewArea().in(x, y)) g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
     else if (noteArea().in(x, y))
     {
       int sug = -1;
@@ -2030,6 +2109,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
     }
     else if (g_drag == DRAG_PANEL) panelMouse(x, y, false);
+    else if (g_drag == DRAG_OVERVIEW) centreOn(overviewTime(x));
     redraw();
     return 0;
   }

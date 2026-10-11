@@ -51,7 +51,7 @@ Guiding principles (several learned the hard way in DrawScore):
 | NAV-4 | P1 | — | Follow playback (page or continuous scroll), toggleable. |
 | NAV-5 | P1 | ✅ | Keep the view in sync with REAPER's arrange view (optional link, L or the panel). Time range only: when linked, the window starts by following the arrange view, then whichever side scrolls or zooms moves the other. |
 | NAV-6 | P1 | — | Trackpad pan with inertia (DrawScore: ×0.95 per frame, stop below 0.5 px/s). |
-| NAV-7 | P2 | — | Mini overview of the whole item with the visible range. |
+| NAV-7 | P2 | ✅ | Mini overview of the whole item with the visible range: a strip above the status line with the spectrogram's vocal range (E2 … C6) and the active voice's notes; click or drag it to scroll there. |
 
 ## 3. Spectrogram display
 
