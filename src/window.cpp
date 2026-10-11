@@ -78,10 +78,16 @@ static const double ONSET_SNAP_RANGE = 0.03; // seconds
 static Contour g_contour;
 static std::vector<Segment> g_segments;   // stable-pitch stretches of the contour (snapping; suggestions if chosen)
 static std::vector<Segment> g_estimated;  // notes from the estimator (estimate.h), the default suggestions
+static std::vector<int> g_estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
 static std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
 static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};
 static int g_suggestFrom;
 static const std::vector<Segment> &suggestions() { return g_suggestFrom ? g_segments : g_estimated; }
+// The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the active voice's.
+static int suggestionVoice(size_t i)
+{
+  return g_suggestFrom || i >= g_estimatedVoice.size() ? g_voice : g_estimatedVoice[i];
+}
 static std::vector<int> g_onsets;         // frames
 static std::vector<double> g_snapTimes;   // onsets and segment edges, project time, sorted
 static bool g_showContour = true, g_suggest = true, g_pitchFromContour = true;
@@ -232,6 +238,7 @@ struct Vocal
   std::vector<Segment> segments;
   std::vector<int> onsets;
   std::vector<Segment> estimated;
+  std::vector<int> estimatedVoice;
   std::string estimateNote;
 };
 
@@ -327,8 +334,9 @@ struct Job
     const bool haveBp = runBasicPitch(modelPath, mono, es.frames, bp, &err, part(0.2, 0.45));
     if (cancel) return;
     vocal.estimateNote = haveBp ? "" : "basic-pitch: " + err;
-    for (const NoteEstimate &e : estimateNotes(es, mono, haveBp ? &bp : nullptr, EstimateParams(), part(0.45, 1)))
-      vocal.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
+    const std::vector<NoteEstimate> est = estimateNotes(es, mono, haveBp ? &bp : nullptr, EstimateParams(), part(0.45, 1));
+    for (const NoteEstimate &e : est) vocal.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
+    vocal.estimatedVoice = assignVoices(est, es.frameRate(), WINDOW_VOICES);
   }
 
   void run()
@@ -388,7 +396,7 @@ static void install(const ChannelCache &c)
 {
   g_spec = c.spec;
   g_contour = c.vocal.contour, g_segments = c.vocal.segments, g_onsets = c.vocal.onsets;
-  g_estimated = c.vocal.estimated, g_estimateNote = c.vocal.estimateNote;
+  g_estimated = c.vocal.estimated, g_estimatedVoice = c.vocal.estimatedVoice, g_estimateNote = c.vocal.estimateNote;
   g_snapTimes.clear();
   for (int f : g_onsets) g_snapTimes.push_back(frameTime(f));
   for (const Segment &sg : g_segments) g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
@@ -1380,14 +1388,18 @@ static int suggestionAt(int x, int y)
 static void drawSuggestions(Canvas &cv, const Rect &n)
 {
   if (!g_suggest) return;
-  for (const Segment &sg : suggestions())
+  const std::vector<Segment> &sug = suggestions();
+  for (size_t i = 0; i < sug.size(); i++)
   {
+    const Segment &sg = sug[i];
     int x0, y0, x1, y1;
     segmentRect(sg, &x0, &y0, &x1, &y1);
     if (x1 < n.l || x0 > n.r || covered(sg)) continue;
-    cv.fill(x0, y0, x1, y1, C_NOTE, 50);
-    for (int x = x0; x < x1; x += 6) cv.fill(x, y0, std::min(x + 3, x1), y0 + 1, C_NOTE), cv.fill(x, y1 - 1, std::min(x + 3, x1), y1, C_NOTE);
-    for (int y = y0; y < y1; y += 4) cv.fill(x0, y, x0 + 1, std::min(y + 2, y1), C_NOTE), cv.fill(x1 - 1, y, x1, std::min(y + 2, y1), C_NOTE);
+    const int v = suggestionVoice(i);
+    const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : 0x909090; // in the colour of the voice A puts it in
+    cv.fill(x0, y0, x1, y1, col, 50);
+    for (int x = x0; x < x1; x += 6) cv.fill(x, y0, std::min(x + 3, x1), y0 + 1, col), cv.fill(x, y1 - 1, std::min(x + 3, x1), y1, col);
+    for (int y = y0; y < y1; y += 4) cv.fill(x0, y, x0 + 1, std::min(y + 2, y1), col), cv.fill(x1 - 1, y, x1, std::min(y + 2, y1), col);
   }
 }
 
@@ -2046,18 +2058,49 @@ static void acceptSuggestion(int i)
   commitNotes();
 }
 
+// Notes straight into another voice's take (its track and item are created if needed).
+static void insertIntoVoice(int v, const std::vector<Note> &notes)
+{
+  MediaItem *item = VoiceItem(g_audio, v, true);
+  MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
+  if (!take) return;
+  const bool noSort = true;
+  for (const Note &n : notes)
+    MIDI_InsertNote(take, false, false, MIDI_GetPPQPosFromProjTime(take, n.start), MIDI_GetPPQPosFromProjTime(take, n.end), 0,
+                    n.pitch, g_ed.velocity, &noSort);
+  MIDI_Sort(take);
+}
+
+// A: every suggestion in view into its voice, as one undo point. Crowded-out ones (grey) are left.
 static void acceptVisibleSuggestions()
 {
   const Rect n = noteArea();
-  bool any = false;
-  for (const Segment &sg : suggestions())
+  std::vector<Note> byVoice[WINDOW_VOICES];
+  const std::vector<Segment> &sug = suggestions();
+  for (size_t i = 0; i < sug.size(); i++)
   {
+    const Segment &sg = sug[i];
     const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
-    if (b < g_view.t(n.l) || a > g_view.t(n.r) || covered(sg)) continue;
-    g_ed.notes.push_back({a, b, (int)lround(sg.pitch), false, -1});
-    any = true;
+    const int v = suggestionVoice(i);
+    if (v < 0 || b < g_view.t(n.l) || a > g_view.t(n.r) || covered(sg)) continue;
+    byVoice[v].push_back({a, b, (int)lround(sg.pitch), false, -1});
   }
-  if (any) commitNotes();
+  bool others = false;
+  for (int v = 0; v < WINDOW_VOICES; v++) others |= v != g_voice && !byVoice[v].empty();
+  if (others) Undo_BeginBlock2(NULL);
+  for (int v = 0; v < WINDOW_VOICES; v++)
+    if (v != g_voice && !byVoice[v].empty()) insertIntoVoice(v, byVoice[v]);
+  if (!byVoice[g_voice].empty())
+  {
+    g_ed.notes.insert(g_ed.notes.end(), byVoice[g_voice].begin(), byVoice[g_voice].end());
+    commitNotes();
+  }
+  if (others)
+  {
+    Undo_EndBlock2(NULL, "ReaTrace: accept suggested notes", UNDO_STATE_ITEMS);
+    UpdateArrange();
+    loadOtherVoices(true);
+  }
 }
 
 // A freshly drawn note takes the median sung pitch under it when that is within two semitones.
@@ -2491,7 +2534,7 @@ void Window_Open(MediaItem *audio, int voice)
   g_audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
   g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
   g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(), g_snapTimes.clear();
-  g_estimated.clear(), g_estimateNote.clear();
+  g_estimated.clear(), g_estimatedVoice.clear(), g_estimateNote.clear();
   const bool hadSettings = loadItemSettings();
   updateValues();
   requestAnalysis(!hadSettings);

@@ -38,6 +38,13 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                                         const EstimateParams &ep = EstimateParams(),
                                         const std::function<bool(double)> &progress = nullptr);
 
+// Voices for estimated notes (transcribe notes.voice_count / assign_voices): the most voices that
+// sound together in >= 0.3% of sung frames (up to maxVoices), as pitch-ordered strands that never
+// cross. Each new note takes the free strand that best continues its last pitch, a strand silent for
+// a while costing more (keeps a solo line in one strand). The strand singing most is voice 0 (the
+// lead); the others follow top to bottom. -1: crowded out (more notes than voices).
+std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double frameRate, int maxVoices);
+
 // Stages, exposed for the self-check. Rolls are frames x (hi-lo+1), normalised to the p99 of frame maxima.
 std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt, const std::function<bool(double)> &progress = nullptr);
 std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,

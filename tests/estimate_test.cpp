@@ -56,6 +56,26 @@ int main()
 {
   const int lo = 40, hi = 86, n = hi - lo + 1;
 
+  // Voices: a held top line over a moving lower one stay in their strands; the lead is the busier strand
+  {
+    const double fr = 10;
+    const std::vector<NoteEstimate> v1 = {{0, 40, 69, 1}, {0, 20, 64, 1}, {20, 40, 62, 1}, {40, 60, 69, 1}, {40, 60, 65, 1}, {60, 70, 66, 1}};
+    const std::vector<int> a = assignVoices(v1, fr, 4);
+    printf("voices: %d %d %d %d %d %d\n", a[0], a[1], a[2], a[3], a[4], a[5]);
+    assert(a[0] == a[3] && a[1] == a[2] && a[2] == a[4] && a[4] == a[5] && a[0] != a[1] && a[0] >= 0 && a[1] >= 0);
+    assert(a[1] == 0); // the lower strand sings 70 frames, the upper 60
+    // a stepwise solo line after a two-note chord stays in one strand
+    std::vector<NoteEstimate> v2 = {{0, 10, 72, 1}, {0, 10, 65, 1}};
+    for (int k = 0; k < 4; k++) v2.push_back({100 + 10 * k, 110 + 10 * k, 67 - k, 1});
+    const std::vector<int> b = assignVoices(v2, fr, 4);
+    assert(b[2] == b[3] && b[3] == b[4] && b[4] == b[5] && b[2] == 0);
+    // more notes than voices: the weakest is crowded out; one voice only for a solo line
+    const std::vector<int> c = assignVoices({{0, 10, 60, 1}, {0, 10, 64, 0.5f}, {0, 10, 67, 0.9f}}, fr, 2);
+    assert(c[1] == -1 && c[0] >= 0 && c[2] >= 0 && c[0] != c[2]);
+    const std::vector<int> d = assignVoices({{0, 10, 60, 1}, {10, 20, 62, 1}, {20, 30, 64, 1}}, fr, 4);
+    assert(d[0] == 0 && d[1] == 0 && d[2] == 0);
+  }
+
   // NMF finds chord notes without a phantom subharmonic (transcribe's mf0 voicings, incl. the E voicing)
   for (std::vector<int> v : {std::vector<int>{66, 71, 75}, {66, 70, 73}, {64, 68, 71}, {59, 64, 68}})
   {
