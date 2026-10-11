@@ -19,13 +19,14 @@
 #include "contour.h"
 #include "editor.h"
 #include "model.h"
+#include "notesync.h"
 #include "nsgt.h"
 
 // --- state ---------------------------------------------------------------------
 
 struct OtherVoice {
     MediaItem *item = NULL;
-    std::string hash;
+    TakeSnapshot snapshot;
     std::vector<Note> notes;
 };
 inline Settings g_settings;
@@ -37,8 +38,8 @@ struct Session {
     OtherVoice others[WINDOW_VOICES];
     double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1; // as analysed
     NoteEditor ed;
-    std::string hash;     // the take's MIDI hash when the notes were loaded
-    int notesVersion = 0; // bumped whenever notes are loaded
+    TakeSnapshot snapshot; // of the take when the notes were loaded
+    int notesVersion = 0;  // bumped whenever notes are loaded
 };
 inline Session g_session;
 

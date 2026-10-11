@@ -13,18 +13,35 @@ MediaItem_Take *midiTake() {
     return g_session.midi ? GetActiveTake(g_session.midi) : NULL;
 }
 
-std::string takeHash(MediaItem_Take *take) {
-    char h[128] = "";
-    if (take) {
-        MIDI_GetHash(take, false, h, sizeof(h)); // includes text events, so lyric edits count
-    }
-    return h;
-}
-
 // Take over REAPER's MIDI API.
 class ReaperTake : public Take {
   public:
     explicit ReaperTake(MediaItem_Take *take) : m_take(take) {}
+    const void *identity() override { return m_take; }
+    std::string hash() override {
+        char h[128] = "";
+        MIDI_GetHash(m_take, false, h, sizeof(h)); // includes text events, so lyric edits count
+        return h;
+    }
+    std::string timeMapping() override {
+        MediaItem *item = GetMediaItemTake_Item(m_take);
+        char buf[160];
+        snprintf(buf, sizeof(buf), "%.12g %.12g %.12g;", GetMediaItemInfo_Value(item, "D_POSITION"),
+                 GetMediaItemTakeInfo_Value(m_take, "D_STARTOFFS"),
+                 GetMediaItemTakeInfo_Value(m_take, "D_PLAYRATE"));
+        std::string out = buf;
+        const int markers = CountTempoTimeSigMarkers(NULL);
+        for (int i = 0; i < markers; i++) {
+            double time = 0, beat = 0, bpm = 0;
+            int measure = 0, num = 0, den = 0;
+            bool linear = false;
+            GetTempoTimeSigMarker(NULL, i, &time, &measure, &beat, &bpm, &num, &den, &linear);
+            snprintf(buf, sizeof(buf), "%.12g %d %.12g %.12g %d/%d %d;", time, measure, beat, bpm,
+                     num, den, linear ? 1 : 0);
+            out += buf;
+        }
+        return out;
+    }
     double toTime(double ppq) override { return MIDI_GetProjTimeFromPPQPos(m_take, ppq); }
     double toPPQ(double time) override { return MIDI_GetPPQPosFromProjTime(m_take, time); }
     int noteCount() override {
@@ -72,6 +89,16 @@ class ReaperTake : public Take {
     MediaItem_Take *m_take;
 };
 
+static TakeSnapshot snapshotOf(MediaItem_Take *take) {
+    if (!take) {
+        return {};
+    }
+    ReaperTake t(take);
+    return snapshotOf(t);
+}
+
+bool notesStale() { return snapshotOf(midiTake()) != g_session.snapshot; }
+
 void loadNotes() {
     g_session.ed.cancel();
     MediaItem_Take *take = midiTake();
@@ -83,7 +110,7 @@ void loadNotes() {
     }
     g_session.ed.notes = g_loaded;
     g_session.ed.deleted.clear();
-    g_session.hash = takeHash(take);
+    g_session.snapshot = snapshotOf(take);
     g_session.notesVersion++;
     redraw();
 }
@@ -98,11 +125,11 @@ void loadOtherVoices(bool force) {
         }
         MediaItem *item = VoiceItem(g_session.audio, v, false);
         MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
-        const std::string h = takeHash(take);
-        if (!force && item == o.item && h == o.hash) {
+        const TakeSnapshot snap = snapshotOf(take);
+        if (!force && item == o.item && snap == o.snapshot) {
             continue;
         }
-        o.item = item, o.hash = h, o.notes.clear();
+        o.item = item, o.snapshot = snap, o.notes.clear();
         if (take) {
             ReaperTake t(take);
             o.notes = readNotes(t);
@@ -116,19 +143,29 @@ void loadOtherVoices(bool force) {
 }
 
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
+// If the take changed since the notes were loaded (an action or script during a drag, the item
+// moved, the tempo changed), the edit is dropped and the take's notes reloaded: the loaded notes
+// refer to its events by index and would overwrite the wrong ones.
 void commitNotes() {
+    if (notesStale()) {
+        loadNotes();
+        return;
+    }
     const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
     if (changes.data) {
         Undo_BeginBlock2(NULL);
     }
     MediaItem_Take *take = midiTake();
+    TakeSnapshot loadedFrom = g_session.snapshot;
     if (!take && changes.data &&
         (g_session.midi = VoiceItem(g_session.audio, g_session.voice, true))) {
         take = GetActiveTake(g_session.midi);
+        loadedFrom = snapshotOf(take); // new and empty: nothing in it to overwrite
     }
     if (take) {
         ReaperTake t(take);
-        writeNotes(t, g_loaded, g_session.ed.notes, g_session.ed.deleted, g_session.ed.velocity);
+        writeNotes(t, loadedFrom, g_loaded, g_session.ed.notes, g_session.ed.deleted,
+                   g_session.ed.velocity);
     }
     if (changes.data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);

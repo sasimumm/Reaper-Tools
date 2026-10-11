@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 
+TakeSnapshot snapshotOf(Take &take) { return {take.identity(), take.hash(), take.timeMapping()}; }
+
 std::vector<Note> readNotes(Take &take) {
     std::vector<Note> notes;
     std::vector<double> startPPQ;
@@ -51,8 +53,11 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
     return c;
 }
 
-void writeNotes(Take &take, const std::vector<Note> &loaded, const std::vector<Note> &edited,
-                const std::vector<int> &deleted, int velocity) {
+bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<Note> &loaded,
+                const std::vector<Note> &edited, const std::vector<int> &deleted, int velocity) {
+    if (snapshotOf(take) != loadedFrom) {
+        return false;
+    }
     const bool lyrics = diffNotes(loaded, edited, deleted).lyrics;
     for (const Note &n : edited) {
         if (!known(n, loaded)) {
@@ -91,6 +96,7 @@ void writeNotes(Take &take, const std::vector<Note> &loaded, const std::vector<N
         }
     }
     take.sort();
+    return true;
 }
 
 void appendNotes(Take &take, const std::vector<Note> &notes, int velocity) {

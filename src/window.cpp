@@ -655,8 +655,8 @@ void Window_Timer() {
         s_changedAt = -1;
         requestAnalysis(false);
     }
-    if (!g_session.ed.active() && takeHash(midiTake()) != g_session.hash) {
-        loadNotes(); // edited elsewhere, undo, ...
+    if (!g_session.ed.active() && notesStale()) {
+        loadNotes(); // edited elsewhere, undo, item moved, tempo changed, ...
     }
     if (!g_session.midi && !g_session.ed.active() &&
         (g_session.midi = VoiceItem(g_session.audio, g_session.voice, false))) {

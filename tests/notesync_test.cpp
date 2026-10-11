@@ -18,9 +18,26 @@ class FakeTake : public Take {
     std::vector<N> notes;
     std::vector<TextEvent> texts;
     int sorts = 0;
+    double position = 0; // where the item starts: moving it changes every note's project time
 
-    double toTime(double ppq) override { return ppq / 960; }
-    double toPPQ(double time) override { return time * 960; }
+    const void *identity() override { return this; }
+    std::string hash() override {
+        std::string h;
+        char buf[96];
+        for (const N &n : notes) {
+            snprintf(buf, sizeof(buf), "n%g,%g,%d,%d;", n.e.start, n.e.end, n.e.pitch,
+                     n.e.sel ? 1 : 0);
+            h += buf;
+        }
+        for (const TextEvent &t : texts) {
+            snprintf(buf, sizeof(buf), "t%g,%d,", t.ppq, t.type);
+            h += buf + t.text + ";";
+        }
+        return h;
+    }
+    std::string timeMapping() override { return std::to_string(position); }
+    double toTime(double ppq) override { return position + ppq / 960; }
+    double toPPQ(double time) override { return (time - position) * 960; }
     int noteCount() override { return (int)notes.size(); }
     NoteEvent note(int i) override { return notes[(size_t)i].e; }
     int textCount() override { return (int)texts.size(); }
@@ -47,12 +64,13 @@ static const int TRACK_NAME = 3; // another text event type, which must be left 
 
 // Loads, edits with `edit`, writes, reads back.
 template <class F> static std::vector<Note> roundTrip(FakeTake &t, NoteChanges *changes, F edit) {
+    const TakeSnapshot snap = snapshotOf(t);
     const std::vector<Note> loaded = readNotes(t);
     std::vector<Note> edited = loaded;
     std::vector<int> deleted;
     edit(edited, deleted);
     *changes = diffNotes(loaded, edited, deleted);
-    writeNotes(t, loaded, edited, deleted, 96);
+    assert(writeNotes(t, snap, loaded, edited, deleted, 96));
     return readNotes(t);
 }
 
@@ -164,6 +182,43 @@ int main() {
         FakeTake t = song();
         roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].end = 0.75; });
         assert(c.data && !c.lyrics && t.notes[0].e.end == 720);
+    }
+
+    // the take changing after the notes were loaded makes writing them back refuse, leaving the take
+    // as it is: the loaded notes refer to its events by index and keep times in project seconds
+    {
+        auto refused = [](FakeTake &t, const TakeSnapshot &snap, const std::vector<Note> &loaded,
+                          const std::vector<Note> &edited, std::vector<int> deleted = {}) {
+            const std::string before = t.hash();
+            const bool wrote = writeNotes(t, snap, loaded, edited, deleted, 96);
+            return !wrote && t.hash() == before;
+        };
+        // the item moved (or the tempo changed): selecting a note must not write its old times back
+        FakeTake t = song();
+        TakeSnapshot snap = snapshotOf(t);
+        std::vector<Note> loaded = readNotes(t), edited = loaded;
+        t.position = 2;
+        assert(snapshotOf(t) != snap);
+        edited[0].sel = true;
+        assert(refused(t, snap, loaded, edited));
+        assert(readNotes(t)[0].start == 2); // reloading gives the moved times
+        // an action inserted a note during a drag: index 1 is now a different note
+        t = song();
+        snap = snapshotOf(t);
+        loaded = readNotes(t), edited = loaded;
+        t.insertNote({480, 700, 70, false}, 96);
+        t.sort();
+        edited[1].pitch = 63;
+        assert(refused(t, snap, loaded, edited));
+        // another take altogether (same events)
+        FakeTake other = song();
+        assert(refused(other, snapshotOf(t), readNotes(other), readNotes(other)));
+        // unchanged: written
+        t = song();
+        snap = snapshotOf(t);
+        loaded = readNotes(t), edited = loaded;
+        edited[0].pitch = 61;
+        assert(writeNotes(t, snap, loaded, edited, {}, 96) && readNotes(t)[0].pitch == 61);
     }
 
     // another voice's accepted notes are appended unselected, then sorted

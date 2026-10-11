@@ -4,7 +4,7 @@
 #include "state.h"
 
 MediaItem_Take *midiTake();
-std::string takeHash(MediaItem_Take *take);
+bool notesStale(); // the active take changed since its notes were loaded (edits, item move, tempo)
 void loadNotes();
 void loadOtherVoices(bool force);
 void commitNotes();

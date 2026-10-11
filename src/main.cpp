@@ -73,6 +73,9 @@
 #define REAPERAPI_WANT_GetSet_LoopTimeRange2
 #define REAPERAPI_WANT_GetSet_ArrangeView2
 #define REAPERAPI_WANT_GetSetRepeat
+#define REAPERAPI_WANT_CountTempoTimeSigMarkers
+#define REAPERAPI_WANT_GetTempoTimeSigMarker
+#define REAPERAPI_WANT_GetMediaItemTake_Item
 #define REAPERAPI_WANT_SetMediaTrackInfo_Value
 #define REAPERAPI_WANT_TrackList_AdjustWindows
 #define REAPERAPI_WANT_OnPlayButton
