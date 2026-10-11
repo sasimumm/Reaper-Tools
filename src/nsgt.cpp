@@ -145,11 +145,13 @@ void estimateNoise(Spectrogram &s, double fraction)
     for (int b = 0; b < s.bins; b++) s.noise[b] += s.at(energy[i].second, b) / quiet;
 }
 
-void autoCalibrate(const Spectrogram &s, RenderParams &rp)
+void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1)
 {
+  if (f1 < 0 || f1 > s.frames) f1 = s.frames;
+  f0 = std::max(0, std::min(f0, f1));
   std::vector<float> db;
-  const size_t n = s.mag.size(), stride = std::max<size_t>(1, n / 200000);
-  for (size_t i = 0; i < n; i += stride) db.push_back(20 * log10f(std::max(s.mag[i], 1e-10f)));
+  const size_t a = (size_t)f0 * s.bins, n = (size_t)f1 * s.bins, stride = std::max<size_t>(1, (n - a) / 200000);
+  for (size_t i = a; i < n; i += stride) db.push_back(20 * log10f(std::max(s.mag[i], 1e-10f)));
   if (db.empty()) return;
   auto pct = [&](double q) {
     auto it = db.begin() + std::min(db.size() - 1, (size_t)(q * db.size()));
@@ -179,6 +181,48 @@ double cellValue(const Spectrogram &s, const RenderParams &rp, int f, int b)
       !(m > displayMag(s, rp, f, b - 1) && m > displayMag(s, rp, f, b + 1)))
     v *= rp.peakDim;
   return v;
+}
+
+// Maps a float's exponent and top 8 mantissa bits (~0.03 dB steps) straight to the display value.
+static const int LUT_SHIFT = 15;
+
+void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsigned char> &out)
+{
+  static std::vector<unsigned char> lut(1 << (32 - LUT_SHIFT - 1));
+  for (size_t i = 0; i < lut.size(); i++)
+  {
+    unsigned int bits = (unsigned int)(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
+    float m;
+    memcpy(&m, &bits, 4);
+    const double db = std::max(20.0 * log10(std::max(m, 1e-10f)), rp.dbFloor);
+    double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
+    lut[i] = (unsigned char)lround(std::max(0.0, std::min(1.0, v)) * 255);
+  }
+  auto value = [&](float m) {
+    unsigned int bits;
+    memcpy(&bits, &m, 4);
+    return lut[(bits & 0x7fffffff) >> LUT_SHIFT];
+  };
+
+  out.resize(s.mag.size());
+  std::vector<float> row(s.bins);
+  const float alpha = (float)rp.noiseAlpha;
+  const int dim = (int)lround(std::max(0.0, std::min(1.0, rp.peakDim)) * 256);
+  for (int f = 0; f < s.frames; f++)
+  {
+    const float *m = &s.mag[(size_t)f * s.bins];
+    if (rp.subtractNoise)
+      for (int b = 0; b < s.bins; b++) row[b] = std::max(0.0f, m[b] - alpha * s.noise[b]);
+    else
+      memcpy(row.data(), m, s.bins * sizeof(float));
+    unsigned char *o = &out[(size_t)f * s.bins];
+    for (int b = 0; b < s.bins; b++)
+    {
+      int v = value(row[b]);
+      if (rp.peaksOnly && b > 0 && b + 1 < s.bins && !(row[b] > row[b - 1] && row[b] > row[b + 1])) v = (v * dim) >> 8;
+      o[b] = (unsigned char)v;
+    }
+  }
 }
 
 void makeColormap(double bias, unsigned int lut[256])

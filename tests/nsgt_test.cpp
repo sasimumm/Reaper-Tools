@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <algorithm>
 #include <cstdlib>
 #include <vector>
 
@@ -68,7 +69,7 @@ int main()
     printf("bad params: bins=%d frames=%d hop=%d\n", s.bins, s.frames, s.p.hop);
   }
 
-  // Speed on three minutes of noise.
+  // Speed on three minutes of noise; the fast display values match cellValue() within one step.
   {
     std::vector<float> x((size_t)(180 * sr));
     for (float &v : x) v = (float)(rand() / (double)RAND_MAX) - 0.5f;
@@ -76,6 +77,23 @@ int main()
     Spectrogram s = analyze(x);
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     printf("180 s of audio: %.0f ms, %.1f MB\n", ms, s.mag.size() * 4 / 1e6);
+
+    RenderParams rp;
+    autoCalibrate(s, rp);
+    std::vector<unsigned char> val;
+    for (int mode = 0; mode < 3; mode++)
+    {
+      rp.peaksOnly = mode >= 1, rp.subtractNoise = mode >= 2;
+      t0 = std::chrono::steady_clock::now();
+      renderValues(s, rp, val);
+      ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+      int worst = 0;
+      for (int f = 0; f < s.frames; f += 7)
+        for (int b = 0; b < s.bins; b++)
+          worst = std::max(worst, abs(val[(size_t)f * s.bins + b] - (int)lround(cellValue(s, rp, f, b) * 255)));
+      printf("display values (peaks %d, noise %d): %.0f ms, max difference %d\n", rp.peaksOnly, rp.subtractNoise, ms, worst);
+      assert(worst <= 1);
+    }
   }
   printf("ok\n");
 }

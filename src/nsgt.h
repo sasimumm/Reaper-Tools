@@ -44,11 +44,14 @@ struct RenderParams
   double peakDim = 0.15;      // brightness kept by non-peaks
 };
 
-// Picks dbFloor/contrast from the 30th and 95th percentile of the data (from Specter).
-void autoCalibrate(const Spectrogram &s, RenderParams &rp);
+// Picks dbFloor/contrast from the 30th and 95th percentile of frames [f0, f1) (from Specter).
+void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0 = 0, int f1 = -1);
 
 // Display value in [0,1] for one cell.
 double cellValue(const Spectrogram &s, const RenderParams &rp, int frame, int bin);
+
+// cellValue()*255 for every cell, fast enough to run while dragging a slider.
+void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsigned char> &out);
 
 // 256-entry magma colormap with the bias curve applied, as 0x00RRGGBB.
 void makeColormap(double bias, unsigned int lut[256]);

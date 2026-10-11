@@ -11,6 +11,8 @@ endif()
 add_library(reaper_reascribe MODULE
   src/main.cpp
   src/nsgt.cpp
+  src/editor.cpp
+  src/window.cpp
   ${WDL}/fft.c
   ${WDL}/swell/swell-modstub.mm
 )
