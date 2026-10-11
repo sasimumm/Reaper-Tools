@@ -90,7 +90,7 @@ int main()
 
   // Narrow notes have no resize edges.
   ed.notes = {{1, 1.05, 60, false, 0}};
-  int i;
+  int i = 0;
   assert(ed.hitTest(v, v.x(1.0), v.y(60), &i) == NoteEditor::BODY);
   // Pasted lyrics: one syllable per note, hyphens stay with their syllable.
   std::vector<std::string> syl = splitSyllables("Hel-lo  dar-k-ness\nmy _ old\tfriend- -");

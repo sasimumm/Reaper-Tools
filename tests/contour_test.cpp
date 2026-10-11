@@ -50,7 +50,7 @@ int main()
   struct { double a, b, pitch; } notes[] = {{0.3, 0.6, 57}, {0.8, 1.2, 60}, {1.7, 2.1, 64.3}};
   for (auto &n : notes)
   {
-    double p;
+    double p = 0;
     assert(contourMedian(c, (int)(n.a * fr), (int)(n.b * fr), 0, &p));
     printf("note %.2f-%.2f s: median %.2f (expected %.2f)\n", n.a, n.b, p, n.pitch);
     assert(fabs(p - n.pitch) < 0.2);
@@ -66,7 +66,7 @@ int main()
     const Contour cb = trackPitch(sb);
     for (auto &n : notes)
     {
-      double p;
+      double p = 0;
       assert(contourMedian(cb, (int)(n.a * fr), (int)(n.b * fr), 0, &p));
       printf("%d bins/semitone, note %.2f-%.2f s: median %.2f\n", bps, n.a, n.b, p);
       assert(fabs(p - n.pitch) < 0.3);

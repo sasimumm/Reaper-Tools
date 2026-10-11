@@ -224,8 +224,8 @@ static double frameTime(double f) { return g_audioPos + f / g_spec.frameRate(); 
 struct AnalysisKey
 {
   NSGTParams p;
-  double pos, len, offs, rate;
-  bool vote;
+  double pos = 0, len = 0, offs = 0, rate = 1;
+  bool vote = true;
   bool operator==(const AnalysisKey &o) const
   {
     return p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin && p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave &&
@@ -302,7 +302,7 @@ struct Job
   std::atomic<bool> cancel{false}, done{false};
   std::atomic<int> permille{0};
   AnalysisKey key;
-  int channel;
+  int channel = CH_MIX;
   std::vector<float> left, right;
   bool need[4] = {};   // raw channels (CH_MIX..CH_SIDE) to compute
   Spectrogram raw[4];  // computed, or copied from the cache when only needed for the centre
@@ -746,8 +746,9 @@ static std::vector<GridLine> gridLines(const Rect &n)
   const double step = gridStepQN();
   if (step > 0)
   {
-    for (double q = ceil(qa / step) * step; q <= qb && out.size() < 4000; q += step)
+    for (long long k = (long long)ceil(qa / step); (double)k * step <= qb && out.size() < 4000; k++)
     {
+      const double q = (double)k * step;
       double ms = 0;
       const int m = TimeMap_QNToMeasures(NULL, q + 1e-9, &ms, NULL);
       const int level = fabs(q - ms) < 1e-6 ? 0 : fabs(q - floor(q + 0.5)) < 1e-6 ? 1 : 2;
@@ -979,7 +980,7 @@ static void changedSetting(const Widget &w)
 // (REAPER extended state), as "name=value;" pairs.
 struct Setting
 {
-  const char *name;
+  const char *name = nullptr;
   double *d = nullptr;
   bool *b = nullptr;
   int *i = nullptr;
@@ -1034,7 +1035,8 @@ static std::string saveSettings()
   {
     if (st.d) snprintf(buf, sizeof(buf), "%s=%.6g;", st.name, *st.d);
     else if (st.b) snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.b ? 1 : 0);
-    else snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.i);
+    else if (st.i) snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.i);
+    else continue;
     out += buf;
   }
   return out;
@@ -1048,14 +1050,14 @@ static void loadSettings(const char *str)
     const char *eq = strchr(p, '='), *end = strchr(p, ';');
     if (!eq || !end || eq > end) break;
     const std::string name(p, eq - p);
-    const double v = atof(eq + 1);
+    const double v = strtod(eq + 1, NULL);
     for (const Setting &st : SETTINGS)
       if (name == st.name)
       {
         const double c = v >= st.lo ? std::min(v, st.hi) : st.lo; // NaN -> lo
         if (st.d) *st.d = c;
         else if (st.b) *st.b = v != 0;
-        else *st.i = (int)c;
+        else if (st.i) *st.i = (int)c;
       }
     p = end + 1;
   }
@@ -1329,9 +1331,9 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
 {
   const int dn = g_ed.dragNote();
   if (dn < 0 && !n.in(g_mouseX, g_mouseY)) return;
-  int p0;
-  double tA, tB;
-  int xA, xB;
+  int p0 = 0;
+  double tA = 0, tB = 0;
+  int xA = 0, xB = 0;
   if (dn >= 0)
   {
     const Note &nt = g_ed.notes[dn];
@@ -1399,7 +1401,7 @@ static int suggestionAt(int x, int y)
   const std::vector<Segment> &sug = suggestions();
   for (size_t i = 0; i < sug.size(); i++)
   {
-    int x0, y0, x1, y1;
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
     segmentRect(sug[i], &x0, &y0, &x1, &y1);
     if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !covered(sug[i])) return (int)i;
   }
@@ -1413,7 +1415,7 @@ static void drawSuggestions(Canvas &cv, const Rect &n)
   for (size_t i = 0; i < sug.size(); i++)
   {
     const Segment &sg = sug[i];
-    int x0, y0, x1, y1;
+    int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
     segmentRect(sg, &x0, &y0, &x1, &y1);
     if (x1 < n.l || x0 > n.r || covered(sg)) continue;
     const int v = suggestionVoice(i);
@@ -1521,7 +1523,7 @@ static void paint(HDC hdc)
     g_layerKey = key, g_layerValid = true;
   }
   const int lw = (n.r - n.l) * S;
-  for (int y = n.t * S; y < n.b * S; y++) memcpy(fb + (size_t)y * w + n.l * S, &g_layer[(size_t)(y - n.t * S) * lw], lw * 4);
+  for (int y = n.t * S; y < n.b * S; y++) memcpy(fb + (size_t)y * w + (size_t)n.l * S, &g_layer[(size_t)(y - n.t * S) * lw], (size_t)lw * 4);
 
   // pitch rows, then the time grid
   cv.clip = n;
@@ -1616,8 +1618,9 @@ static void paint(HDC hdc)
   double secStep = 0.01;
   for (double s : {0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0})
     if ((secStep = s) * g_view.pps >= 70) break;
-  for (double t = ceil(g_view.t(n.l) / secStep) * secStep; t <= g_view.t(n.r); t += secStep)
+  for (long long k = (long long)ceil(g_view.t(n.l) / secStep); (double)k * secStep <= g_view.t(n.r); k++)
   {
+    const double t = (double)k * secStep;
     const int x = (int)lround(g_view.x(t));
     cv.fill(x, 22, x + 1, RULER_H - 1, 0x707070);
     format_timestr_pos(t, buf, sizeof(buf), 0);
@@ -1634,7 +1637,7 @@ static void paint(HDC hdc)
 
   // time selection
   cv.clip = {n.l, 0, n.r, n.b};
-  double selA, selB;
+  double selA = 0, selB = 0;
   GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
   if (selB > selA)
   {
@@ -1674,7 +1677,7 @@ static void paint(HDC hdc)
     const Rect o = overviewArea();
     const int ow = (o.r - o.l) * S, oh = (o.b - o.t) * S;
     if (ow != g_ovW || oh != g_ovH || g_ovVersion != g_valVersion || g_ovPos != g_audioPos || g_ovLen != g_audioLen) renderOverview(ow, oh);
-    for (int y = 0; y < oh; y++) memcpy(fb + (size_t)(o.t * S + y) * w + o.l * S, &g_ovLayer[(size_t)y * ow], ow * 4);
+    for (int y = 0; y < oh; y++) memcpy(fb + (size_t)(o.t * S + y) * w + (size_t)o.l * S, &g_ovLayer[(size_t)y * ow], (size_t)ow * 4);
     cv.clip = o;
     for (const Note &nt : g_ed.notes)
     {
@@ -1726,7 +1729,7 @@ static void paint(HDC hdc)
   if (n.in(g_mouseX, g_mouseY) && g_ed.hitTest(g_view, g_mouseX, g_mouseY, &hovered) != NoteEditor::NONE)
   {
     const Note &hn = g_ed.notes[hovered];
-    double sung;
+    double sung = 0;
     const int f0 = (int)lround((hn.start - g_audioPos) * g_spec.frameRate()), f1 = (int)lround((hn.end - g_audioPos) * g_spec.frameRate());
     if (contourMedian(g_contour, f0, f1, (int)lround(0.05 * g_spec.frameRate()), &sung))
     {
@@ -2128,7 +2131,7 @@ static void acceptVisibleSuggestions()
 static void pitchFromContour(Note &nt)
 {
   const double fr = g_spec.frameRate();
-  double sung;
+  double sung = 0;
   if (contourMedian(g_contour, (int)lround((nt.start - g_audioPos) * fr), (int)lround((nt.end - g_audioPos) * fr),
                     (int)lround(0.05 * fr), &sung) &&
       fabs(sung - nt.pitch) <= 2)
@@ -2312,7 +2315,7 @@ int Window_TranslateAccel(MSG *msg)
       {
         char buf[1024] = "";
         GetWindowText(g_edit, buf, sizeof(buf) - 1);
-        strcat(buf, "-");
+        strlcat(buf, "-", sizeof(buf));
         SetWindowText(g_edit, buf);
         endLyric(true, 1);
         return 1;
@@ -2454,10 +2457,9 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       if (msg == WM_MOUSEWHEEL) scrollPanel((int)lround(-steps * 30));
       return 0;
     }
-    if (msg == WM_MOUSEHWHEEL) g_view.t0 -= steps * 40 / g_view.pps;
+    if (msg == WM_MOUSEHWHEEL || ((m & MOD_SHIFT) && !(m & (MOD_CMD | MOD_ALT)))) g_view.t0 -= steps * 40 / g_view.pps;
     else if (m & MOD_CMD) zoomTime(pow(WHEEL_ZOOM, steps), pt.x);
     else if (m & MOD_ALT) zoomPitch(pow(WHEEL_ZOOM, steps), pt.y);
-    else if (m & MOD_SHIFT) g_view.t0 -= steps * 40 / g_view.pps;
     else scrollPitch(steps * 2);
     redraw();
     return 0;

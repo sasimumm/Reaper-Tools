@@ -10,6 +10,18 @@ See `docs/piano-roll.md` for the full feature plan.
     cmake --build build --target deploy   # copies reaper_reatrace.dylib to UserPlugins
     ./build/nsgt_test && ./build/editor_test && ./build/contour_test && ./build/estimate_test
 
+Checks while developing:
+
+- Our sources build with `-Wall -Wextra -Wshadow -Wconversion` as errors (`-DREATRACE_WERROR=OFF` to relax),
+  and libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string` indexing, also in the plugin.
+- Sanitized self-checks, in their own build directories:
+
+      cmake -S . -B build-asan -DREATRACE_SANITIZE=address,undefined && cmake --build build-asan
+      cmake -S . -B build-tsan -DREATRACE_SANITIZE=thread && cmake --build build-tsan
+      ./build-asan/estimate_test   # and the other *_test programs
+
+- clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`): `cmake --build build --target lint`
+
 The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it as
 `UserPlugins/reatrace/nmp.mlmodelc`.
 

@@ -132,7 +132,7 @@ static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create)
 {
   const int first = (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
   int idx = first;
-  for (MediaTrack *tr; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++)
+  for (MediaTrack *tr = NULL; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++)
     if (voiceOfTrack(tr) == voice) return tr;
   if (!create) return NULL;
   InsertTrackAtIndex(idx, true);

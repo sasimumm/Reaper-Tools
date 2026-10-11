@@ -24,7 +24,9 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
     NSError *e = nil;
     MLModelConfiguration *config = [[MLModelConfiguration alloc] init];
     config.computeUnits = MLComputeUnitsCPUOnly; // as basic-pitch itself runs it
-    NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:modelPath.c_str()]];
+    NSString *path = [NSString stringWithUTF8String:modelPath.c_str()]; // nil if not UTF-8
+    if (!path) { setError(error, "the model path isn't valid UTF-8", nil); return false; }
+    NSURL *url = [NSURL fileURLWithPath:path];
     MLModel *model = [MLModel modelWithContentsOfURL:url configuration:config error:&e];
     if (!model) { setError(error, "can't load the basic-pitch model", e); return false; }
 

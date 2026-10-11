@@ -61,7 +61,7 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
   s.frames = (int)(numSamples / hop) + 1;
   s.mag.assign((size_t)s.frames * s.bins, 0);
 
-  struct Bin { int k0, k1, M, step; std::vector<float> w; };
+  struct Bin { int k0 = 0, k1 = 0, M = 0, step = 0; std::vector<float> w; };
   std::vector<Bin> bins(s.bins);
   double maxSigmaT = 0;
   for (int b = 0; b < s.bins; b++)
@@ -119,7 +119,7 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
       WDL_fft(small.data(), bn.M, 1);
       for (int i = 0; i < nf; i++)
       {
-        const WDL_FFT_COMPLEX &z = small[(margin / hop + i) * bn.step];
+        const WDL_FFT_COMPLEX &z = small[(size_t)(margin / hop + i) * bn.step];
         s.mag[(size_t)(first + i) * s.bins + b] = hypotf(z.re, z.im);
       }
     }
@@ -227,14 +227,14 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
   for (size_t i = 0; i < lut.size(); i++)
   {
     unsigned int bits = (unsigned int)(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
-    float m;
+    float m = 0;
     memcpy(&m, &bits, 4);
     const double db = std::max(20.0 * log10(std::max(m, 1e-10f)), rp.dbFloor);
     double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
     lut[i] = (unsigned char)lround(std::max(0.0, std::min(1.0, v)) * 255);
   }
   auto value = [&](float m) {
-    unsigned int bits;
+    unsigned int bits = 0;
     memcpy(&bits, &m, 4);
     return lut[(bits & 0x7fffffff) >> LUT_SHIFT];
   };

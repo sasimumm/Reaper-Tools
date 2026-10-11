@@ -243,7 +243,7 @@ static void butterBandpass(double lo, double hi, Biquad out[2])
   C den = 1;
   for (C &p : poles) den *= fs2 - p, p = (fs2 + p) / (fs2 - p);
   const double k = bw * bw * std::real(C(fs2 * fs2) / den); // zeros: two at s=0 (z=1), two at infinity (z=-1)
-  for (int s = 0; s < 2; s++)
+  for (size_t s = 0; s < 2; s++)
   {
     const C a = poles[2 * s], b = poles[2 * s + 1];
     const double g = s == 0 ? k : 1;
@@ -312,7 +312,7 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
     const int *perm = WDL_fft_permute_tab(SACF_NFFT / 2), *iperm = WDL_fft_permute_tab(NI / 2);
     std::vector<float> pw(SACF_NFFT / 2 + 1), expo(pw.size(), (float)(SACF_K / 2));
     int bins = (int)pw.size();
-    for (int ci; !cancel && (ci = next++) < chunks;)
+    for (int ci = 0; !cancel && (ci = next++) < chunks;)
     {
       const int c0 = ci * chunk, fc = std::min(chunk, F - c0);
       const long long s0 = (long long)c0 * HOP - SACF_NFFT / 2 - SACF_MARGIN;
@@ -697,7 +697,7 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
   Spectrogram s = axisFromC2(bpo, frames);
   const int LOG2N = 17, N = 1 << LOG2N;
   const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1); // librosa's relative bandwidth
-  struct Bin { int k0, k1, M, logM, step; std::vector<float> w; float scale; };
+  struct Bin { int k0 = 0, k1 = 0, M = 0, logM = 0, step = 0; std::vector<float> w; float scale = 0; };
   std::vector<Bin> bins(s.bins);
   double maxL = 0;
   int maxM = 0;
@@ -967,6 +967,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
       return !cancelled;
     };
     std::vector<std::thread> threads;
+    threads.reserve(3);
     for (int i = 0; i < 3; i++)
       threads.emplace_back([&, i] {
         const Voter &v = VOTERS[i];
@@ -1016,6 +1017,7 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
   }
   // resting pitch per strand (top first) before it has sung: spread over the notes' range
   std::vector<int> pitches;
+  pitches.reserve(notes.size());
   for (const NoteEstimate &n : notes) pitches.push_back(n.pitch);
   std::sort(pitches.begin(), pitches.end());
   std::vector<double> rest(nv);

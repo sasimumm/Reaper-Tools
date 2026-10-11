@@ -124,7 +124,7 @@ bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch)
       all.push_back(c.pitch[f]);
       if (f >= f0 + skip) late.push_back(c.pitch[f]);
     }
-  if (all.size() * 2 < (size_t)(f1 - f0 + 1)) return false;
+  if (all.size() * 2 < (size_t)f1 - (size_t)f0 + 1) return false; // f1 >= f0 here
   *pitch = median(late.size() * 2 >= all.size() ? late : all);
   return true;
 }
@@ -149,7 +149,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate, const st
   std::vector<Segment> segs;
   auto close = [&](int a, int b) {
     if (b - a + 1 < minFrames) return;
-    double p;
+    double p = 0;
     if (contourMedian(c, a, b, std::min(skip, (b - a + 1) / 3), &p)) segs.push_back({a, b, p});
   };
   int start = -1;
