@@ -66,6 +66,16 @@
 #define REAPERAPI_WANT_Undo_BeginBlock2
 #define REAPERAPI_WANT_Undo_EndBlock2
 #define REAPERAPI_WANT_UpdateArrange
+#define REAPERAPI_WANT_GetSet_LoopTimeRange2
+#define REAPERAPI_WANT_TimeMap_GetTimeSigAtTime
+#define REAPERAPI_WANT_SetTempoTimeSigMarker
+#define REAPERAPI_WANT_CountTempoTimeSigMarkers
+#define REAPERAPI_WANT_GetTempoTimeSigMarker
+#define REAPERAPI_WANT_DeleteTempoTimeSigMarker
+#define REAPERAPI_WANT_UpdateTimeline
+#define REAPERAPI_WANT_SetMediaItemInfo_Value
+#define REAPERAPI_WANT_SetMediaItemTakeInfo_Value
+#define REAPERAPI_WANT_MIDI_SetTextSysexEvt
 #define REAPERAPI_WANT_ValidatePtr2
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
@@ -112,6 +122,7 @@ static MediaItem *findMidiItem(MediaItem *audio, bool create)
   {
     const bool qn = false;
     midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
+    if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move notes
   }
   return midi;
 }

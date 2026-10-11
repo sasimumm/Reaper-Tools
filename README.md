@@ -15,6 +15,12 @@ Restart REAPER after deploying.
 The settings panel also has the analysis channel (Centre = mid minus side, which helps pull a
 centre-panned lead vocal out of a mix) and playback speed (100/75/50 %, pitch preserved).
 
+Fitting the tempo map to a free-tempo recording: shift+drag over the first bar in the ruler and
+press B, then adjust the next selection and press B again, bar by bar (or use "Selection = 1 beat"
+and "Tempo marker at edit cursor" in the panel). These keep the recording, notes and lyrics where
+they are; only the grid moves. The notes item uses the time timebase so REAPER's own tempo edits
+don't move it either.
+
 Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's notation
 editor and lyrics view.
 
@@ -47,4 +53,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | click a piano key | play that pitch through the notes track |
 | [ ] , - = , , . | brightness, contrast, resolution |
 | click the ruler | move the edit cursor |
+| shift+drag the ruler | time selection (snapped like notes) |
+| B | the time selection is one bar: fits the tempo map to it, then selects the next bar |
+| Q | quantise selected notes to the grid (strength in the panel) |
 | other keys | REAPER's own shortcuts (Space = play/stop, ...) |

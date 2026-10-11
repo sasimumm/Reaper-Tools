@@ -66,6 +66,7 @@ static int g_channel = CH_MIX;
 static const char *const SPEEDS[] = {"100%", "75%", "50%"};
 static const double SPEED_RATES[] = {1, 0.75, 0.5};
 static int g_speed;
+static double g_quantStrength = 1;
 static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
 static bool g_audition = true; // play a note through the notes track when clicked or drawn
@@ -80,7 +81,8 @@ static HWND g_edit;            // lyric edit field while typing; identifies its 
 static double g_editStart;
 static int g_editPitch;
 
-enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_PANEL };
+enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL };
+static double g_selectAnchor;
 static Drag g_drag;
 static int g_panelWidget = -1;
 static bool g_analysisDirty;
@@ -474,6 +476,110 @@ static std::vector<GridLine> gridLines(const Rect &n)
   return out;
 }
 
+// --- tempo map and quantise -----------------------------------------------------------
+
+// Runs a tempo map edit as one undo point, keeping the audio item, the notes item and all notes
+// and lyrics at their current times: the recording doesn't move, only the grid does.
+static void editTempoMap(const char *undoName, void (*edit)(double a, double b), double a, double b)
+{
+  g_ed.cancel();
+  Undo_BeginBlock2(NULL);
+  MediaItem_Take *atake = GetActiveTake(g_audio), *take = midiTake();
+  const double apos = GetMediaItemInfo_Value(g_audio, "D_POSITION"), alen = GetMediaItemInfo_Value(g_audio, "D_LENGTH");
+  const double arate = atake ? GetMediaItemTakeInfo_Value(atake, "D_PLAYRATE") : 1;
+  const double mpos = g_midi ? GetMediaItemInfo_Value(g_midi, "D_POSITION") : 0, mlen = g_midi ? GetMediaItemInfo_Value(g_midi, "D_LENGTH") : 0;
+  const std::vector<Note> notes = g_loaded;
+
+  edit(a, b);
+
+  SetMediaItemInfo_Value(g_audio, "D_POSITION", apos), SetMediaItemInfo_Value(g_audio, "D_LENGTH", alen);
+  if (atake) SetMediaItemTakeInfo_Value(atake, "D_PLAYRATE", arate);
+  if (g_midi) SetMediaItemInfo_Value(g_midi, "D_POSITION", mpos), SetMediaItemInfo_Value(g_midi, "D_LENGTH", mlen);
+  if (take)
+  {
+    const bool noSort = true;
+    for (const Note &n : notes)
+    {
+      const double s = MIDI_GetPPQPosFromProjTime(take, n.start), e = MIDI_GetPPQPosFromProjTime(take, n.end);
+      MIDI_SetNote(take, n.idx, NULL, NULL, &s, &e, NULL, NULL, NULL, &noSort);
+      if (n.lyricIdx >= 0) MIDI_SetTextSysexEvt(take, n.lyricIdx, NULL, NULL, &s, NULL, NULL, 0, &noSort);
+    }
+    MIDI_Sort(take);
+  }
+  UpdateTimeline();
+  UpdateArrange();
+  Undo_EndBlock2(NULL, undoName, -1);
+  loadNotes();
+}
+
+static void removeTempoMarkersIn(double a, double b)
+{
+  for (int i = CountTempoTimeSigMarkers(NULL) - 1; i >= 0; i--)
+  {
+    double t = 0;
+    if (GetTempoTimeSigMarker(NULL, i, &t, NULL, NULL, NULL, NULL, NULL, NULL) && t > a - 0.001 && t < b - 0.001)
+      DeleteTempoTimeSigMarker(NULL, i);
+  }
+}
+
+static bool timeSelection(double *a, double *b)
+{
+  GetSet_LoopTimeRange2(NULL, false, false, a, b, false);
+  return *b - *a >= 0.05;
+}
+
+// The time selection becomes one bar (a measure starts at its start) or one beat; the selection
+// then moves on to the next bar/beat, ready for the next one.
+static void selectionIs(bool bar)
+{
+  double a, b;
+  if (!timeSelection(&a, &b))
+  {
+    ShowMessageBox("Select a bar first: shift+drag in the ruler.", "Reascribe", 0);
+    return;
+  }
+  static bool s_bar;
+  s_bar = bar;
+  editTempoMap(bar ? "Reascribe: selection is one bar" : "Reascribe: selection is one beat",
+               [](double a, double b) {
+                 int num = 4, den = 4;
+                 double tempo = 120;
+                 TimeMap_GetTimeSigAtTime(NULL, a, &num, &den, &tempo);
+                 const double qn = (s_bar ? num : 1) * 4.0 / den; // tempo is in quarter notes per minute
+                 removeTempoMarkersIn(a, b);
+                 SetTempoTimeSigMarker(NULL, -1, a, -1, -1, 60 * qn / (b - a), s_bar ? num : 0, s_bar ? den : 0, false);
+               },
+               a, b);
+  double na = b, nb = b + (b - a);
+  GetSet_LoopTimeRange2(NULL, true, false, &na, &nb, false);
+}
+
+static void tempoMarkerAtCursor()
+{
+  editTempoMap("Reascribe: insert tempo marker", [](double t, double) {
+    int num = 4, den = 4;
+    double tempo = 120;
+    TimeMap_GetTimeSigAtTime(NULL, t, &num, &den, &tempo);
+    SetTempoTimeSigMarker(NULL, -1, t, -1, -1, tempo, 0, 0, false);
+  }, GetCursorPosition(), 0);
+}
+
+// Moves selected notes' starts and ends towards the grid by the quantise strength.
+static void quantiseSelected()
+{
+  bool any = false;
+  for (Note &n : g_ed.notes)
+  {
+    if (!n.sel) continue;
+    const double s = n.start + (snapToGrid(n.start) - n.start) * g_quantStrength;
+    double e = n.end + (snapToGrid(n.end) - n.end) * g_quantStrength;
+    if (e < s + g_ed.minLen) e = std::max(n.end - n.start + s, s + g_ed.minLen);
+    any |= s != n.start || e != n.end;
+    n.start = s, n.end = e;
+  }
+  if (any) commitNotes();
+}
+
 // --- drawing helpers -------------------------------------------------------------
 
 struct Canvas
@@ -523,7 +629,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 // --- settings panel --------------------------------------------------------------
 
 enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE };
-enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET };
+enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE };
 struct Widget
 {
   WidgetType type;
@@ -569,6 +675,12 @@ static std::vector<Widget> widgets()
       {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
       {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
       {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
+      {W_HEADER, "Tempo"},
+      {W_BUTTON, "Selection = 1 bar (B)", NULL, NULL, 0, 0, false, false, 0, NULL, B_BAR},
+      {W_BUTTON, "Selection = 1 beat", NULL, NULL, 0, 0, false, false, 0, NULL, B_BEAT},
+      {W_BUTTON, "Tempo marker at edit cursor", NULL, NULL, 0, 0, false, false, 0, NULL, B_TEMPO_MARKER},
+      {W_SLIDER, "Quantise strength", &g_quantStrength, NULL, 0, 1, false, false, 100, "%.0f%%"},
+      {W_BUTTON, "Quantise selected notes (Q)", NULL, NULL, 0, 0, false, false, 0, NULL, B_QUANTISE},
       {W_HEADER, "Playback"},
       {W_TOGGLE, "Play notes when clicked", NULL, &g_audition},
       {W_CHOICE, "Speed", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_speed, SPEEDS, 3},
@@ -621,6 +733,9 @@ static void changedSetting(const Widget &w)
 
 static void pressButton(int b)
 {
+  if (b == B_BAR || b == B_BEAT) { selectionIs(b == B_BAR); return; }
+  if (b == B_TEMPO_MARKER) { tempoMarkerAtCursor(); return; }
+  if (b == B_QUANTISE) { quantiseSelected(); return; }
   if (b == B_AUTO_ALL) autoCalibrate(g_spec, g_rp);
   else if (b == B_AUTO_VIEW) autoCalibrateView();
   else if (b == B_RESET)
@@ -1030,8 +1145,18 @@ static void paint(HDC hdc)
   cv.fill(0, 0, KB_W, RULER_H, 0x303030);
   text(dc, g_panel ? "Hide (S)" : "Settings", 0, 0, KB_W, RULER_H, C_TEXT, DT_CENTER);
 
-  // cursors
+  // time selection
   cv.clip = {n.l, 0, n.r, n.b};
+  double selA, selB;
+  GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
+  if (selB > selA)
+  {
+    const int xa = (int)lround(g_view.x(selA)), xb = (int)lround(g_view.x(selB));
+    cv.fill(xa, 0, xb, n.b, 0xffffff, 22);
+    cv.fill(xa, 0, xa + 1, n.b, 0xffffff, 90), cv.fill(xb, 0, xb + 1, n.b, 0xffffff, 90);
+  }
+
+  // cursors
   int x = (int)lround(g_view.x(GetCursorPosition()));
   cv.fill(x, 0, x + 1, n.b, C_EDIT_CURSOR);
   if (GetPlayState() & 1)
@@ -1457,6 +1582,8 @@ static bool onKey(int key)
   else if (key == 'G' && !m) g_snapMode = (g_snapMode + 1) % 3, setupEditorSnap();
   else if (key == 'P' && !m) g_showContour = !g_showContour;
   else if (key == 'X' && !m) g_explain = !g_explain;
+  else if (key == 'Q' && !m) quantiseSelected();
+  else if (key == 'B' && !m) selectionIs(true);
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
   else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
@@ -1483,7 +1610,7 @@ static bool isOurKey(int key, int flags)
     return true;
   case 'A': return true;
   case 'V': return cmd;
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'B': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -1561,6 +1688,14 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     if (x < KB_W && y >= RULER_H && y < noteArea().b) { previewPitch(g_view.pitchAt(y)); return 0; }
     if (x < KB_W && y < RULER_H) { g_panel = !g_panel; redraw(); return 0; }
     if (panelShown() && panelArea().in(x, y)) g_drag = DRAG_PANEL, panelMouse(x, y, true);
+    else if (rulerArea().in(x, y) && (mods() & MOD_SHIFT))
+    {
+      // shift+drag in the ruler: time selection, snapped like notes
+      g_drag = DRAG_RULER_SELECT;
+      g_selectAnchor = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
+      double a = g_selectAnchor, b = g_selectAnchor;
+      GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
+    }
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
     else if (noteArea().in(x, y))
     {
@@ -1586,6 +1721,12 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     g_mouseX = x, g_mouseY = y;
     if (g_drag == DRAG_NOTES) g_ed.mouseMove(g_view, x, y, mods()), previewDragged();
     else if (g_drag == DRAG_RULER) SetEditCurPos(g_view.t(x), false, true);
+    else if (g_drag == DRAG_RULER_SELECT)
+    {
+      const double t = (mods() & MOD_ALT) ? g_view.t(x) : g_ed.snap(g_view.t(x));
+      double a = std::min(t, g_selectAnchor), b = std::max(t, g_selectAnchor);
+      GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
+    }
     else if (g_drag == DRAG_PANEL) panelMouse(x, y, false);
     redraw();
     return 0;
