@@ -28,3 +28,6 @@ add_custom_target(deploy
 add_executable(nsgt_test tests/nsgt_test.cpp src/nsgt.cpp ${WDL}/fft.c)
 target_include_directories(nsgt_test PRIVATE ${WDL})
 target_compile_options(nsgt_test PRIVATE -UNDEBUG)
+
+add_executable(editor_test tests/editor_test.cpp src/editor.cpp)
+target_compile_options(editor_test PRIVATE -UNDEBUG)
