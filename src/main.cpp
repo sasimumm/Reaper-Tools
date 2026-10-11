@@ -24,6 +24,7 @@
 #define REAPERAPI_WANT_GetMediaItem_Track
 #define REAPERAPI_WANT_GetMediaItemInfo_Value
 #define REAPERAPI_WANT_GetMediaItemTake_Source
+#define REAPERAPI_WANT_GetMediaSourceFileName
 #define REAPERAPI_WANT_GetMediaItemTakeInfo_Value
 #define REAPERAPI_WANT_GetMediaItemTake_Track
 #define REAPERAPI_WANT_GetMediaSourceNumChannels

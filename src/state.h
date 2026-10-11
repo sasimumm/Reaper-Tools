@@ -37,6 +37,7 @@ struct Session {
     int voice = 0;                         // active voice, 0 = lead
     OtherVoice others[WINDOW_VOICES];
     double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1; // as analysed
+    std::string audioIdentity; // which recording: see audioIdentity()
     NoteEditor ed;
     TakeSnapshot snapshot; // of the take when the notes were loaded
     int notesVersion = 0;  // bumped whenever notes are loaded

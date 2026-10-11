@@ -597,6 +597,7 @@ void Window_Open(MediaItem *audio, int voice) {
     MediaItem_Take *take = GetActiveTake(audio);
     g_session.audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
     g_session.audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
+    g_session.audioIdentity = audioIdentity(take);
     clearAnalysis();
     const bool hadSettings = loadItemSettings();
     updateValues();
@@ -645,8 +646,18 @@ void Window_Timer() {
     const double offs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
     const double rate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
     static double s_changedAt = -1; // re-analyze once the item has stopped changing for a moment
-    if (pos != g_session.audioPos || len != g_session.audioLen || offs != g_session.audioOffs ||
-        rate != g_session.audioRate) {
+    if (const std::string id = audioIdentity(take); id != g_session.audioIdentity) {
+        // another take or source: what is shown describes a different recording, so drop it now
+        g_session.audioIdentity = id;
+        g_session.audioPos = pos, g_session.audioLen = len, g_session.audioOffs = offs,
+        g_session.audioRate = rate;
+        cancelJob();
+        clearAnalysis();
+        updateValues();
+        s_changedAt = -1;
+        requestAnalysis(false);
+    } else if (pos != g_session.audioPos || len != g_session.audioLen ||
+               offs != g_session.audioOffs || rate != g_session.audioRate) {
         g_session.audioPos = pos, g_session.audioLen = len, g_session.audioOffs = offs,
         g_session.audioRate = rate;
         s_changedAt = time_precise();

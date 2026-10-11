@@ -7,6 +7,9 @@ void updateValues();
 double frameTime(double f);
 void clearCache();
 void clearAnalysis(); // before analysing another item
+// Which recording an audio take plays: the take, its source and the source's file. Switching takes
+// or replacing the source changes it, even when the timing stays the same.
+std::string audioIdentity(MediaItem_Take *take);
 void cancelJob();
 void requestAnalysis(bool autoCalibrateAfter);
 void pollJob();

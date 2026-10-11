@@ -22,11 +22,13 @@ struct AnalysisKey {
     NSGTParams p;
     double pos = 0, len = 0, offs = 0, rate = 1;
     bool vote = true;
+    std::string audio; // audioIdentity(): another take or source is another recording
     bool operator==(const AnalysisKey &o) const {
-        return p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin && p.fmax == o.p.fmax &&
-               p.binsPerOctave == o.p.binsPerOctave && p.hop == o.p.hop && p.gamma == o.p.gamma &&
-               p.bass == o.p.bass && (!p.bass || p.bassCrossover == o.p.bassCrossover) &&
-               vote == o.vote && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
+        return audio == o.audio && p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin &&
+               p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave && p.hop == o.p.hop &&
+               p.gamma == o.p.gamma && p.bass == o.p.bass &&
+               (!p.bass || p.bassCrossover == o.p.bassCrossover) && vote == o.vote &&
+               pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
     }
 };
 
@@ -297,8 +299,9 @@ void requestAnalysis(bool autoCalibrateAfter) {
         redraw();
         return;
     }
-    const AnalysisKey key = {g_settings.np,       g_session.audioPos,  g_session.audioLen,
-                             g_session.audioOffs, g_session.audioRate, g_settings.estimateVote};
+    const AnalysisKey key = {g_settings.np,          g_session.audioPos,  g_session.audioLen,
+                             g_session.audioOffs,    g_session.audioRate, g_settings.estimateVote,
+                             g_session.audioIdentity};
     const int ch = g_settings.channel;
     if (cached(ch, key) && g_cache[ch].vocalValid) {
         install(g_cache[ch]);
@@ -367,3 +370,17 @@ void pollJob() {
 int analysisProgress() { return g_job ? g_job->permille.load() : -1; }
 
 void clearAnalysis() { g_analysis = AnalysisResult(); }
+
+std::string audioIdentity(MediaItem_Take *take) {
+    if (!take) {
+        return "";
+    }
+    PCM_source *src = GetMediaItemTake_Source(take);
+    char file[1024] = "";
+    if (src) {
+        GetMediaSourceFileName(src, file, sizeof(file));
+    }
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%p %p ", (void *)take, (void *)src);
+    return buf + std::string(file);
+}
