@@ -188,7 +188,7 @@ int main() {
     // as it is: the loaded notes refer to its events by index and keep times in project seconds
     {
         auto refused = [](FakeTake &t, const TakeSnapshot &snap, const std::vector<Note> &loaded,
-                          const std::vector<Note> &edited, std::vector<int> deleted = {}) {
+                          const std::vector<Note> &edited, const std::vector<int> &deleted = {}) {
             const std::string before = t.hash();
             const bool wrote = writeNotes(t, snap, loaded, edited, deleted, 96);
             return !wrote && t.hash() == before;

@@ -179,3 +179,14 @@ void pasteLyrics(const std::string &text) {
     }
     commitNotes();
 }
+
+void finishLyric() {
+    if (!g_ui.edit) {
+        return;
+    }
+    // committing without the item or its notes take would create a new notes item (or touch a
+    // deleted one): then the typed text is dropped with the field
+    const bool keep =
+        g_session.audio && ValidatePtr2(NULL, g_session.audio, "MediaItem*") && midiTake();
+    endLyric(keep, 0);
+}

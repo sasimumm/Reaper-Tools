@@ -515,7 +515,10 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         }
         return 0;
     }
-    case WM_CLOSE: DestroyWindow(hwnd); return 0;
+    case WM_CLOSE:
+        finishLyric();
+        DestroyWindow(hwnd);
+        return 0;
     case WM_DESTROY:
         if (g_docked) {
             DockWindowRemove(hwnd);
@@ -566,6 +569,7 @@ static void createWindow() {
 }
 
 static void toggleDock() {
+    finishLyric(); // the edit field goes with the window
     const ViewMap view = g_ui.view;
     g_recreating = true;
     if (g_ui.hwnd) {
@@ -613,6 +617,7 @@ void Window_Open(MediaItem *audio, int voice) {
 
 void Window_Close() {
     if (g_ui.hwnd) {
+        finishLyric();
         DestroyWindow(g_ui.hwnd);
     }
 }
