@@ -1,4 +1,4 @@
-// The Reascribe editor window: spectrogram with a piano roll on top.
+// The ReaTrace editor window: spectrogram with a piano roll on top.
 #pragma once
 
 #include "reaper_plugin.h"

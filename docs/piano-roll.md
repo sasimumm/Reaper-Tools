@@ -1,4 +1,4 @@
-# Reascribe piano roll: requirements and status
+# ReaTrace piano roll: requirements and status
 
 A custom REAPER window for transcribing audio by drawing notes on a spectrogram.
 Priorities: **P0** = first usable version, **P1** = makes transcription fast, **P2** = later / experimental.
@@ -32,7 +32,7 @@ Guiding principles (several learned the hard way in DrawScore):
 
 | ID | | Status | Item |
 |---|---|---|---|
-| WIN-1 | P0 | ✅ | Resizable window, opened by an action on the selected audio item (or the selected Reascribe MIDI item). |
+| WIN-1 | P0 | ✅ | Resizable window, opened by an action on the selected audio item (or the selected ReaTrace MIDI item). |
 | WIN-2 | P0 | ✅ | Layout: piano keyboard on the left, time ruler on top (bars/beats from the tempo map, plus seconds), spectrogram+notes in the middle, status line (pitch name, Hz, cents off, time, bar.beat under the mouse). The status line also shows the nearest peak's cents, the level in dB, the hovered note's sung offset, the snap mode and analysis progress. |
 | WIN-3 | P0 | ✅ | Window receives keyboard shortcuts (needs REAPER's `accelerator` hook, since REAPER grabs keys first). All keys the window doesn't use go to REAPER's main shortcuts, so Space etc. behave as in REAPER. |
 | WIN-4 | P1 | ◐ | Dockable in REAPER's docker (`DockWindowAddEx`), position and size remembered. Docking (D) and the docked/floating choice are remembered; the floating window's position and size are not. |
@@ -148,7 +148,7 @@ vibrato, scoops and slides, so a sung note has to be reduced to one semitone.
 | EDIT-10 | P1 | ✅ | Copy, paste at edit cursor, duplicate (cmd+D), split at mouse, join selected notes. Keys: cmd+C/X/V, cmd+D, K (split), J (join). cmd+V pastes notes after a copy in this window and lyrics once other text has been copied (the system clipboard isn't overwritten). Split keeps the lyric on the first half; join takes the first note's pitch and joins the lyrics without hyphens (self-checked). Notes pasted past the MIDI item's end are hidden until INT-4. |
 | EDIT-11 | P1 | ✅ | Draw a note and audition it immediately (see §7). |
 | EDIT-12 | P0 | ✅ | Notes get a fixed velocity (96); no velocity editing. |
-| EDIT-13 | P1 | ✅ | Multiple voices: up to four, each a MIDI item on its own track ("Reascribe notes", "Reascribe voice 2".."4") with its own colour and ReaSynth. Keys 1–4 or the panel pick the voice being edited; the others are shown dimmed and can be hidden. |
+| EDIT-13 | P1 | ✅ | Multiple voices: up to four, each a MIDI item on its own track ("ReaTrace notes", "ReaTrace voice 2".."4") with its own colour and ReaSynth. Keys 1–4 or the panel pick the voice being edited; the others are shown dimmed and can be hidden. |
 | EDIT-14 | P2 | — | "Draw along the line": drag along a spectral line and get a note whose start and end follow the energy (onset and decay detection). |
 
 ## 5a. Lyrics
@@ -208,7 +208,7 @@ tempo tools and markers-to-tempo conversion. We display the tempo map and leave 
 
 | ID | | Status | Item |
 |---|---|---|---|
-| INT-1 | P0 | ✅ | Setup action creates the "Reascribe notes" track (with ReaSynth) and a MIDI item covering the audio item; reopening finds the existing ones. |
+| INT-1 | P0 | ✅ | Setup action creates the "ReaTrace notes" track (with ReaSynth) and a MIDI item covering the audio item; reopening finds the existing ones. |
 | INT-2 | P0 | ✅ | External changes (MIDI editor edits, undo/redo, item moves, deleted items) are picked up: notes and lyrics re-read when the take's hash changes (`MIDI_GetHash`); the window closes if the audio item disappears. |
 | INT-3 | P0 | ✅ | Audio item position, take offset and playrate respected when mapping spectrogram time to project time. |
 | INT-4 | P1 | — | MIDI item extended to cover notes drawn past its end. |

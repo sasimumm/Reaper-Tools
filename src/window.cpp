@@ -651,7 +651,7 @@ static void commitNotes()
   }
   if (dataChanged)
   {
-    Undo_EndBlock2(NULL, "Reascribe: edit notes", UNDO_STATE_ITEMS);
+    Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
     UpdateArrange();
   }
   loadNotes();
@@ -938,7 +938,14 @@ static const Setting SETTINGS[] = {
     {"theme", NULL, &g_followTheme}, {"linkarrange", NULL, &g_linkArrange},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
 };
-static const char *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
+static const char *EXT_SECTION = "reatrace", *EXT_DEFAULTS = "defaults";
+static const char *OLD_EXT_SECTION = "reascribe"; // before the rename; read when there's nothing newer
+
+static const char *globalState(const char *key)
+{
+  const char *v = GetExtState(EXT_SECTION, key);
+  return v && *v ? v : GetExtState(OLD_EXT_SECTION, key);
+}
 
 static std::string saveSettings()
 {
@@ -1002,9 +1009,10 @@ static bool itemKey(char *key)
 static bool loadItemSettings()
 {
   resetSettings();
-  loadSettings(GetExtState(EXT_SECTION, EXT_DEFAULTS));
+  loadSettings(globalState(EXT_DEFAULTS));
   char key[64], buf[4096] = "";
-  const bool has = itemKey(key) && GetProjExtState(NULL, EXT_SECTION, key, buf, sizeof(buf)) > 0 && *buf;
+  const bool has = itemKey(key) && ((GetProjExtState(NULL, EXT_SECTION, key, buf, sizeof(buf)) > 0 && *buf) ||
+                                    (GetProjExtState(NULL, OLD_EXT_SECTION, key, buf, sizeof(buf)) > 0 && *buf));
   buf[sizeof(buf) - 1] = 0;
   if (has) loadSettings(buf);
   g_savedSettings = saveSettings();
@@ -1038,7 +1046,7 @@ static void pressButton(int b)
   if (b == B_LOAD_DEFAULT)
   {
     resetSettings();
-    loadSettings(GetExtState(EXT_SECTION, EXT_DEFAULTS));
+    loadSettings(globalState(EXT_DEFAULTS));
     setupEditorSnap();
     requestAnalysis(true);
     return;
@@ -1789,7 +1797,7 @@ static void previewPitch(int pitch)
   // One file per pitch, in case REAPER caches MIDI file sources by path; files of playing
   // previews are only rewritten with identical bytes.
   char path[2048];
-  snprintf(path, sizeof(path), "%s/Data/reascribe-preview-%d.mid", GetResourcePath(), pitch);
+  snprintf(path, sizeof(path), "%s/Data/reatrace-preview-%d.mid", GetResourcePath(), pitch);
   const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
   if (fd < 0) return;
   // format 0, 96 ticks per quarter: note on; note off after 77 ticks (~0.4 s at 120 bpm); all notes
@@ -2374,7 +2382,7 @@ static void createWindow()
   {
     g_hwnd = CreateDialog(NULL, NULL, GetMainHwnd(), dlgProc);
     if (!g_hwnd) return;
-    DockWindowAddEx(g_hwnd, "Reascribe", "reascribe_editor", true);
+    DockWindowAddEx(g_hwnd, "ReaTrace", "reatrace_editor", true);
     DockWindowActivate(g_hwnd);
   }
   else
@@ -2386,7 +2394,7 @@ static void createWindow()
   }
   char title[512];
   MediaItem_Take *take = GetActiveTake(g_audio);
-  snprintf(title, sizeof(title), "Reascribe - %s", take ? GetTakeName(take) : "");
+  snprintf(title, sizeof(title), "ReaTrace - %s", take ? GetTakeName(take) : "");
   SetWindowText(g_hwnd, title);
   ShowWindow(g_hwnd, SW_SHOW);
   fitItem();
@@ -2433,7 +2441,7 @@ void Window_Open(MediaItem *audio, int voice)
   loadNotes();
   loadOtherVoices(true);
 
-  const char *d = GetExtState(EXT_SECTION, "docked");
+  const char *d = globalState("docked");
   g_docked = d && *d == '1';
   createWindow();
 }

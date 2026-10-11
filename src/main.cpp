@@ -1,7 +1,7 @@
-// Reascribe: a REAPER extension for transcribing audio by drawing notes on a spectrogram.
+// ReaTrace: a REAPER extension for transcribing audio by drawing notes on a spectrogram.
 //
-// "Reascribe: Open spectrogram editor for selected item" works on an audio item, or on a MIDI
-// item on a "Reascribe notes" track. Notes are stored in a MIDI item on a "Reascribe notes" track
+// "ReaTrace: Open spectrogram editor for selected item" works on an audio item, or on a MIDI
+// item on a "ReaTrace notes" track. Notes are stored in a MIDI item on a "ReaTrace notes" track
 // directly below the audio track, so they are saved with the project and can also be edited in
 // REAPER's MIDI editor.
 
@@ -90,15 +90,16 @@
 
 #include "window.h"
 
-// Voice v lives on the v-th track below the audio track: "Reascribe notes" for the lead, then
-// "Reascribe voice 2", "Reascribe voice 3", ...
-static void voiceTrackName(int voice, char *buf, int sz)
+// Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
+// "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")
+// are still recognised.
+static void voiceTrackName(int voice, char *buf, int sz, const char *prefix = "ReaTrace")
 {
-  if (voice == 0) snprintf(buf, sz, "Reascribe notes");
-  else snprintf(buf, sz, "Reascribe voice %d", voice + 1);
+  if (voice == 0) snprintf(buf, sz, "%s notes", prefix);
+  else snprintf(buf, sz, "%s voice %d", prefix, voice + 1);
 }
 
-// -1 if the track isn't a Reascribe voice track
+// -1 if the track isn't a ReaTrace voice track
 static int voiceOfTrack(MediaTrack *tr)
 {
   char name[256] = "", want[64];
@@ -106,6 +107,8 @@ static int voiceOfTrack(MediaTrack *tr)
   for (int v = 0; v < WINDOW_VOICES; v++)
   {
     voiceTrackName(v, want, sizeof(want));
+    if (!strcmp(name, want)) return v;
+    voiceTrackName(v, want, sizeof(want), "Reascribe");
     if (!strcmp(name, want)) return v;
   }
   return -1;
@@ -123,7 +126,7 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
   return NULL;
 }
 
-// The voice's track among the Reascribe tracks directly below the audio track, created (after the
+// The voice's track among the ReaTrace tracks directly below the audio track, created (after the
 // last existing voice track) if asked.
 static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create)
 {
@@ -152,12 +155,12 @@ MediaItem *VoiceItem(MediaItem *audio, int voice, bool create)
   const bool qn = false;
   midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
   if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move the item
-  Undo_EndBlock2(NULL, "Reascribe: create notes item", -1);
+  Undo_EndBlock2(NULL, "ReaTrace: create notes item", -1);
   UpdateArrange();
   return midi;
 }
 
-// The audio item above a Reascribe MIDI item: on the first track above its voice tracks.
+// The audio item above a ReaTrace MIDI item: on the first track above its voice tracks.
 static MediaItem *audioForMidi(MediaItem *midi)
 {
   MediaTrack *tr = GetMediaItem_Track(midi);
@@ -175,7 +178,7 @@ static void openSelected()
   MediaItem *audio = take && !TakeIsMIDI(take) ? item : take ? audioForMidi(item) : NULL;
   if (!audio)
   {
-    ShowMessageBox("Select an audio item (or a MIDI item on a \"Reascribe notes\" track) first.", "Reascribe", 0);
+    ShowMessageBox("Select an audio item (or a MIDI item on a \"ReaTrace notes\" track) first.", "ReaTrace", 0);
     return;
   }
   const int voice = take && TakeIsMIDI(take) ? voiceOfTrack(GetMediaItem_Track(item)) : 0;
@@ -204,7 +207,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
   }
   if (rec->caller_version != REAPER_PLUGIN_VERSION || REAPERAPI_LoadAPI(rec->GetFunc) != 0) return 0;
 
-  custom_action_register_t a = {0, "REASCRIBE_OPEN", "Reascribe: Open spectrogram editor for selected item", NULL};
+  custom_action_register_t a = {0, "REATRACE_OPEN", "ReaTrace: Open spectrogram editor for selected item", NULL};
   if (!(g_cmdOpen = rec->Register("custom_action", &a))) return 0;
   rec->Register("hookcommand2", (void *)onAction);
   rec->Register("accelerator", &g_accel);

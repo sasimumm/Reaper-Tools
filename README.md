@@ -1,4 +1,4 @@
-# Reascribe
+# ReaTrace
 
 REAPER extension for transcribing audio (mainly vocals) by drawing notes on a spectrogram.
 See `docs/piano-roll.md` for the full feature plan.
@@ -7,12 +7,12 @@ See `docs/piano-roll.md` for the full feature plan.
 
     git submodule update --init
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build --target deploy   # copies reaper_reascribe.dylib to UserPlugins
+    cmake --build build --target deploy   # copies reaper_reatrace.dylib to UserPlugins
     ./build/nsgt_test && ./build/editor_test
 
 Restart REAPER after deploying.
 
-Voices: the lead goes on "Reascribe notes"; voices 2–4 (harmonies, backing) go on "Reascribe
+Voices: the lead goes on "ReaTrace notes"; voices 2–4 (harmonies, backing) go on "ReaTrace
 voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
 
 Settings are remembered per audio item; "Save as default" makes the current ones the starting
@@ -30,8 +30,8 @@ editor and lyrics view.
 
 ## Use
 
-Select an audio item and run **Reascribe: Open spectrogram editor for selected item**. Notes go
-into a MIDI item on a "Reascribe notes" track (with ReaSynth) below the audio track, so they are
+Select an audio item and run **ReaTrace: Open spectrogram editor for selected item**. Notes go
+into a MIDI item on a "ReaTrace notes" track (with ReaSynth) below the audio track, so they are
 saved with the project, can be undone, and can also be edited in REAPER's MIDI editor.
 
 | Input | Action |

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(reascribe LANGUAGES C CXX OBJCXX)
+project(reatrace LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
@@ -8,7 +8,7 @@ if(NOT APPLE)
   message(FATAL_ERROR "Only macOS is supported so far")
 endif()
 
-add_library(reaper_reascribe MODULE
+add_library(reaper_reatrace MODULE
   src/main.cpp
   src/nsgt.cpp
   src/editor.cpp
@@ -17,15 +17,15 @@ add_library(reaper_reascribe MODULE
   ${WDL}/fft.c
   ${WDL}/swell/swell-modstub.mm
 )
-set_target_properties(reaper_reascribe PROPERTIES PREFIX "" SUFFIX ".dylib")
-target_include_directories(reaper_reascribe PRIVATE vendor/reaper-sdk/sdk ${WDL})
-target_compile_definitions(reaper_reascribe PRIVATE SWELL_PROVIDED_BY_APP)
-target_link_libraries(reaper_reascribe PRIVATE "-framework Cocoa")
+set_target_properties(reaper_reatrace PROPERTIES PREFIX "" SUFFIX ".dylib")
+target_include_directories(reaper_reatrace PRIVATE vendor/reaper-sdk/sdk ${WDL})
+target_compile_definitions(reaper_reatrace PRIVATE SWELL_PROVIDED_BY_APP)
+target_link_libraries(reaper_reatrace PRIVATE "-framework Cocoa")
 
 set(USERPLUGINS "$ENV{HOME}/Library/Application Support/REAPER/UserPlugins")
 add_custom_target(deploy
-  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:reaper_reascribe> ${USERPLUGINS}/
-  DEPENDS reaper_reascribe
+  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:reaper_reatrace> ${USERPLUGINS}/
+  DEPENDS reaper_reatrace
   COMMENT "Copying to REAPER UserPlugins (restart REAPER to load)")
 
 add_executable(nsgt_test tests/nsgt_test.cpp src/nsgt.cpp ${WDL}/fft.c)
