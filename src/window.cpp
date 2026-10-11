@@ -29,7 +29,9 @@ static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
 static const int GUIDE_THICKNESS = 3;  // overtone hover marks, pixels
 
 // Colours, 0xRRGGBB.
-static const unsigned int C_BG = 0x1b1b1b, C_RULER = 0x262626, C_TEXT = 0xd0d0d0, C_DIM = 0x8a8a8a;
+// The note area stays dark under the spectrogram; the rest follows REAPER's theme (applyTheme).
+static const unsigned int C_AREA = 0x1b1b1b;
+static unsigned int C_BG, C_RULER, C_TEXT, C_DIM, C_PANEL, C_BUTTON, C_TRACK;
 static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd, C_SEL_EDGE = 0x2ec4b6;
 static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0x2ec4b6, 0xf4a261, 0xe56fd8, 0x9ee05a};
 static const char *const VOICES[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
@@ -88,6 +90,7 @@ static double g_quantStrength = 1;
 static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
 static bool g_audition = true; // play a note through the notes track when clicked or drawn
+static bool g_followTheme = true; // else the built-in dark colours
 static double g_harmonics = 8, g_guideOpacity = 0.4;
 // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
 // bright is what still needs transcribing.
@@ -156,6 +159,26 @@ static void syncViewOrigin()
 {
   Rect n = noteArea();
   g_view.x0 = n.l, g_view.y0 = n.t;
+}
+
+static unsigned int mix(unsigned int a, unsigned int b, double f)
+{
+  unsigned int out = 0;
+  for (int sh = 0; sh < 24; sh += 8)
+    out |= (unsigned int)lround(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh;
+  return out;
+}
+
+// Theme colours by their reaper.ini keys, falling back to the built-in dark colours.
+static void applyTheme()
+{
+  auto col = [](const char *key, unsigned int dflt) -> unsigned int {
+    const int c = g_followTheme ? GetThemeColor(key, 0) : -1;
+    return c < 0 ? dflt : ((c & 255) << 16) | (c & 0xff00) | ((c >> 16) & 255); // COLORREF is 0xBBGGRR
+  };
+  C_BG = col("col_main_bg2", 0x1b1b1b), C_PANEL = col("col_main_bg", 0x222222);
+  C_RULER = col("col_tl_bg", 0x262626), C_TEXT = col("col_main_text2", 0xd0d0d0);
+  C_DIM = mix(C_TEXT, C_PANEL, 0.4), C_BUTTON = mix(C_PANEL, C_TEXT, 0.1), C_TRACK = mix(C_PANEL, C_TEXT, 0.2);
 }
 
 static void redraw()
@@ -376,7 +399,7 @@ static void renderLayer(const Rect &n)
 {
   const double S = g_scale;
   const int w = (n.r - n.l) * g_scale, h = (n.b - n.t) * g_scale;
-  g_layer.assign((size_t)w * h, 0xff000000 | C_BG);
+  g_layer.assign((size_t)w * h, 0xff000000 | C_AREA);
   const Spectrogram &s = g_spec;
   if (!s.frames || g_val.size() != s.mag.size()) return;
 
@@ -724,6 +747,7 @@ static std::vector<Widget> widgets()
       {W_CHOICE, "Voice (1-4)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_voicePick, VOICES, WINDOW_VOICES},
       {W_TOGGLE, "Show other voices", NULL, &g_showOthers},
       {W_BUTTON, "Dock / undock window (D)", NULL, NULL, 0, 0, false, false, 0, NULL, B_DOCK},
+      {W_TOGGLE, "Colours from REAPER theme", NULL, &g_followTheme},
       {W_HEADER, "Display"},
       {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
       {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
@@ -840,6 +864,7 @@ static const Setting SETTINGS[] = {
     {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
     {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
     {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
+    {"theme", NULL, &g_followTheme},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
 };
 static const char *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
@@ -883,7 +908,7 @@ static void resetSettings()
 {
   g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
   g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
-  g_showContour = g_suggest = g_pitchFromContour = g_audition = true;
+  g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
   g_snapMode = SNAP_ONSETS, g_quantStrength = 1;
 }
 
@@ -1006,7 +1031,7 @@ static void drawPanel(Canvas &cv, HDC dc)
 {
   const Rect p = panelArea();
   if (p.r <= p.l) return;
-  cv.fill(p.l, p.t, p.r, p.b, 0x222222);
+  cv.fill(p.l, p.t, p.r, p.b, C_PANEL);
   cv.fill(p.l, p.t, p.l + 1, p.b, 0x000000);
   // show the actual playrate, which can also be changed elsewhere
   const double rate = Master_GetPlayRate(NULL);
@@ -1026,7 +1051,7 @@ static void drawPanel(Canvas &cv, HDC dc)
       snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
       text(dc, buf, l, top, r, top + 16, C_DIM, DT_RIGHT);
       const int by = top + 20, bx = l + (int)lround((r - l) * std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
-      cv.fill(l, by + 3, r, by + 7, 0x444444);
+      cv.fill(l, by + 3, r, by + 7, C_TRACK);
       cv.fill(l, by + 3, bx, by + 7, w.analysis && g_analysisDirty ? 0xc0a040 : 0x3a8a84);
       cv.fill(bx - 3, by, bx + 3, by + 10, C_TEXT);
     }
@@ -1043,13 +1068,13 @@ static void drawPanel(Canvas &cv, HDC dc)
       {
         const int bl = l + (r - l) * i / w.optionCount, br = l + (r - l) * (i + 1) / w.optionCount;
         const bool on = w.choice && i == *w.choice;
-        cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : 0x333333);
+        cv.fill(bl, top + 18, br - 2, top + 40, on ? 0x3a8a84 : C_BUTTON);
         text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0xffffff : C_TEXT, DT_CENTER);
       }
     }
     else
     {
-      cv.fill(l, top + 2, r, top + h - 2, 0x333333);
+      cv.fill(l, top + 2, r, top + h - 2, C_BUTTON);
       text(dc, w.label, l, top + 2, r, top + h - 2, C_TEXT, DT_CENTER);
     }
     top += h;
@@ -1225,6 +1250,7 @@ static void paint(HDC hdc)
 {
   const Rect c = clientRect();
   if (c.r < 2 || c.b < 2) return;
+  applyTheme();
   g_scale = SWELL_IsRetinaHWND(g_hwnd) ? 2 : 1;
   const int S = g_scale, w = (c.r * S + 3) & ~3, h = c.b * S; // SWELL backing stores are a multiple of 4 wide
   if (!g_memdc || w != g_memw || h != g_memh || g_fontScale != S)
@@ -1372,7 +1398,7 @@ static void paint(HDC hdc)
     cv.fill(ox - 1, RULER_H - 6, ox + 2, RULER_H - 1, 0xffa040);
   }
   cv.clip = {0, 0, KB_W, RULER_H};
-  cv.fill(0, 0, KB_W, RULER_H, 0x303030);
+  cv.fill(0, 0, KB_W, RULER_H, C_BUTTON);
   text(dc, g_panel ? "Hide (S)" : "Settings", 0, 0, KB_W, RULER_H, C_TEXT, DT_CENTER);
 
   // time selection

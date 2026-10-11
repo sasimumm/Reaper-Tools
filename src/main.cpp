@@ -33,6 +33,7 @@
 #define REAPERAPI_WANT_GetSelectedMediaItem
 #define REAPERAPI_WANT_GetSetMediaTrackInfo_String
 #define REAPERAPI_WANT_GetTakeName
+#define REAPERAPI_WANT_GetThemeColor
 #define REAPERAPI_WANT_GetToggleCommandState
 #define REAPERAPI_WANT_CSurf_OnPlayRateChange
 #define REAPERAPI_WANT_Master_GetPlayRate

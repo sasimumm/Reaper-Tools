@@ -37,7 +37,7 @@ Guiding principles (several learned the hard way in DrawScore):
 | WIN-3 | P0 | ✅ | Window receives keyboard shortcuts (needs REAPER's `accelerator` hook, since REAPER grabs keys first). All keys the window doesn't use go to REAPER's main shortcuts, so Space etc. behave as in REAPER. |
 | WIN-4 | P1 | ◐ | Dockable in REAPER's docker (`DockWindowAddEx`), position and size remembered. Docking (D) and the docked/floating choice are remembered; the floating window's position and size are not. |
 | WIN-5 | P1 | ✅ | Retina: render the spectrogram and notes at 2× backing resolution. |
-| WIN-6 | P1 | — | Colours follow the REAPER theme (background, grid, note colours) or a built-in dark theme. Built-in dark colours only. |
+| WIN-6 | P1 | ✅ | Colours follow the REAPER theme or a built-in dark theme (panel toggle). The window, ruler, panel and text use the theme's main window and timeline colours; the note area stays dark under the spectrogram, and notes keep their voice colours so they stay readable on it. |
 | WIN-7 | P2 | — | Optional waveform strip under the ruler, for spotting onsets. |
 | WIN-8 | P2 | — | Windows support (dialog template and DIB section instead of SWELL-only calls). |
 
