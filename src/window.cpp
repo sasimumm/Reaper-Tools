@@ -103,8 +103,9 @@ static int g_panelWidget = -1;
 static bool g_analysisDirty;
 static int g_mouseX = -1, g_mouseY = -1;
 
+// Drawing happens in device pixels: g_scale per point (2 on Retina). Layout stays in points.
 static HDC g_memdc;
-static int g_memw, g_memh;
+static int g_memw, g_memh, g_scale = 1, g_fontScale;
 static HFONT g_font;
 static std::vector<unsigned int> g_layer; // rendered spectrogram for the note area
 struct LayerKey
@@ -367,9 +368,11 @@ static void pollJob()
   install(c);
 }
 
+// Renders the note area at device resolution: g_scale pixels per point.
 static void renderLayer(const Rect &n)
 {
-  const int w = n.r - n.l, h = n.b - n.t;
+  const double S = g_scale;
+  const int w = (n.r - n.l) * g_scale, h = (n.b - n.t) * g_scale;
   g_layer.assign((size_t)w * h, 0xff000000 | C_BG);
   const Spectrogram &s = g_spec;
   if (!s.frames || g_val.size() != s.mag.size()) return;
@@ -377,13 +380,13 @@ static void renderLayer(const Rect &n)
   std::vector<int> rowLo(h), rowHi(h); // bins covered by each pixel row
   for (int y = 0; y < h; y++)
   {
-    const double hi = s.binOfPitch(g_view.p(n.t + y)), lo = s.binOfPitch(g_view.p(n.t + y + 1));
+    const double hi = s.binOfPitch(g_view.p(n.t + y / S)), lo = s.binOfPitch(g_view.p(n.t + (y + 1) / S));
     int a = (int)ceil(lo), b = (int)ceil(hi) - 1;
     if (a > b) a = b = (int)lround(0.5 * (lo + hi));
     rowLo[y] = std::max(0, a), rowHi[y] = std::min(s.bins - 1, b);
   }
   std::vector<double> rowPitch(h);
-  for (int y = 0; y < h; y++) rowPitch[y] = g_view.p(n.t + y + 0.5);
+  for (int y = 0; y < h; y++) rowPitch[y] = g_view.p(n.t + (y + 0.5) / S);
   std::vector<double> explained; // pitches of notes and overtones sounding in this column
   const int nh = (int)lround(g_harmonics);
   std::vector<unsigned char> col(s.bins);
@@ -392,7 +395,7 @@ static void renderLayer(const Rect &n)
     explained.clear();
     if (g_explain)
     {
-      const double ta = g_view.t(n.l + x), tb = g_view.t(n.l + x + 1);
+      const double ta = g_view.t(n.l + x / S), tb = g_view.t(n.l + (x + 1) / S);
       auto add = [&](const Note &nt) {
         if (nt.start < tb && nt.end > ta)
           for (int hh = 1; hh <= nh; hh++) explained.push_back(nt.pitch + 12 * log2((double)hh));
@@ -402,8 +405,8 @@ static void renderLayer(const Rect &n)
         if (v != g_voice)
           for (const Note &nt : g_others[v].notes) add(nt);
     }
-    const double fa = (g_view.t(n.l + x) - g_audioPos) * s.frameRate();
-    const double fb = (g_view.t(n.l + x + 1) - g_audioPos) * s.frameRate();
+    const double fa = (g_view.t(n.l + x / S) - g_audioPos) * s.frameRate();
+    const double fb = (g_view.t(n.l + (x + 1) / S) - g_audioPos) * s.frameRate();
     int f0 = (int)ceil(fa), f1 = (int)ceil(fb) - 1;
     if (f0 > f1) f0 = f1 = (int)lround(0.5 * (fa + fb));
     f0 = std::max(f0, 0), f1 = std::min(f1, s.frames - 1);
@@ -726,6 +729,7 @@ static void quantiseSelected()
 
 // --- drawing helpers -------------------------------------------------------------
 
+// Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
 struct Canvas
 {
   unsigned int *px;
@@ -734,7 +738,9 @@ struct Canvas
 
   void fill(int x0, int y0, int x1, int y1, unsigned int col, int a = 256)
   {
-    x0 = std::max(x0, clip.l), y0 = std::max(y0, clip.t), x1 = std::min(x1, clip.r), y1 = std::min(y1, clip.b);
+    const int s = g_scale;
+    x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
+    x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
     for (int y = y0; y < y1; y++)
     {
       unsigned int *p = px + (size_t)y * w;
@@ -759,7 +765,7 @@ struct Canvas
 static void text(HDC dc, const char *s, int l, int t, int r, int b, unsigned int col, int flags)
 {
   SetTextColor(dc, RGB((col >> 16) & 255, (col >> 8) & 255, col & 255));
-  RECT rc = {l, t, r, b};
+  RECT rc = {l * g_scale, t * g_scale, r * g_scale, b * g_scale};
   DrawText(dc, s, -1, &rc, flags | DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER);
 }
 
@@ -1304,42 +1310,46 @@ static void paint(HDC hdc)
 {
   const Rect c = clientRect();
   if (c.r < 2 || c.b < 2) return;
-  const int w = (c.r + 3) & ~3; // SWELL backing stores are a multiple of 4 wide
-  if (!g_memdc || w != g_memw || c.b != g_memh)
+  g_scale = SWELL_IsRetinaHWND(g_hwnd) ? 2 : 1;
+  const int S = g_scale, w = (c.r * S + 3) & ~3, h = c.b * S; // SWELL backing stores are a multiple of 4 wide
+  if (!g_memdc || w != g_memw || h != g_memh || g_fontScale != S)
   {
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
-    g_memdc = SWELL_CreateMemContext(hdc, w, c.b);
-    g_memw = w, g_memh = c.b;
+    g_memdc = SWELL_CreateMemContext(hdc, w, h);
+    g_memw = w, g_memh = h;
+    if (g_font && g_fontScale != S) DeleteObject(g_font), g_font = NULL;
     if (!g_font)
-      g_font = CreateFont(12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
+      g_font = CreateFont(12 * S, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                           CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, "Helvetica");
+    g_fontScale = S;
     if (g_memdc && g_font) SelectObject(g_memdc, g_font);
   }
   unsigned int *fb = g_memdc ? (unsigned int *)SWELL_GetCtxFrameBuffer(g_memdc) : NULL;
   if (!fb) return;
   if (c.r < MIN_W || c.b < MIN_H)
   {
-    for (size_t i = 0; i < (size_t)w * c.b; i++) fb[i] = 0xff000000 | C_BG;
-    BitBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, SRCCOPY);
+    for (size_t i = 0; i < (size_t)w * h; i++) fb[i] = 0xff000000 | C_BG;
+    StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S, SRCCOPY);
     return;
   }
   syncViewOrigin();
   const Rect n = noteArea(), ru = rulerArea();
-  Canvas cv = {fb, w, c.b, {0, 0, w, c.b}};
-  cv.fill(0, 0, w, c.b, C_BG);
+  Canvas cv = {fb, w, h, {0, 0, c.r, c.b}};
+  cv.fill(0, 0, c.r, c.b, C_BG);
   HDC dc = g_memdc;
   SetBkMode(dc, TRANSPARENT);
   char buf[160];
 
   // spectrogram
-  LayerKey key = {g_view.t0, g_view.pps, g_view.pitchTop, g_view.rowH, n.r - n.l, n.b - n.t, g_valVersion,
+  LayerKey key = {g_view.t0, g_view.pps, g_view.pitchTop, g_view.rowH, (n.r - n.l) * S, (n.b - n.t) * S, g_valVersion,
                   g_explain ? g_notesVersion * 32 + (int)lround(g_harmonics) : 0};
   if (!g_layerValid || !(key == g_layerKey))
   {
     renderLayer(n);
     g_layerKey = key, g_layerValid = true;
   }
-  for (int y = n.t; y < n.b; y++) memcpy(fb + (size_t)y * w + n.l, &g_layer[(size_t)(y - n.t) * (n.r - n.l)], (n.r - n.l) * 4);
+  const int lw = (n.r - n.l) * S;
+  for (int y = n.t * S; y < n.b * S; y++) memcpy(fb + (size_t)y * w + n.l * S, &g_layer[(size_t)(y - n.t * S) * lw], lw * 4);
 
   // pitch rows, then the time grid
   cv.clip = n;
@@ -1519,7 +1529,7 @@ static void paint(HDC hdc)
   {
     const int pm = g_job->permille;
     snprintf(buf, sizeof(buf), "analysing %d%%   snap: %s (G)", pm / 10, SNAP_NAMES[g_snapMode]);
-    cv.clip = {0, 0, w, c.b};
+    cv.clip = {0, 0, c.r, c.b};
     cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
     cv.clip = {0, n.b, c.r, c.b};
   }
@@ -1527,10 +1537,10 @@ static void paint(HDC hdc)
   text(dc, status.c_str(), 6, n.b, c.r - 120, c.b, C_TEXT, DT_LEFT);
   text(dc, buf, 6, n.b, c.r - 6, c.b, C_DIM, DT_RIGHT);
 
-  cv.clip = {0, 0, w, c.b};
+  cv.clip = {0, 0, c.r, c.b};
   if (panelShown()) drawPanel(cv, dc);
 
-  BitBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, SRCCOPY);
+  StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S, SRCCOPY); // 2:1 is SWELL's retina blit
   if (g_edit) placeEdit(); // follow scrolling and zooming while typing a lyric
 }
 
