@@ -5,7 +5,7 @@
 
 void Window_Open(MediaItem *audio, int voice); // voice 0 = lead
 void Window_Close();
-void Window_Timer();                // called from REAPER's timer, ~30 Hz
+void Window_Timer();                 // called from REAPER's timer, ~30 Hz
 int Window_TranslateAccel(MSG *msg); // accelerator hook, see accelerator_register_t
 
 static const int WINDOW_VOICES = 4;

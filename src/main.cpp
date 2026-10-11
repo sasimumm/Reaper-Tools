@@ -93,124 +93,154 @@
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
 // "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")
 // are still recognised.
-static void voiceTrackName(int voice, char *buf, int sz, const char *prefix = "ReaTrace")
-{
-  if (voice == 0) snprintf(buf, sz, "%s notes", prefix);
-  else snprintf(buf, sz, "%s voice %d", prefix, voice + 1);
+static void voiceTrackName(int voice, char *buf, int sz, const char *prefix = "ReaTrace") {
+    if (voice == 0) {
+        snprintf(buf, sz, "%s notes", prefix);
+    } else {
+        snprintf(buf, sz, "%s voice %d", prefix, voice + 1);
+    }
 }
 
 // -1 if the track isn't a ReaTrace voice track
-static int voiceOfTrack(MediaTrack *tr)
-{
-  char name[256] = "", want[64];
-  if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) return -1;
-  for (int v = 0; v < WINDOW_VOICES; v++)
-  {
-    voiceTrackName(v, want, sizeof(want));
-    if (!strcmp(name, want)) return v;
-    voiceTrackName(v, want, sizeof(want), "Reascribe");
-    if (!strcmp(name, want)) return v;
-  }
-  return -1;
+static int voiceOfTrack(MediaTrack *tr) {
+    char name[256] = "", want[64];
+    if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) {
+        return -1;
+    }
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        voiceTrackName(v, want, sizeof(want));
+        if (!strcmp(name, want)) {
+            return v;
+        }
+        voiceTrackName(v, want, sizeof(want), "Reascribe");
+        if (!strcmp(name, want)) {
+            return v;
+        }
+    }
+    return -1;
 }
 
-static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool midi)
-{
-  for (int i = 0; tr && i < CountTrackMediaItems(tr); i++)
-  {
-    MediaItem *it = GetTrackMediaItem(tr, i);
-    const double p = GetMediaItemInfo_Value(it, "D_POSITION"), l = GetMediaItemInfo_Value(it, "D_LENGTH");
-    MediaItem_Take *tk = GetActiveTake(it);
-    if (tk && TakeIsMIDI(tk) == midi && p < pos + len && p + l > pos) return it;
-  }
-  return NULL;
+static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool midi) {
+    for (int i = 0; tr && i < CountTrackMediaItems(tr); i++) {
+        MediaItem *it = GetTrackMediaItem(tr, i);
+        const double p = GetMediaItemInfo_Value(it, "D_POSITION"),
+                     l = GetMediaItemInfo_Value(it, "D_LENGTH");
+        MediaItem_Take *tk = GetActiveTake(it);
+        if (tk && TakeIsMIDI(tk) == midi && p < pos + len && p + l > pos) {
+            return it;
+        }
+    }
+    return NULL;
 }
 
 // The voice's track among the ReaTrace tracks directly below the audio track, created (after the
 // last existing voice track) if asked.
-static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create)
-{
-  const int first = (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
-  int idx = first;
-  for (MediaTrack *tr = NULL; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++)
-    if (voiceOfTrack(tr) == voice) return tr;
-  if (!create) return NULL;
-  InsertTrackAtIndex(idx, true);
-  MediaTrack *tr = GetTrack(NULL, idx);
-  char name[64];
-  voiceTrackName(voice, name, sizeof(name));
-  GetSetMediaTrackInfo_String(tr, "P_NAME", name, true);
-  TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
-  return tr;
+static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
+    const int first =
+        (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
+    int idx = first;
+    for (MediaTrack *tr = NULL; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++) {
+        if (voiceOfTrack(tr) == voice) {
+            return tr;
+        }
+    }
+    if (!create) {
+        return NULL;
+    }
+    InsertTrackAtIndex(idx, true);
+    MediaTrack *tr = GetTrack(NULL, idx);
+    char name[64];
+    voiceTrackName(voice, name, sizeof(name));
+    GetSetMediaTrackInfo_String(tr, "P_NAME", name, true);
+    TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
+    return tr;
 }
 
-MediaItem *VoiceItem(MediaItem *audio, int voice, bool create)
-{
-  const double pos = GetMediaItemInfo_Value(audio, "D_POSITION"), len = GetMediaItemInfo_Value(audio, "D_LENGTH");
-  MediaTrack *tr = voiceTrack(audio, voice, false);
-  MediaItem *midi = tr ? overlappingItem(tr, pos, len, true) : NULL;
-  if (midi || !create) return midi;
-  Undo_BeginBlock2(NULL);
-  if (!tr) tr = voiceTrack(audio, voice, true);
-  const bool qn = false;
-  midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
-  if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move the item
-  Undo_EndBlock2(NULL, "ReaTrace: create notes item", -1);
-  UpdateArrange();
-  return midi;
+MediaItem *VoiceItem(MediaItem *audio, int voice, bool create) {
+    const double pos = GetMediaItemInfo_Value(audio, "D_POSITION"),
+                 len = GetMediaItemInfo_Value(audio, "D_LENGTH");
+    MediaTrack *tr = voiceTrack(audio, voice, false);
+    MediaItem *midi = tr ? overlappingItem(tr, pos, len, true) : NULL;
+    if (midi || !create) {
+        return midi;
+    }
+    Undo_BeginBlock2(NULL);
+    if (!tr) {
+        tr = voiceTrack(audio, voice, true);
+    }
+    const bool qn = false;
+    midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
+    if (midi) {
+        SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE",
+                               0); // timebase time: tempo edits don't move the item
+    }
+    Undo_EndBlock2(NULL, "ReaTrace: create notes item", -1);
+    UpdateArrange();
+    return midi;
 }
 
 // The audio item above a ReaTrace MIDI item: on the first track above its voice tracks.
-static MediaItem *audioForMidi(MediaItem *midi)
-{
-  MediaTrack *tr = GetMediaItem_Track(midi);
-  if (voiceOfTrack(tr) < 0) return NULL;
-  int idx = (int)GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 2;
-  while (idx >= 0 && voiceOfTrack(GetTrack(NULL, idx)) >= 0) idx--;
-  const double pos = GetMediaItemInfo_Value(midi, "D_POSITION"), len = GetMediaItemInfo_Value(midi, "D_LENGTH");
-  return idx >= 0 ? overlappingItem(GetTrack(NULL, idx), pos, len, false) : NULL;
+static MediaItem *audioForMidi(MediaItem *midi) {
+    MediaTrack *tr = GetMediaItem_Track(midi);
+    if (voiceOfTrack(tr) < 0) {
+        return NULL;
+    }
+    int idx = (int)GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 2;
+    while (idx >= 0 && voiceOfTrack(GetTrack(NULL, idx)) >= 0) {
+        idx--;
+    }
+    const double pos = GetMediaItemInfo_Value(midi, "D_POSITION"),
+                 len = GetMediaItemInfo_Value(midi, "D_LENGTH");
+    return idx >= 0 ? overlappingItem(GetTrack(NULL, idx), pos, len, false) : NULL;
 }
 
-static void openSelected()
-{
-  MediaItem *item = GetSelectedMediaItem(NULL, 0);
-  MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
-  MediaItem *audio = take && !TakeIsMIDI(take) ? item : take ? audioForMidi(item) : NULL;
-  if (!audio)
-  {
-    ShowMessageBox("Select an audio item (or a MIDI item on a \"ReaTrace notes\" track) first.", "ReaTrace", 0);
-    return;
-  }
-  const int voice = take && TakeIsMIDI(take) ? voiceOfTrack(GetMediaItem_Track(item)) : 0;
-  if (voice == 0) VoiceItem(audio, 0, true); // the lead's track and item, so there is somewhere to listen
-  Window_Open(audio, voice);
+static void openSelected() {
+    MediaItem *item = GetSelectedMediaItem(NULL, 0);
+    MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
+    MediaItem *audio = take && !TakeIsMIDI(take) ? item : take ? audioForMidi(item) : NULL;
+    if (!audio) {
+        ShowMessageBox("Select an audio item (or a MIDI item on a \"ReaTrace notes\" track) first.",
+                       "ReaTrace", 0);
+        return;
+    }
+    const int voice = take && TakeIsMIDI(take) ? voiceOfTrack(GetMediaItem_Track(item)) : 0;
+    if (voice == 0) {
+        VoiceItem(audio, 0, true); // the lead's track and item, so there is somewhere to listen
+    }
+    Window_Open(audio, voice);
 }
 
 static int g_cmdOpen;
 
-static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND)
-{
-  if (command != g_cmdOpen) return false;
-  openSelected();
-  return true;
+static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
+    if (command != g_cmdOpen) {
+        return false;
+    }
+    openSelected();
+    return true;
 }
 
 static int translateAccel(MSG *msg, accelerator_register_t *) { return Window_TranslateAccel(msg); }
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
-extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t *rec)
-{
-  if (!rec)
-  {
-    Window_Close();
-    return 0;
-  }
-  if (rec->caller_version != REAPER_PLUGIN_VERSION || REAPERAPI_LoadAPI(rec->GetFunc) != 0) return 0;
+extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
+                                                                 reaper_plugin_info_t *rec) {
+    if (!rec) {
+        Window_Close();
+        return 0;
+    }
+    if (rec->caller_version != REAPER_PLUGIN_VERSION || REAPERAPI_LoadAPI(rec->GetFunc) != 0) {
+        return 0;
+    }
 
-  custom_action_register_t a = {0, "REATRACE_OPEN", "ReaTrace: Open spectrogram editor for selected item", NULL};
-  if (!(g_cmdOpen = rec->Register("custom_action", &a))) return 0;
-  rec->Register("hookcommand2", (void *)onAction);
-  rec->Register("accelerator", &g_accel);
-  rec->Register("timer", (void *)Window_Timer);
-  return 1;
+    custom_action_register_t a = {
+        0, "REATRACE_OPEN", "ReaTrace: Open spectrogram editor for selected item", NULL
+    };
+    if (!(g_cmdOpen = rec->Register("custom_action", &a))) {
+        return 0;
+    }
+    rec->Register("hookcommand2", (void *)onAction);
+    rec->Register("accelerator", &g_accel);
+    rec->Register("timer", (void *)Window_Timer);
+    return 1;
 }

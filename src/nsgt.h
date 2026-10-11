@@ -4,30 +4,28 @@
 #include <functional>
 #include <vector>
 
-struct NSGTParams
-{
-  double sampleRate = 22050; // analysis rate; audio is resampled to this
-  double fmin = 27.5;        // A0, bin 0
-  double fmax = 8000;
-  int binsPerOctave = 60;    // 5 bins per semitone
-  int hop = 256;             // samples per frame, power of two
-  double gamma = 11;         // Hz added to every bin's bandwidth: lower = sharper pitch, blurrier timing
-  // Bass analysis: below the crossover, bins come from a second pass with the longest windows the
-  // block allows (sharpest pitch), cross-faded over half an octave.
-  bool bass = false;
-  double bassCrossover = 200; // Hz
+struct NSGTParams {
+    double sampleRate = 22050; // analysis rate; audio is resampled to this
+    double fmin = 27.5;        // A0, bin 0
+    double fmax = 8000;
+    int binsPerOctave = 60; // 5 bins per semitone
+    int hop = 256;          // samples per frame, power of two
+    double gamma = 11; // Hz added to every bin's bandwidth: lower = sharper pitch, blurrier timing
+    // Bass analysis: below the crossover, bins come from a second pass with the longest windows the
+    // block allows (sharpest pitch), cross-faded over half an octave.
+    bool bass = false;
+    double bassCrossover = 200; // Hz
 };
 
-struct Spectrogram
-{
-  NSGTParams p;
-  int bins = 0, frames = 0;
-  std::vector<float> mag;   // frames*bins, linear amplitude, a full-scale sine is ~1
-  std::vector<float> noise; // per bin: mean spectrum of the quietest frames, see estimateNoise()
+struct Spectrogram {
+    NSGTParams p;
+    int bins = 0, frames = 0;
+    std::vector<float> mag;   // frames*bins, linear amplitude, a full-scale sine is ~1
+    std::vector<float> noise; // per bin: mean spectrum of the quietest frames, see estimateNoise()
 
-  float at(int f, int b) const { return mag[(size_t)f * bins + b]; }
-  double frameRate() const { return p.sampleRate / p.hop; }
-  double binOfPitch(double midiPitch) const; // continuous bin index for a (fractional) MIDI pitch
+    float at(int f, int b) const { return mag[(size_t)f * bins + b]; }
+    double frameRate() const { return p.sampleRate / p.hop; }
+    double binOfPitch(double midiPitch) const; // continuous bin index for a (fractional) MIDI pitch
 };
 
 // read(start, n, out) fills out[0..n) with mono samples from sample `start`; out-of-range samples are 0.
@@ -39,15 +37,14 @@ Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
 // Noise floor for spectral subtraction: mean spectrum of the quietest `fraction` of frames.
 void estimateNoise(Spectrogram &s, double fraction);
 
-struct RenderParams
-{
-  double dbFloor = -80, brightness = 0, contrast = 1;
-  double bias = -0.8;         // colormap gamma: t^(2^-bias), negative darkens the low end
-  bool subtractNoise = false;
-  double noiseAlpha = 1.5;
-  double noiseFraction = 0.1; // passed to estimateNoise()
-  bool peaksOnly = false;     // dim everything except per-frame local maxima along frequency
-  double peakDim = 0.15;      // brightness kept by non-peaks
+struct RenderParams {
+    double dbFloor = -80, brightness = 0, contrast = 1;
+    double bias = -0.8; // colormap gamma: t^(2^-bias), negative darkens the low end
+    bool subtractNoise = false;
+    double noiseAlpha = 1.5;
+    double noiseFraction = 0.1; // passed to estimateNoise()
+    bool peaksOnly = false;     // dim everything except per-frame local maxima along frequency
+    double peakDim = 0.15;      // brightness kept by non-peaks
 };
 
 // Picks dbFloor/contrast from the 30th and 95th percentile of frames [f0, f1) (from Specter).
