@@ -91,6 +91,7 @@ static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
 static bool g_audition = true; // play a note through the notes track when clicked or drawn
 static bool g_followTheme = true; // else the built-in dark colours
+static bool g_linkArrange;        // keep the visible time range in sync with REAPER's arrange view
 static double g_harmonics = 8, g_guideOpacity = 0.4;
 // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
 // bright is what still needs transcribing.
@@ -748,6 +749,7 @@ static std::vector<Widget> widgets()
       {W_TOGGLE, "Show other voices", NULL, &g_showOthers},
       {W_BUTTON, "Dock / undock window (D)", NULL, NULL, 0, 0, false, false, 0, NULL, B_DOCK},
       {W_TOGGLE, "Colours from REAPER theme", NULL, &g_followTheme},
+      {W_TOGGLE, "Link time to arrange view (L)", NULL, &g_linkArrange},
       {W_HEADER, "Display"},
       {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
       {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
@@ -864,7 +866,7 @@ static const Setting SETTINGS[] = {
     {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
     {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
     {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
-    {"theme", NULL, &g_followTheme},
+    {"theme", NULL, &g_followTheme}, {"linkarrange", NULL, &g_linkArrange},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
 };
 static const char *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
@@ -909,7 +911,7 @@ static void resetSettings()
   g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
   g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
   g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
-  g_snapMode = SNAP_ONSETS, g_quantStrength = 1;
+  g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false;
 }
 
 static void setupEditorSnap();
@@ -1536,6 +1538,32 @@ static void scrollPitch(double semitones)
   redraw();
 }
 
+// Linked to the arrange view: whichever side changed since the last tick moves the other one.
+// Starts by following the arrange view.
+static double g_arrA = -1, g_arrB = -1, g_ourA, g_ourB; // ranges as of the last sync
+
+static void syncArrange()
+{
+  if (!g_linkArrange) { g_arrA = g_arrB = -1; return; }
+  syncViewOrigin();
+  const Rect n = noteArea();
+  double a = 0, b = 0;
+  GetSet_ArrangeView2(NULL, false, 0, 0, &a, &b);
+  if (b <= a) return;
+  if (a != g_arrA || b != g_arrB)
+  {
+    g_view.pps = (n.r - n.l) / (b - a), g_view.t0 = a;
+    redraw();
+  }
+  else if (g_view.t(n.l) != g_ourA || g_view.t(n.r) != g_ourB)
+  {
+    a = g_view.t(n.l), b = g_view.t(n.r);
+    GetSet_ArrangeView2(NULL, true, 0, 0, &a, &b);
+    GetSet_ArrangeView2(NULL, false, 0, 0, &a, &b); // read back what REAPER made of it
+  }
+  g_arrA = a, g_arrB = b, g_ourA = g_view.t(n.l), g_ourB = g_view.t(n.r);
+}
+
 // --- note preview ----------------------------------------------------------------------
 
 // Plays a short note through the notes track (so through its synth) as a track preview, from a
@@ -1860,6 +1888,7 @@ static bool onKey(int key)
   else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) selectVoice(key - '1');
   else if (key == 'Q' && !m) quantiseSelected();
   else if (key == 'D' && !m) g_dockPending = true;
+  else if (key == 'L' && !m) g_linkArrange = !g_linkArrange;
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
   else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
@@ -1887,7 +1916,7 @@ static bool isOurKey(int key, int flags)
   case 'A': return true;
   case 'V': return cmd;
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'D': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'D': case 'L': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -2177,6 +2206,7 @@ void Window_Timer()
     if (!g_hwnd) return;
   }
   pollJob();
+  syncArrange();
   if (g_drag == DRAG_NONE) saveItemSettings();
   if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) { Window_Close(); return; }
 

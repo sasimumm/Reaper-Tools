@@ -49,7 +49,7 @@ Guiding principles (several learned the hard way in DrawScore):
 | NAV-2 | P0 | ◐ | Vertical zoom and scroll: alt+scroll and alt+pinch zoom pitch. Directional pinch isn't possible: macOS only reports the zoom amount, not its direction. |
 | NAV-3 | P0 | ✅ | Zoom to fit the item (F); zoom to selection (Z). |
 | NAV-4 | P1 | — | Follow playback (page or continuous scroll), toggleable. |
-| NAV-5 | P1 | — | Keep the view in sync with REAPER's arrange view (optional link). |
+| NAV-5 | P1 | ✅ | Keep the view in sync with REAPER's arrange view (optional link, L or the panel). Time range only: when linked, the window starts by following the arrange view, then whichever side scrolls or zooms moves the other. |
 | NAV-6 | P1 | — | Trackpad pan with inertia (DrawScore: ×0.95 per frame, stop below 0.5 px/s). |
 | NAV-7 | P2 | — | Mini overview of the whole item with the visible range. |
 
