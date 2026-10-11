@@ -242,8 +242,9 @@ Measured on Apple Silicon for 3 minutes of audio:
    settings, docking, Retina. Tempo-map shortcuts were built and then dropped (REAPER covers them).
 5. ◐ **Editing, listening and lyrics polish** (leftover P1s). Done: copy/paste/duplicate/split/join
    (EDIT-10), axis lock (EDIT-8), audio/notes balance and solo (PLAY-5), lyrics lane (LYR-7), and
-   alongside them theme colours (WIN-6), arrange view link (NAV-5), overview (NAV-7), (SPEC-5 bass
-   analysis was tried and removed), bins per semitone (CTL-12), looping (PLAY-4). Left: arrow-key nudge (EDIT-9), follow
+   alongside them theme colours (WIN-6), arrange view link (NAV-5), overview (NAV-7), bins per
+   semitone (CTL-12), looping (PLAY-4); bass analysis (SPEC-5) was tried and removed. Left:
+   arrow-key nudge (EDIT-9), follow
    playback (NAV-4), reference tone (PLAY-8), MIDI item auto-extend (INT-4), several audio items
    per track (INT-5), tuning reference (PITCH-9).
 6. — **Experiments:** pitch bends from the contour (PITCH-10), harmony contours (PITCH-11),
