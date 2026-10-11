@@ -8,7 +8,10 @@ See `docs/piano-roll.md` for the full feature plan.
     git submodule update --init
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build --target deploy   # copies reaper_reatrace.dylib to UserPlugins
-    ./build/nsgt_test && ./build/editor_test
+    ./build/nsgt_test && ./build/editor_test && ./build/contour_test && ./build/estimate_test
+
+The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it as
+`UserPlugins/reatrace/nmp.mlmodelc`.
 
 Restart REAPER after deploying.
 
@@ -48,7 +51,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
 | P | pitch contour (white line: the sung pitch) |
-| N | suggested notes (dashed: stable stretches of the contour); click one to accept it |
+| N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel); click one to accept it |
 | A | accept all suggested notes in view |
 | cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |
 | cmd+V | after a copy here: paste the notes at the edit cursor. Once other text has been copied: paste lyrics, one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
@@ -72,3 +75,10 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | R | loop the selected notes' range (or the time selection) from its start; R again stops |
 | Q | quantise selected notes to the grid (strength in the panel) |
 | other keys | REAPER's own shortcuts (Space = play/stop, ...) |
+
+## Third-party
+
+- [basic-pitch](https://github.com/spotify/basic-pitch) by Spotify, Apache-2.0: its note model
+  (`vendor/basic-pitch`, with LICENSE and NOTICE) confirms the note estimator's notes.
+- The note estimator follows the approach of the `transcribe` project (docs/NOTE-ESTIMATION.md there).
+- REAPER SDK and WDL/SWELL by Cockos.

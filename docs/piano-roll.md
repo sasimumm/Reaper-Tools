@@ -126,11 +126,12 @@ vibrato, scoops and slides, so a sung note has to be reduced to one semitone.
 | PITCH-4 | P0 | ✅ | **Cents readout:** pitch snaps to the semitone; the status line shows the cents deviation of the strongest nearby peak. |
 | PITCH-5 | P1 | ✅ | **Pitch contour** (P): harmonic-sum F0 over the vocal range with a Viterbi pass that penalises jumps (so a formant-boosted 3rd harmonic doesn't cause octave errors) and a voiced/unvoiced decision; drawn as a white line (`src/contour.cpp`, self-checked on synthetic sung notes). |
 | PITCH-6 | P1 | ✅ | **Note pitch from the contour:** a drawn note takes the median sung pitch under it (ignoring the first 50 ms) when within 2 semitones; alt keeps the drawn row. Hovering a note shows its average sung offset in cents. |
-| PITCH-7 | P1 | ✅ | **Suggest notes** (N): stable segments (±50 cents, ≥ 80 ms, vibrato smoothed over 150 ms), edges refined from the raw pitch and onsets, shown as dashed ghost notes; click one to accept it, A accepts all in view. |
+| PITCH-7 | P1 | ✅ | **Suggest notes** (N): shown as dashed ghost notes; click one to accept it, A accepts all in view (into the active voice). From the note estimator (PITCH-12) by default, or from the lead contour: stable segments (±50 cents, ≥ 80 ms, vibrato smoothed over 150 ms), edges refined from the raw pitch and onsets. A suggestion is hidden by a drawn note in any voice within a semitone of it. |
 | PITCH-8 | P1 | ✅ | **Explain-away view** (X): dims the energy on drawn notes (all voices) and their overtones. |
 | PITCH-9 | P1 | — | Tuning reference (A4 = 440 Hz by default, adjustable, or auto-detected from the median cents offset of the contour). |
 | PITCH-10 | P2 | — | Pitch bends from the contour for slides and vibrato (written as MIDI pitch bend, optional). |
-| PITCH-11 | P2 | — | Multiple pitch contours for harmonies (much harder; polyphonic F0). |
+| PITCH-11 | P2 | ◐ | Multiple pitch contours for harmonies (much harder; polyphonic F0). The note estimator (PITCH-12) suggests harmony notes; there is still only one contour line. |
+| PITCH-12 | P1 | ✅ | **Note estimator** (`src/estimate.cpp`), ported from the `transcribe` project's NOTE-ESTIMATION.md: harmonic-template NMF on the NSGT (60 bins/octave, 1/3-semitone combs of 12 partials plus broadband atoms, KL updates, partial amplitudes adapted per 6 semitones from solo-ish frames), gated by basic-pitch's note posterior (> 0.12 within ±1 semitone), plus the enhanced summary autocorrelation (16 bands, ABS 0.25) as a union. Activity is a local pitch peak above 0.06 of the song's p99 and 0.15 of the frame maximum, with upper octaves dropped unless 2× the note below. Without a beat grid, runs start at full thresholds, continue at half, bridge 70 ms dropouts, split at basic-pitch onsets, and last ≥ 100 ms. Runs on the analysis channel; without the model it runs ungated (status line says why). Not ported: the front-end vote, octave doublings, product of experts (needs Cuesta) and voice assignment. Self-checked on synthetic chords and tones. |
 
 ## 5. Drawing and editing notes
 
@@ -220,6 +221,7 @@ tempo tools and markers-to-tempo conversion. We display the tempo map and leave 
 Measured on Apple Silicon for 3 minutes of audio:
 
 - Spectrogram: ~0.2 s; pitch contour ~0.23 s; onsets and segments ~0.05 s. All in the background.
+- Note estimator: basic-pitch ~1.2–1.8 s (CoreML, CPU), adapted NMF ~1.3–2.3 s, SACF ~1.2 s (all cores); also in the background, after the spectrogram is shown.
 - Recolouring after a display setting change: ~40–60 ms.
 - Memory: ~30 MB per analysed channel (float magnitudes), cached per channel while the window is open.
 - Redraw: the spectrogram layer is re-rendered only when the view or values change; at Retina

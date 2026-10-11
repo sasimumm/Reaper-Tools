@@ -19,6 +19,7 @@
 
 #include "contour.h"
 #include "editor.h"
+#include "estimate.h"
 #include "nsgt.h"
 
 // Layout, in pixels.
@@ -75,7 +76,12 @@ static int g_snapMode = SNAP_ONSETS;
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
 
 static Contour g_contour;
-static std::vector<Segment> g_segments;   // stable-pitch stretches, shown as suggested notes
+static std::vector<Segment> g_segments;   // stable-pitch stretches of the contour (snapping; suggestions if chosen)
+static std::vector<Segment> g_estimated;  // notes from the estimator (estimate.h), the default suggestions
+static std::string g_estimateNote;        // why the estimator ran without basic-pitch, if it did
+static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};
+static int g_suggestFrom;
+static const std::vector<Segment> &suggestions() { return g_suggestFrom ? g_segments : g_estimated; }
 static std::vector<int> g_onsets;         // frames
 static std::vector<double> g_snapTimes;   // onsets and segment edges, project time, sorted
 static bool g_showContour = true, g_suggest = true, g_pitchFromContour = true;
@@ -225,7 +231,12 @@ struct Vocal
   Contour contour;
   std::vector<Segment> segments;
   std::vector<int> onsets;
+  std::vector<Segment> estimated;
+  std::string estimateNote;
 };
+
+// basic-pitch's compiled model, installed next to the plugin
+static std::string basicPitchModel() { return std::string(GetResourcePath()) + "/UserPlugins/reatrace/nmp.mlmodelc"; }
 
 static Vocal analyzeVocal(const Spectrogram &s)
 {
@@ -288,11 +299,42 @@ struct Job
   Spectrogram raw[4];  // computed, or copied from the cache when only needed for the centre
   Spectrogram spec;    // the requested channel
   Vocal vocal;
-  bool vocalNeeded = true;
+  std::string modelPath;
+
+  // The note estimator, on the channel's own signal (the centre uses the mid), with its own
+  // spectrogram unless the display's has the same settings.
+  void estimate(const std::function<bool(double)> &progress)
+  {
+    std::vector<float> mono(left.size());
+    for (size_t i = 0; i < mono.size(); i++)
+    {
+      const float a = left[i], b = i < right.size() ? right[i] : a;
+      mono[i] = channel == CH_LEFT ? a : channel == CH_RIGHT ? b : channel == CH_SIDE ? 0.5f * (a - b) : 0.5f * (a + b);
+    }
+    const NSGTParams ep = estimateNSGTParams();
+    const bool same = spec.p.sampleRate == ep.sampleRate && spec.p.fmin == ep.fmin && spec.p.fmax == ep.fmax &&
+                      spec.p.binsPerOctave == ep.binsPerOctave && spec.p.hop == ep.hop && spec.p.gamma == ep.gamma && !spec.p.bass;
+    auto part = [&](double a, double b) { return [&, a, b](double f) { return progress(a + (b - a) * f); }; };
+    Spectrogram own;
+    if (!same)
+      own = computeNSGT(ep, (long long)mono.size(), [&](long long start, int n, float *out) {
+        for (int i = 0; i < n; i++) out[i] = start + i >= 0 && start + i < (long long)mono.size() ? mono[start + i] : 0;
+      }, part(0, 0.2));
+    const Spectrogram &es = same ? spec : own;
+    if (cancel) return;
+    BasicPitch bp;
+    std::string err;
+    const bool haveBp = runBasicPitch(modelPath, mono, es.frames, bp, &err, part(0.2, 0.45));
+    if (cancel) return;
+    vocal.estimateNote = haveBp ? "" : "basic-pitch: " + err;
+    for (const NoteEstimate &e : estimateNotes(es, mono, haveBp ? &bp : nullptr, EstimateParams(), part(0.45, 1)))
+      vocal.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
+  }
 
   void run()
   {
-    int stages = 1, stage = 0;
+    // progress weights: one per spectrogram, two for the vocal analysis and note estimation
+    int stages = 2, stage = 0;
     for (bool b : need) stages += b;
     for (int ch = 0; ch < 4; ch++)
     {
@@ -320,7 +362,13 @@ struct Job
         for (size_t i = 0; i < spec.mag.size(); i++) spec.mag[i] = std::max(0.0f, spec.mag[i] - raw[CH_SIDE].mag[i]);
     }
     else spec = raw[channel];
-    if (vocalNeeded) vocal = analyzeVocal(spec);
+    vocal = analyzeVocal(spec);
+    if (cancel) return;
+    estimate([&](double f) {
+      permille = (int)(1000 * (stage + f * 2) / stages);
+      return !cancel;
+    });
+    if (cancel) return;
     permille = 1000;
     done = true;
   }
@@ -340,6 +388,7 @@ static void install(const ChannelCache &c)
 {
   g_spec = c.spec;
   g_contour = c.vocal.contour, g_segments = c.vocal.segments, g_onsets = c.vocal.onsets;
+  g_estimated = c.vocal.estimated, g_estimateNote = c.vocal.estimateNote;
   g_snapTimes.clear();
   for (int f : g_onsets) g_snapTimes.push_back(frameTime(f));
   for (const Segment &sg : g_segments) g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
@@ -363,21 +412,20 @@ static void requestAnalysis(bool autoCalibrateAfter)
   if (cached(ch, key) && g_cache[ch].vocalValid) { install(g_cache[ch]); return; }
 
   std::unique_ptr<Job> job(new Job);
-  job->key = key, job->channel = ch;
-  bool needAudio = false;
+  job->key = key, job->channel = ch, job->modelPath = basicPitchModel();
   const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
   for (int r : rawCh)
   {
     if (r < 0) continue;
     if (cached(r, key)) job->raw[r] = g_cache[r].spec;
-    else job->need[r] = needAudio = true;
+    else job->need[r] = true;
   }
   if (ch == CH_CENTRE && cached(CH_CENTRE, key)) // only the vocal analysis is missing
   {
-    job->need[CH_MIX] = job->need[CH_SIDE] = needAudio = false;
+    job->need[CH_MIX] = job->need[CH_SIDE] = false;
     job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
   }
-  if (needAudio) readAudio(take, g_audioLen, g_np.sampleRate, job->left, job->right);
+  readAudio(take, g_audioLen, g_np.sampleRate, job->left, job->right); // the note estimator always needs it
   Job *j = job.get();
   job->thread = std::thread([j] { j->run(); });
   g_job = std::move(job);
@@ -837,6 +885,7 @@ static std::vector<Widget> widgets()
       {W_SLIDER, "Guide opacity", &g_guideOpacity, NULL, 0, 1, false, false, 1, "%.2f"},
       {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
       {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
+      {W_CHOICE, "Suggest from", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_suggestFrom, SUGGEST_FROM, 2},
       {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
       {W_HEADER, "Quantise"},
       {W_SLIDER, "Quantise strength", &g_quantStrength, NULL, 0, 1, false, false, 100, "%.0f%%"},
@@ -934,6 +983,7 @@ static const Setting SETTINGS[] = {
     {"noisefrac", &g_rp.noiseFraction, NULL, NULL, 0.01, 0.5}, {"ghosts", NULL, &g_ghosts},
     {"harmonics", &g_harmonics, NULL, NULL, 2, 16}, {"guideopacity", &g_guideOpacity, NULL, NULL, 0, 1},
     {"explain", NULL, &g_explain}, {"contour", NULL, &g_showContour}, {"suggest", NULL, &g_suggest},
+    {"suggestfrom", NULL, NULL, &g_suggestFrom, 0, 1},
     {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
     {"theme", NULL, &g_followTheme}, {"linkarrange", NULL, &g_linkArrange},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
@@ -987,7 +1037,7 @@ static void resetSettings()
   g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX, g_binsPerSemitone = 5;
   g_ghosts = true, g_harmonics = 8, g_guideOpacity = 0.4, g_explain = false;
   g_showContour = g_suggest = g_pitchFromContour = g_audition = g_followTheme = true;
-  g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false;
+  g_snapMode = SNAP_ONSETS, g_quantStrength = 1, g_linkArrange = false, g_suggestFrom = 0;
 }
 
 static void setupEditorSnap();
@@ -1293,12 +1343,17 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
 
 // --- contour and suggestions -------------------------------------------------------------
 
-// Suggested notes are segments not already covered by a drawn note (vocals are one line at a time).
+// Suggestions can overlap (harmonies), so one is hidden only by a drawn note in any voice at nearly
+// the same pitch (within a semitone, for corrected pitches) over a third of its length.
 static bool covered(const Segment &sg)
 {
   const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
+  auto covers = [&](const Note &n) { return fabs(n.pitch - sg.pitch) <= 1 && std::min(b, n.end) - std::max(a, n.start) > 0.3 * (b - a); };
   for (const Note &n : g_ed.notes)
-    if (std::min(b, n.end) - std::max(a, n.start) > 0.3 * (b - a)) return true;
+    if (covers(n)) return true;
+  for (int v = 0; v < WINDOW_VOICES; v++)
+    for (const Note &n : g_others[v].notes)
+      if (v != g_voice && covers(n)) return true;
   return false;
 }
 
@@ -1312,11 +1367,12 @@ static void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1)
 static int suggestionAt(int x, int y)
 {
   if (!g_suggest) return -1;
-  for (size_t i = 0; i < g_segments.size(); i++)
+  const std::vector<Segment> &sug = suggestions();
+  for (size_t i = 0; i < sug.size(); i++)
   {
     int x0, y0, x1, y1;
-    segmentRect(g_segments[i], &x0, &y0, &x1, &y1);
-    if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !covered(g_segments[i])) return (int)i;
+    segmentRect(sug[i], &x0, &y0, &x1, &y1);
+    if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !covered(sug[i])) return (int)i;
   }
   return -1;
 }
@@ -1324,7 +1380,7 @@ static int suggestionAt(int x, int y)
 static void drawSuggestions(Canvas &cv, const Rect &n)
 {
   if (!g_suggest) return;
-  for (const Segment &sg : g_segments)
+  for (const Segment &sg : suggestions())
   {
     int x0, y0, x1, y1;
     segmentRect(sg, &x0, &y0, &x1, &y1);
@@ -1654,7 +1710,8 @@ static void paint(HDC hdc)
     cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
     cv.clip = {0, sy, c.r, c.b};
   }
-  else snprintf(buf, sizeof(buf), "snap: %s (G)", SNAP_NAMES[g_snapMode]);
+  else snprintf(buf, sizeof(buf), "%s%ssnap: %s (G)", g_estimateNote.c_str(), g_estimateNote.empty() ? "" : "   ",
+                SNAP_NAMES[g_snapMode]);
   text(dc, status.c_str(), 6, sy, c.r - 120, c.b, C_TEXT, DT_LEFT);
   text(dc, buf, 6, sy, c.r - 6, c.b, C_DIM, DT_RIGHT);
 
@@ -1982,7 +2039,7 @@ static void adjustGamma(double delta)
 
 static void acceptSuggestion(int i)
 {
-  const Segment &sg = g_segments[i];
+  const Segment &sg = suggestions()[i];
   for (Note &o : g_ed.notes) o.sel = false;
   g_ed.notes.push_back({frameTime(sg.f0), frameTime(sg.f1 + 1), (int)lround(sg.pitch), true, -1});
   previewPitch((int)lround(sg.pitch));
@@ -1993,7 +2050,7 @@ static void acceptVisibleSuggestions()
 {
   const Rect n = noteArea();
   bool any = false;
-  for (const Segment &sg : g_segments)
+  for (const Segment &sg : suggestions())
   {
     const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
     if (b < g_view.t(n.l) || a > g_view.t(n.r) || covered(sg)) continue;
@@ -2434,6 +2491,7 @@ void Window_Open(MediaItem *audio, int voice)
   g_audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
   g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
   g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(), g_snapTimes.clear();
+  g_estimated.clear(), g_estimateNote.clear();
   const bool hadSettings = loadItemSettings();
   updateValues();
   requestAnalysis(!hadSettings);
