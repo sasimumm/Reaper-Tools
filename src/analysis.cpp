@@ -26,9 +26,8 @@ struct AnalysisKey {
     bool operator==(const AnalysisKey &o) const {
         return audio == o.audio && p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin &&
                p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave && p.hop == o.p.hop &&
-               p.gamma == o.p.gamma && p.bass == o.p.bass &&
-               (!p.bass || p.bassCrossover == o.p.bassCrossover) && vote == o.vote &&
-               pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
+               p.gamma == o.p.gamma && vote == o.vote && pos == o.pos && len == o.len &&
+               offs == o.offs && rate == o.rate;
     }
 };
 
@@ -127,7 +126,7 @@ struct Job {
         const NSGTParams ep = estimateNSGTParams();
         const bool same = spec.p.sampleRate == ep.sampleRate && spec.p.fmin == ep.fmin &&
                           spec.p.fmax == ep.fmax && spec.p.binsPerOctave == ep.binsPerOctave &&
-                          spec.p.hop == ep.hop && spec.p.gamma == ep.gamma && !spec.p.bass;
+                          spec.p.hop == ep.hop && spec.p.gamma == ep.gamma;
         auto part = [&](double a, double b) {
             return [&, a, b](double f) { return progress(a + (b - a) * f); };
         };

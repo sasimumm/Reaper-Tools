@@ -21,8 +21,6 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "fmax", .d = &s.np.fmax, .lo = 1000, .hi = 11000},
         {.name = "binspersemitone", .d = &s.binsPerSemitone, .lo = 1, .hi = 10},
         {.name = "channel", .i = &s.channel, .lo = 0, .hi = CH_CENTRE},
-        {.name = "bass", .b = &s.np.bass},
-        {.name = "basscrossover", .d = &s.np.bassCrossover, .lo = 80, .hi = 500},
         {.name = "floor", .d = &s.rp.dbFloor, .lo = -120, .hi = -20},
         {.name = "contrast", .d = &s.rp.contrast, .lo = 0.1, .hi = 3},
         {.name = "brightness", .d = &s.rp.brightness, .lo = -1, .hi = 1},

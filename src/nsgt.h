@@ -11,10 +11,6 @@ struct NSGTParams {
     int binsPerOctave = 60; // 5 bins per semitone
     int hop = 256;          // samples per frame, power of two
     double gamma = 11; // Hz added to every bin's bandwidth: lower = sharper pitch, blurrier timing
-    // Bass analysis: below the crossover, bins come from a second pass with the longest windows the
-    // block allows (sharpest pitch), cross-faded over half an octave.
-    bool bass = false;
-    double bassCrossover = 200; // Hz
 };
 
 struct Spectrogram {

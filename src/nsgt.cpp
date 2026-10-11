@@ -37,7 +37,6 @@ static NSGTParams sanitize(NSGTParams p) {
     p.fmin = std::max(10.0, std::min(p.sampleRate * 0.25, p.fmin));
     p.fmax = std::max(p.fmin * 2, std::min(p.sampleRate * 0.45, p.fmax));
     p.gamma = std::max(0.0, std::min(1000.0, p.gamma));
-    p.bassCrossover = std::max(p.fmin * 2, std::min(p.fmax, p.bassCrossover));
     return p;
 }
 
@@ -136,34 +135,7 @@ Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
                         const std::function<void(long long, int, float *)> &read,
                         const std::function<bool(double)> &progress) {
     const NSGTParams p = sanitize(params);
-    if (!p.bass) {
-        Spectrogram s = computeOne(p, numSamples, read, progress);
-        estimateNoise(s, 0.1);
-        return s;
-    }
-    // the bass pass only covers up to the crossover, so it is much cheaper than the main one
-    const double mainShare = 0.8;
-    Spectrogram s = computeOne(p, numSamples, read,
-                               [&](double f) { return !progress || progress(f * mainShare); });
-    NSGTParams bp = p;
-    bp.gamma = 0, bp.fmax = std::max(p.fmin * 2, std::min(p.fmax, p.bassCrossover * 1.01));
-    const Spectrogram bass = computeOne(bp, numSamples, read, [&](double f) {
-        return !progress || progress(mainShare + f * (1 - mainShare));
-    });
-    // same fmin, bins per octave and hop, so bins and frames line up
-    const int nb = std::min(s.bins, bass.bins), nf = std::min(s.frames, bass.frames);
-    for (int b = 0; b < nb; b++) {
-        const double f = p.fmin * pow(2.0, (double)b / p.binsPerOctave);
-        const double w =
-            std::max(0.0, std::min(1.0, log2(p.bassCrossover / f) / 0.5)); // 1 half an octave below
-        if (w <= 0) {
-            continue;
-        }
-        for (int fr = 0; fr < nf; fr++) {
-            float &m = s.mag[(size_t)fr * s.bins + b];
-            m = (float)(m * (1 - w) + bass.at(fr, b) * w);
-        }
-    }
+    Spectrogram s = computeOne(p, numSamples, read, progress);
     estimateNoise(s, 0.1);
     return s;
 }

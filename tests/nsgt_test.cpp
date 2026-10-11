@@ -62,38 +62,6 @@ int main() {
         }
     }
 
-    // Bass analysis: two low notes a semitone apart (A1, A#1) separate much better, levels stay the same.
-    {
-        std::vector<float> x((size_t)(8 * sr));
-        for (size_t i = 0; i < x.size(); i++) {
-            x[i] = 0.25f * (float)(sin(2 * M_PI * 55 * (double)i / sr) +
-                                   sin(2 * M_PI * 55 * pow(2, 1 / 12.0) * (double)i / sr));
-        }
-        auto read = [&](long long start, int n, float *out) {
-            for (int i = 0; i < n; i++) {
-                out[i] = start + i >= 0 && start + i < (long long)x.size() ? x[start + i] : 0;
-            }
-        };
-        NSGTParams p;
-        const Spectrogram plain = computeNSGT(p, (long long)x.size(), read);
-        p.bass = true;
-        const Spectrogram bass = computeNSGT(p, (long long)x.size(), read);
-        assert(bass.bins == plain.bins && bass.frames == plain.frames);
-        auto avg = [&](const Spectrogram &s, double pitch) {
-            double sum = 0;
-            for (int f = 100; f < s.frames - 100; f++) {
-                sum += s.at(f, (int)lround(s.binOfPitch(pitch)));
-            }
-            return sum / (s.frames - 200);
-        };
-        const double dipPlain = avg(plain, 33.5) / avg(plain, 33),
-                     dipBass = avg(bass, 33.5) / avg(bass, 33);
-        printf("bass: between/peak %.2f plain, %.2f bass; A1 %.3f; A4 bin unchanged %d\n", dipPlain,
-               dipBass, avg(bass, 33), avg(bass, 69) == avg(plain, 69));
-        assert(dipBass < 0.75 * dipPlain && fabs(avg(bass, 33) - 0.25) < 0.03 &&
-               avg(bass, 69) == avg(plain, 69));
-    }
-
     // Nonsense parameters (from user settings) are clamped instead of breaking the indexing.
     {
         NSGTParams bad;
