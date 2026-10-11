@@ -626,93 +626,7 @@ static std::vector<GridLine> gridLines(const Rect &n)
   return out;
 }
 
-// --- tempo map and quantise -----------------------------------------------------------
-
-// Runs a tempo map edit as one undo point, keeping the audio item, the notes item and all notes
-// and lyrics at their current times: the recording doesn't move, only the grid does.
-static void editTempoMap(const char *undoName, void (*edit)(double a, double b), double a, double b)
-{
-  g_ed.cancel();
-  Undo_BeginBlock2(NULL);
-  MediaItem_Take *atake = GetActiveTake(g_audio), *take = midiTake();
-  const double apos = GetMediaItemInfo_Value(g_audio, "D_POSITION"), alen = GetMediaItemInfo_Value(g_audio, "D_LENGTH");
-  const double arate = atake ? GetMediaItemTakeInfo_Value(atake, "D_PLAYRATE") : 1;
-  const double mpos = g_midi ? GetMediaItemInfo_Value(g_midi, "D_POSITION") : 0, mlen = g_midi ? GetMediaItemInfo_Value(g_midi, "D_LENGTH") : 0;
-  const std::vector<Note> notes = g_loaded;
-
-  edit(a, b);
-
-  SetMediaItemInfo_Value(g_audio, "D_POSITION", apos), SetMediaItemInfo_Value(g_audio, "D_LENGTH", alen);
-  if (atake) SetMediaItemTakeInfo_Value(atake, "D_PLAYRATE", arate);
-  if (g_midi) SetMediaItemInfo_Value(g_midi, "D_POSITION", mpos), SetMediaItemInfo_Value(g_midi, "D_LENGTH", mlen);
-  if (take)
-  {
-    const bool noSort = true;
-    for (const Note &n : notes)
-    {
-      const double s = MIDI_GetPPQPosFromProjTime(take, n.start), e = MIDI_GetPPQPosFromProjTime(take, n.end);
-      MIDI_SetNote(take, n.idx, NULL, NULL, &s, &e, NULL, NULL, NULL, &noSort);
-      if (n.lyricIdx >= 0) MIDI_SetTextSysexEvt(take, n.lyricIdx, NULL, NULL, &s, NULL, NULL, 0, &noSort);
-    }
-    MIDI_Sort(take);
-  }
-  UpdateTimeline();
-  UpdateArrange();
-  Undo_EndBlock2(NULL, undoName, -1);
-  loadNotes();
-}
-
-static void removeTempoMarkersIn(double a, double b)
-{
-  for (int i = CountTempoTimeSigMarkers(NULL) - 1; i >= 0; i--)
-  {
-    double t = 0;
-    if (GetTempoTimeSigMarker(NULL, i, &t, NULL, NULL, NULL, NULL, NULL, NULL) && t > a - 0.001 && t < b - 0.001)
-      DeleteTempoTimeSigMarker(NULL, i);
-  }
-}
-
-static bool timeSelection(double *a, double *b)
-{
-  GetSet_LoopTimeRange2(NULL, false, false, a, b, false);
-  return *b - *a >= 0.05;
-}
-
-// The time selection becomes one bar (a measure starts at its start) or one beat; the selection
-// then moves on to the next bar/beat, ready for the next one.
-static void selectionIs(bool bar)
-{
-  double a, b;
-  if (!timeSelection(&a, &b))
-  {
-    ShowMessageBox("Select a bar first: shift+drag in the ruler.", "Reascribe", 0);
-    return;
-  }
-  static bool s_bar;
-  s_bar = bar;
-  editTempoMap(bar ? "Reascribe: selection is one bar" : "Reascribe: selection is one beat",
-               [](double a, double b) {
-                 int num = 4, den = 4;
-                 double tempo = 120;
-                 TimeMap_GetTimeSigAtTime(NULL, a, &num, &den, &tempo);
-                 const double qn = (s_bar ? num : 1) * 4.0 / den; // tempo is in quarter notes per minute
-                 removeTempoMarkersIn(a, b);
-                 SetTempoTimeSigMarker(NULL, -1, a, -1, -1, 60 * qn / (b - a), s_bar ? num : 0, s_bar ? den : 0, false);
-               },
-               a, b);
-  double na = b, nb = b + (b - a);
-  GetSet_LoopTimeRange2(NULL, true, false, &na, &nb, false);
-}
-
-static void tempoMarkerAtCursor()
-{
-  editTempoMap("Reascribe: insert tempo marker", [](double t, double) {
-    int num = 4, den = 4;
-    double tempo = 120;
-    TimeMap_GetTimeSigAtTime(NULL, t, &num, &den, &tempo);
-    SetTempoTimeSigMarker(NULL, -1, t, -1, -1, tempo, 0, 0, false);
-  }, GetCursorPosition(), 0);
-}
+// --- quantise -------------------------------------------------------------------------
 
 // Moves selected notes' starts and ends towards the grid by the quantise strength.
 static void quantiseSelected()
@@ -782,7 +696,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 // --- settings panel --------------------------------------------------------------
 
 enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE, W_BUTTONS };
-enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE, B_SAVE_DEFAULT, B_LOAD_DEFAULT, B_DOCK,
+enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_QUANTISE, B_SAVE_DEFAULT, B_LOAD_DEFAULT, B_DOCK,
        B_PRESET = 100 };
 static const char *const PRESETS[] = {"Vocal in mix", "Solo vocal", "Fast runs"};
 static const char *const DEFAULTS[] = {"Save as default", "Load default"};
@@ -836,10 +750,7 @@ static std::vector<Widget> widgets()
       {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
       {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
       {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
-      {W_HEADER, "Tempo"},
-      {W_BUTTON, "Selection = 1 bar (B)", NULL, NULL, 0, 0, false, false, 0, NULL, B_BAR},
-      {W_BUTTON, "Selection = 1 beat", NULL, NULL, 0, 0, false, false, 0, NULL, B_BEAT},
-      {W_BUTTON, "Tempo marker at edit cursor", NULL, NULL, 0, 0, false, false, 0, NULL, B_TEMPO_MARKER},
+      {W_HEADER, "Quantise"},
       {W_SLIDER, "Quantise strength", &g_quantStrength, NULL, 0, 1, false, false, 100, "%.0f%%"},
       {W_BUTTON, "Quantise selected notes (Q)", NULL, NULL, 0, 0, false, false, 0, NULL, B_QUANTISE},
       {W_HEADER, "Playback"},
@@ -1036,8 +947,6 @@ static void pressButton(int b)
     requestAnalysis(true);
     return;
   }
-  if (b == B_BAR || b == B_BEAT) { selectionIs(b == B_BAR); return; }
-  if (b == B_TEMPO_MARKER) { tempoMarkerAtCursor(); return; }
   if (b == B_QUANTISE) { quantiseSelected(); return; }
   if (b == B_AUTO_ALL) autoCalibrate(g_spec, g_rp);
   else if (b == B_AUTO_VIEW) autoCalibrateView();
@@ -1925,7 +1834,6 @@ static bool onKey(int key)
   else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) selectVoice(key - '1');
   else if (key == 'Q' && !m) quantiseSelected();
   else if (key == 'D' && !m) g_dockPending = true;
-  else if (key == 'B' && !m) selectionIs(true);
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
   else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
@@ -1953,7 +1861,7 @@ static bool isOurKey(int key, int flags)
   case 'A': return true;
   case 'V': return cmd;
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'B': case 'D': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'D': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }

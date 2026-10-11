@@ -67,15 +67,7 @@
 #define REAPERAPI_WANT_Undo_EndBlock2
 #define REAPERAPI_WANT_UpdateArrange
 #define REAPERAPI_WANT_GetSet_LoopTimeRange2
-#define REAPERAPI_WANT_TimeMap_GetTimeSigAtTime
-#define REAPERAPI_WANT_SetTempoTimeSigMarker
-#define REAPERAPI_WANT_CountTempoTimeSigMarkers
-#define REAPERAPI_WANT_GetTempoTimeSigMarker
-#define REAPERAPI_WANT_DeleteTempoTimeSigMarker
-#define REAPERAPI_WANT_UpdateTimeline
 #define REAPERAPI_WANT_SetMediaItemInfo_Value
-#define REAPERAPI_WANT_SetMediaItemTakeInfo_Value
-#define REAPERAPI_WANT_MIDI_SetTextSysexEvt
 #define REAPERAPI_WANT_SetExtState
 #define REAPERAPI_WANT_GetExtState
 #define REAPERAPI_WANT_GetProjExtState
@@ -152,7 +144,7 @@ MediaItem *VoiceItem(MediaItem *audio, int voice, bool create)
   if (!tr) tr = voiceTrack(audio, voice, true);
   const bool qn = false;
   midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
-  if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move notes
+  if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move the item
   Undo_EndBlock2(NULL, "Reascribe: create notes item", -1);
   UpdateArrange();
   return midi;
