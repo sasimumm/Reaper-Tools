@@ -41,6 +41,9 @@ static HWND g_hwnd;
 static MediaItem *g_audio, *g_midi; // g_midi: the active voice's notes item
 static int g_voice;                 // active voice, 0 = lead
 static int g_voicePick;             // panel buttons; applied through selectVoice()
+static bool g_docked;               // in REAPER's docker rather than a floating window (remembered)
+static bool g_recreating;           // destroying the window only to recreate it: keep the state
+static bool g_dockPending;          // toggle docking on the next timer tick, outside the window's own handlers
 static bool g_showOthers = true;    // show the other voices' notes, dimmed
 struct OtherVoice
 {
@@ -779,7 +782,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 // --- settings panel --------------------------------------------------------------
 
 enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE, W_BUTTONS };
-enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE, B_SAVE_DEFAULT, B_LOAD_DEFAULT,
+enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET, B_BAR, B_BEAT, B_TEMPO_MARKER, B_QUANTISE, B_SAVE_DEFAULT, B_LOAD_DEFAULT, B_DOCK,
        B_PRESET = 100 };
 static const char *const PRESETS[] = {"Vocal in mix", "Solo vocal", "Fast runs"};
 static const char *const DEFAULTS[] = {"Save as default", "Load default"};
@@ -806,6 +809,7 @@ static std::vector<Widget> widgets()
       {W_BUTTONS, "Settings for new items", NULL, NULL, 0, 0, false, false, 0, NULL, B_SAVE_DEFAULT, NULL, DEFAULTS, 2},
       {W_CHOICE, "Voice (1-4)", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_voicePick, VOICES, WINDOW_VOICES},
       {W_TOGGLE, "Show other voices", NULL, &g_showOthers},
+      {W_BUTTON, "Dock / undock window (D)", NULL, NULL, 0, 0, false, false, 0, NULL, B_DOCK},
       {W_HEADER, "Display"},
       {W_SLIDER, "Floor", &g_rp.dbFloor, NULL, -120, -20, false, false, 1, "%.0f dB"},
       {W_SLIDER, "Contrast", &g_rp.contrast, NULL, 0.1, 3, true, false, 1, "%.2f"},
@@ -974,6 +978,7 @@ static void resetSettings()
 
 static void setupEditorSnap();
 static void selectVoice(int v);
+static void toggleDock();
 static std::string g_savedSettings; // last written to the item, to only write on change
 
 // Per-item settings live in the project's extended state under the item's GUID (that API takes
@@ -1021,6 +1026,7 @@ static void applyPreset(int i)
 static void pressButton(int b)
 {
   if (b >= B_PRESET) { applyPreset(b - B_PRESET); return; }
+  if (b == B_DOCK) { g_dockPending = true; return; }
   if (b == B_SAVE_DEFAULT) { SetExtState(EXT_SECTION, EXT_DEFAULTS, saveSettings().c_str(), true); return; }
   if (b == B_LOAD_DEFAULT)
   {
@@ -1918,6 +1924,7 @@ static bool onKey(int key)
   else if (key == 'X' && !m) g_explain = !g_explain;
   else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) selectVoice(key - '1');
   else if (key == 'Q' && !m) quantiseSelected();
+  else if (key == 'D' && !m) g_dockPending = true;
   else if (key == 'B' && !m) selectionIs(true);
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
@@ -1946,7 +1953,7 @@ static bool isOurKey(int key, int flags)
   case 'A': return true;
   case 'V': return cmd;
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'B': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'B': case 'D': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -2134,11 +2141,11 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     DestroyWindow(hwnd);
     return 0;
   case WM_DESTROY:
+    if (g_docked) DockWindowRemove(hwnd);
     saveItemSettings();
     stopPreviews(false);
-    cancelJob();
-    clearCache();
     g_edit = NULL; // destroyed with the window
+    if (!g_recreating) cancelJob(), clearCache();
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
     g_memdc = NULL, g_memw = g_memh = 0, g_hwnd = NULL, g_layerValid = false, g_drag = DRAG_NONE;
     return 0;
@@ -2147,6 +2154,45 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 }
 
 // --- lifecycle ---------------------------------------------------------------------
+
+// Floating: a resizable top-level window. Docked: a child window handed to REAPER's docker
+// (SWELL makes a child view when there is no dialog resource and no 0x400001 style).
+static void createWindow()
+{
+  if (g_docked)
+  {
+    g_hwnd = CreateDialog(NULL, NULL, GetMainHwnd(), dlgProc);
+    if (!g_hwnd) return;
+    DockWindowAddEx(g_hwnd, "Reascribe", "reascribe_editor", true);
+    DockWindowActivate(g_hwnd);
+  }
+  else
+  {
+    // 0x400001: SWELL's "no dialog resource, resizable top-level window"
+    g_hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
+    if (!g_hwnd) return;
+    SetWindowPos(g_hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
+  }
+  char title[512];
+  MediaItem_Take *take = GetActiveTake(g_audio);
+  snprintf(title, sizeof(title), "Reascribe - %s", take ? GetTakeName(take) : "");
+  SetWindowText(g_hwnd, title);
+  ShowWindow(g_hwnd, SW_SHOW);
+  fitItem();
+}
+
+static void toggleDock()
+{
+  const ViewMap view = g_view;
+  g_recreating = true;
+  if (g_hwnd) DestroyWindow(g_hwnd);
+  g_recreating = false;
+  g_docked = !g_docked;
+  SetExtState(EXT_SECTION, "docked", g_docked ? "1" : "0", true);
+  createWindow();
+  g_view = view;
+  redraw();
+}
 
 void Window_Open(MediaItem *audio, int voice)
 {
@@ -2176,15 +2222,9 @@ void Window_Open(MediaItem *audio, int voice)
   loadNotes();
   loadOtherVoices(true);
 
-  // 0x400001: SWELL's "no dialog resource, resizable top-level window"
-  g_hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
-  if (!g_hwnd) return;
-  char title[512];
-  snprintf(title, sizeof(title), "Reascribe - %s", take ? GetTakeName(take) : "");
-  SetWindowText(g_hwnd, title);
-  SetWindowPos(g_hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
-  fitItem();
-  ShowWindow(g_hwnd, SW_SHOW);
+  const char *d = GetExtState(EXT_SECTION, "docked");
+  g_docked = d && *d == '1';
+  createWindow();
 }
 
 void Window_Close()
@@ -2196,6 +2236,12 @@ void Window_Timer()
 {
   stopPreviews(true);
   if (!g_hwnd) return;
+  if (g_dockPending)
+  {
+    g_dockPending = false;
+    toggleDock();
+    if (!g_hwnd) return;
+  }
   pollJob();
   if (g_drag == DRAG_NONE) saveItemSettings();
   if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) { Window_Close(); return; }

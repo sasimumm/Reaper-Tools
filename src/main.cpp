@@ -82,6 +82,9 @@
 #define REAPERAPI_WANT_SetProjExtState
 #define REAPERAPI_WANT_GetSetMediaItemInfo
 #define REAPERAPI_WANT_guidToString
+#define REAPERAPI_WANT_DockWindowAddEx
+#define REAPERAPI_WANT_DockWindowRemove
+#define REAPERAPI_WANT_DockWindowActivate
 #define REAPERAPI_WANT_ValidatePtr2
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
