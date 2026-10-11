@@ -13,6 +13,7 @@ add_library(reaper_reascribe MODULE
   src/nsgt.cpp
   src/editor.cpp
   src/window.cpp
+  src/contour.cpp
   ${WDL}/fft.c
   ${WDL}/swell/swell-modstub.mm
 )
@@ -33,3 +34,7 @@ target_compile_options(nsgt_test PRIVATE -UNDEBUG)
 
 add_executable(editor_test tests/editor_test.cpp src/editor.cpp)
 target_compile_options(editor_test PRIVATE -UNDEBUG)
+
+add_executable(contour_test tests/contour_test.cpp src/contour.cpp src/nsgt.cpp ${WDL}/fft.c)
+target_include_directories(contour_test PRIVATE ${WDL})
+target_compile_options(contour_test PRIVATE -UNDEBUG)
