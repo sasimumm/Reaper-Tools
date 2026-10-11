@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
@@ -906,19 +908,19 @@ static void stopPreview()
 static void previewPitch(int pitch)
 {
   if (!g_audition || pitch < 0 || pitch > 127 || !g_midi || !ValidatePtr2(NULL, g_midi, "MediaItem*")) return;
-  const char *tmp = getenv("TMPDIR");
-  char path[1024];
-  snprintf(path, sizeof(path), "%s/reascribe-preview-%d.mid", tmp && *tmp ? tmp : "/tmp", pitch);
-  if (FILE *f = fopen(path, "rb")) fclose(f);
-  else if ((f = fopen(path, "wb")))
-  {
-    // format 0, 96 ticks per quarter; note on, note off after 77 ticks (~0.4 s at 120 bpm), end of track
-    const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 12,
-                                 0, 0x90, (unsigned char)pitch, 96, 77, 0x80, (unsigned char)pitch, 0, 0, 0xff, 0x2f, 0};
-    fwrite(smf, 1, sizeof(smf), f);
-    fclose(f);
-  }
-  stopPreview();
+  stopPreview(); // before rewriting a file it may be reading
+  // Written fresh every time into REAPER's per-user resource folder, never following a symlink.
+  // One file per pitch, in case REAPER caches MIDI file sources by path.
+  char path[2048];
+  snprintf(path, sizeof(path), "%s/Data/reascribe-preview-%d.mid", GetResourcePath(), pitch);
+  const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+  if (fd < 0) return;
+  // format 0, 96 ticks per quarter; note on, note off after 77 ticks (~0.4 s at 120 bpm), end of track
+  const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 12,
+                               0, 0x90, (unsigned char)pitch, 96, 77, 0x80, (unsigned char)pitch, 0, 0, 0xff, 0x2f, 0};
+  const bool ok = write(fd, smf, sizeof(smf)) == (ssize_t)sizeof(smf);
+  close(fd);
+  if (!ok) return;
   if (!g_previewInit) pthread_mutex_init(&g_preview.mutex, NULL), g_previewInit = true;
   g_preview.src = PCM_Source_CreateFromFile(path);
   if (!g_preview.src) return;

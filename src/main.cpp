@@ -29,6 +29,7 @@
 #define REAPERAPI_WANT_GetPlayPosition2
 #define REAPERAPI_WANT_GetPlayState
 #define REAPERAPI_WANT_GetProjectStateChangeCount
+#define REAPERAPI_WANT_GetResourcePath
 #define REAPERAPI_WANT_GetSelectedMediaItem
 #define REAPERAPI_WANT_GetSetMediaTrackInfo_String
 #define REAPERAPI_WANT_GetTakeName
