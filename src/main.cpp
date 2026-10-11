@@ -54,6 +54,7 @@
 #define REAPERAPI_WANT_SetEditCurPos
 #define REAPERAPI_WANT_ShowMessageBox
 #define REAPERAPI_WANT_TakeIsMIDI
+#define REAPERAPI_WANT_time_precise
 #define REAPERAPI_WANT_TimeMap2_QNToTime
 #define REAPERAPI_WANT_TimeMap2_timeToQN
 #define REAPERAPI_WANT_TimeMap_QNToMeasures

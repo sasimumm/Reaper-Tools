@@ -22,6 +22,7 @@ static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250;
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
 static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
+static const int GUIDE_THICKNESS = 3;  // overtone hover marks, pixels
 
 // Colours, 0xRRGGBB.
 static const unsigned int C_BG = 0x1b1b1b, C_RULER = 0x262626, C_TEXT = 0xd0d0d0, C_DIM = 0x8a8a8a;
@@ -599,9 +600,9 @@ static void drawGhosts(Canvas &cv)
     for (int h = 2; h <= n; h++)
     {
       const double y = g_view.y(overtonePitch(nt.pitch, h)), hh = std::max(1.0, g_view.rowH * 0.3);
-      const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 1;
-      cv.fill(x0, y0, x1, y0 + 1, C_NOTE, a), cv.fill(x0, y1 - 1, x1, y1, C_NOTE, a);
-      cv.fill(x0, y0, x0 + 1, y1, C_NOTE, a), cv.fill(x1 - 1, y0, x1, y1, C_NOTE, a);
+      const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 2;
+      cv.fill(x0, y0, x1, y0 + 2, C_NOTE, a), cv.fill(x0, y1 - 2, x1, y1, C_NOTE, a);
+      cv.fill(x0, y0, x0 + 2, y1, C_NOTE, a), cv.fill(x1 - 2, y0, x1, y1, C_NOTE, a);
     }
   }
 }
@@ -633,7 +634,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
   {
     const int y = (int)lround(g_view.y(overtonePitch(p0, h)));
     if (y < n.t || y >= n.b) continue;
-    cv.fill(xA, y - (h == 1 ? 1 : 0), xB, y + 1, 0xffffff, h == 1 ? 256 : a);
+    const int t = GUIDE_THICKNESS + (h == 1 ? 1 : 0);
+    cv.fill(xA, y - t / 2, xB, y - t / 2 + t, 0xffffff, h == 1 ? 256 : a);
     snprintf(buf, sizeof(buf), "%d", h);
     text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, 0xffffff, DT_LEFT);
   }
@@ -646,7 +648,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
     if (y < n.t || y >= n.b || g_spec.binOfPitch(pc) < 0) continue;
     const double rel = levelDb(pc, tA, tB) - own;
     const bool strong = rel > -12;
-    for (int x = xA; x < xB; x += 8) cv.fill(x, y, x + 4, y + 1, strong ? 0xffa040 : 0xa0a0a0, strong ? 256 : a);
+    for (int x = xA; x < xB; x += 8)
+      cv.fill(x, y - GUIDE_THICKNESS / 2, x + 4, y - GUIDE_THICKNESS / 2 + GUIDE_THICKNESS, strong ? 0xffa040 : 0xa0a0a0, strong ? 256 : a);
     snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
     text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? 0xffa040 : 0xa0a0a0, DT_LEFT);
   }
@@ -893,24 +896,45 @@ static void scrollPitch(double semitones)
 // --- note preview ----------------------------------------------------------------------
 
 // Plays a short note through the notes track (so through its synth) as a track preview, from a
-// tiny generated MIDI file per pitch; nothing needs to be armed.
-static preview_register_t g_preview;
-static bool g_previewInit, g_previewPlaying;
-
-static void stopPreview()
+// tiny generated MIDI file per pitch; nothing needs to be armed. Previews always play to the end:
+// stopping one mid-note leaves the synth without a note-off, so a pool lets them overlap.
+static const double PREVIEW_LIFE = 0.6; // seconds; the note itself is ~0.4 s
+static const int PREVIEW_SLOTS = 16;
+struct Preview
 {
-  if (g_previewPlaying) StopTrackPreview2(NULL, &g_preview);
-  g_previewPlaying = false;
-  delete g_preview.src;
-  g_preview.src = NULL;
+  preview_register_t reg;
+  bool init, playing;
+  double started;
+};
+static Preview g_previews[PREVIEW_SLOTS];
+
+static void stopPreview(Preview &p)
+{
+  if (p.playing) StopTrackPreview2(NULL, &p.reg);
+  p.playing = false;
+  delete p.reg.src;
+  p.reg.src = NULL;
+}
+
+static void stopPreviews(bool onlyFinished)
+{
+  const double now = time_precise();
+  for (Preview &p : g_previews)
+    if (p.playing && (!onlyFinished || now - p.started > PREVIEW_LIFE)) stopPreview(p);
 }
 
 static void previewPitch(int pitch)
 {
   if (!g_audition || pitch < 0 || pitch > 127 || !g_midi || !ValidatePtr2(NULL, g_midi, "MediaItem*")) return;
-  stopPreview(); // before rewriting a file it may be reading
+  stopPreviews(true);
+  Preview *slot = NULL;
+  for (Preview &p : g_previews)
+    if (!p.playing) { slot = &p; break; }
+  if (!slot) return; // all busy: skip rather than cut a note off
+
   // Written fresh every time into REAPER's per-user resource folder, never following a symlink.
-  // One file per pitch, in case REAPER caches MIDI file sources by path.
+  // One file per pitch, in case REAPER caches MIDI file sources by path; files of playing
+  // previews are only rewritten with identical bytes.
   char path[2048];
   snprintf(path, sizeof(path), "%s/Data/reascribe-preview-%d.mid", GetResourcePath(), pitch);
   const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
@@ -921,13 +945,15 @@ static void previewPitch(int pitch)
   const bool ok = write(fd, smf, sizeof(smf)) == (ssize_t)sizeof(smf);
   close(fd);
   if (!ok) return;
-  if (!g_previewInit) pthread_mutex_init(&g_preview.mutex, NULL), g_previewInit = true;
-  g_preview.src = PCM_Source_CreateFromFile(path);
-  if (!g_preview.src) return;
-  g_preview.m_out_chan = -1; // -1: play through preview_track
-  g_preview.preview_track = GetMediaItem_Track(g_midi);
-  g_preview.curpos = 0, g_preview.loop = false, g_preview.volume = 1;
-  g_previewPlaying = PlayTrackPreview2Ex(NULL, &g_preview, 0, 0) != 0;
+  if (!slot->init) pthread_mutex_init(&slot->reg.mutex, NULL), slot->init = true;
+  slot->reg.src = PCM_Source_CreateFromFile(path);
+  if (!slot->reg.src) return;
+  slot->reg.m_out_chan = -1; // -1: play through preview_track
+  slot->reg.preview_track = GetMediaItem_Track(g_midi);
+  slot->reg.curpos = 0, slot->reg.loop = false, slot->reg.volume = 1;
+  slot->playing = PlayTrackPreview2Ex(NULL, &slot->reg, 0, 0) != 0;
+  slot->started = time_precise();
+  if (!slot->playing) stopPreview(*slot);
 }
 
 static int g_lastDragPitch = -1;
@@ -1078,7 +1104,12 @@ static bool onKey(int key)
   if (key == VK_DELETE || key == VK_BACK) { if (g_ed.deleteSelected()) commitNotes(); }
   else if (key == VK_ESCAPE) { if (g_ed.active()) g_ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture(); else if (g_ed.selectAll(false)) commitNotes(); }
   else if (key == 'A' && (m & MOD_CMD)) { if (g_ed.selectAll(true)) commitNotes(); }
-  else if (key == VK_RETURN) beginLyric(firstSelected());
+  else if (key == VK_RETURN)
+  {
+    int i = firstSelected();
+    if (i < 0) g_ed.hitTest(g_view, g_mouseX, g_mouseY, &i); // nothing selected: the note under the mouse
+    beginLyric(i);
+  }
   else if (key == 'H' && !m) g_ghosts = !g_ghosts;
   else if (key == 'S' && !m) g_panel = !g_panel;
   else if (key == 'G' && !m) g_snapGrid = !g_snapGrid, setupEditorSnap();
@@ -1120,13 +1151,28 @@ int Window_TranslateAccel(MSG *msg)
       const int key = (int)msg->wParam, flags = (int)msg->lParam;
       if (key == VK_TAB) { endLyric(true, (flags & FSHIFT) ? -1 : 1); return 1; }
       if (key == VK_SPACE && (flags & FVIRTKEY)) { endLyric(true, 1); return 1; }
+      if (key == '-' && !(flags & FVIRTKEY)) // hyphen: this syllable joins the next one
+      {
+        char buf[1024] = "";
+        GetWindowText(g_edit, buf, sizeof(buf) - 1);
+        strcat(buf, "-");
+        SetWindowText(g_edit, buf);
+        endLyric(true, 1);
+        return 1;
+      }
       if (key == VK_RETURN) { endLyric(true, 0); return 1; }
       if (key == VK_ESCAPE) { endLyric(false, 0); return 1; }
     }
     return -1;
   }
-  if (msg->message == WM_KEYDOWN && isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam)) return -1;
-  return 0; // everything else (e.g. space for play/stop) goes to REAPER
+  // Our keys are handled here: delivered to the window, SWELL would turn Enter/Esc into dialog commands.
+  if (msg->message == WM_KEYDOWN && isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam))
+  {
+    onKey(keyCode((int)msg->wParam, (int)msg->lParam));
+    return 1;
+  }
+  if (msg->message == WM_KEYUP && isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam)) return 1;
+  return -666; // everything else (space = play/stop, ...) uses REAPER's main shortcuts
 }
 
 static void finishPanelDrag()
@@ -1251,7 +1297,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     DestroyWindow(hwnd);
     return 0;
   case WM_DESTROY:
-    stopPreview();
+    stopPreviews(false);
     g_edit = NULL; // destroyed with the window
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
     g_memdc = NULL, g_memw = g_memh = 0, g_hwnd = NULL, g_layerValid = false, g_drag = DRAG_NONE;
@@ -1303,6 +1349,7 @@ void Window_Close()
 
 void Window_Timer()
 {
+  stopPreviews(true);
   if (!g_hwnd) return;
   if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) { Window_Close(); return; }
 

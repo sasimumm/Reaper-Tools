@@ -35,7 +35,8 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | G | snap to grid on/off (off by default for free-tempo recordings) |
 | S | settings panel |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
-| Enter, double-click a note | type its lyric; Tab/Space next note, shift+Tab previous, Enter done, Esc cancel |
+| Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |
 | click a piano key | play that pitch through the notes track |
 | [ ] , - = , , . | brightness, contrast, resolution |
-| click the ruler | move the edit cursor; Space plays (REAPER) |
+| click the ruler | move the edit cursor |
+| other keys | REAPER's own shortcuts (Space = play/stop, ...) |
