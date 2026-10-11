@@ -1,0 +1,18 @@
+BasedOnStyle: LLVM
+IndentWidth: 4
+ColumnLimit: 100
+ReflowComments: false
+
+AllowShortFunctionsOnASingleLine: All
+AllowShortCaseLabelsOnASingleLine: true
+AllowShortEnumsOnASingleLine: true
+
+# Control statements always have braces, with the body on its own line.
+InsertBraces: true
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortBlocksOnASingleLine: Never
+
+# A braced list that doesn't fit on one line opens and closes on lines of its own.
+BreakAfterOpenBracketBracedList: true
+BreakBeforeCloseBracketBracedList: true

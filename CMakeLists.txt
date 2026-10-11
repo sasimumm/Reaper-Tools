@@ -94,3 +94,15 @@ if(CLANG_TIDY)
     COMMENT "clang-tidy"
     VERBATIM)
 endif()
+
+# clang-format (from Homebrew's llvm; style in .clang-format) over our sources and headers
+find_program(CLANG_FORMAT clang-format HINTS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin)
+if(CLANG_FORMAT)
+  file(GLOB REATRACE_HEADERS ${CMAKE_SOURCE_DIR}/src/*.h)
+  add_custom_target(format
+    COMMAND ${CLANG_FORMAT} -i ${REATRACE_SOURCES} ${REATRACE_HEADERS}
+    COMMENT "clang-format" VERBATIM)
+  add_custom_target(format-check
+    COMMAND ${CLANG_FORMAT} --dry-run --Werror ${REATRACE_SOURCES} ${REATRACE_HEADERS}
+    COMMENT "clang-format check" VERBATIM)
+endif()

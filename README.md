@@ -21,6 +21,8 @@ Checks while developing:
       ./build-asan/estimate_test   # and the other *_test programs
 
 - clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`): `cmake --build build --target lint`
+- clang-format (also from Homebrew's `llvm`; style in `.clang-format`): `cmake --build build --target format`,
+  or `format-check` to only report differences.
 
 The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it as
 `UserPlugins/reatrace/nmp.mlmodelc`.
