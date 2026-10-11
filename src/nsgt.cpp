@@ -39,7 +39,8 @@ static NSGTParams sanitize(NSGTParams p)
 }
 
 Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
-                        const std::function<void(long long, int, float *)> &read)
+                        const std::function<void(long long, int, float *)> &read,
+                        const std::function<bool(double)> &progress)
 {
   const NSGTParams p = sanitize(params);
   numSamples = std::max(0LL, std::min(numSamples, (long long)INT_MAX * 64)); // frames fit in an int
@@ -122,6 +123,7 @@ Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
         s.mag[(size_t)(first + i) * s.bins + b] = hypotf(z.re, z.im);
       }
     }
+    if (progress && !progress((double)(first + nf) / s.frames)) return s;
   }
 
   estimateNoise(s, 0.1);

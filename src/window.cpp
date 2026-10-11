@@ -7,7 +7,10 @@
 #include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
+#include <atomic>
+#include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "reaper_plugin_functions.h"
@@ -156,38 +159,6 @@ static void updateValues()
 
 static double frameTime(double f) { return g_audioPos + f / g_spec.frameRate(); }
 
-static void analyzeVocal()
-{
-  g_contour = trackPitch(g_spec);
-  g_onsets = detectOnsets(g_spec);
-  g_segments = segmentContour(g_contour, g_spec.frameRate(), &g_onsets);
-  g_snapTimes.clear();
-  for (int f : g_onsets) g_snapTimes.push_back(frameTime(f));
-  for (const Segment &sg : g_segments) g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
-  std::sort(g_snapTimes.begin(), g_snapTimes.end());
-}
-
-// mode: one of CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE (mono sources always use the mix)
-static Spectrogram analyzeChannel(MediaItem_Take *take, int mode)
-{
-  AudioAccessor *acc = CreateTakeAudioAccessor(take);
-  const int nch = std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
-  if (nch == 1) mode = CH_MIX;
-  std::vector<double> buf;
-  const double sr = g_np.sampleRate;
-  Spectrogram s = computeNSGT(g_np, (long long)(g_audioLen * sr), [&](long long start, int n, float *out) {
-    buf.assign((size_t)n * nch, 0); // the accessor leaves the buffer untouched where there's no audio
-    GetAudioAccessorSamples(acc, (int)sr, nch, start / sr, n, buf.data()); // time relative to item start
-    for (int i = 0; i < n; i++)
-    {
-      const double l = buf[(size_t)i * nch], r = nch > 1 ? buf[(size_t)i * nch + 1] : l;
-      out[i] = (float)(mode == CH_LEFT ? l : mode == CH_RIGHT ? r : mode == CH_SIDE ? 0.5 * (l - r) : 0.5 * (l + r));
-    }
-  });
-  DestroyAudioAccessor(acc);
-  return s;
-}
-
 // What an analysis depends on: if any of it changes, that channel is recomputed.
 struct AnalysisKey
 {
@@ -200,6 +171,22 @@ struct AnalysisKey
   }
 };
 
+struct Vocal
+{
+  Contour contour;
+  std::vector<Segment> segments;
+  std::vector<int> onsets;
+};
+
+static Vocal analyzeVocal(const Spectrogram &s)
+{
+  Vocal v;
+  v.contour = trackPitch(s);
+  v.onsets = detectOnsets(s);
+  v.segments = segmentContour(v.contour, s.frameRate(), &v.onsets);
+  return v;
+}
+
 // One entry per channel. Memory ceiling: ~30 MB per channel per 3 minutes of audio.
 struct ChannelCache
 {
@@ -207,10 +194,7 @@ struct ChannelCache
   AnalysisKey key;
   Spectrogram spec;
   bool vocalValid = false;
-  Contour contour;
-  std::vector<Segment> segments;
-  std::vector<int> onsets;
-  std::vector<double> snapTimes;
+  Vocal vocal;
 };
 static ChannelCache g_cache[5];
 
@@ -219,39 +203,156 @@ static void clearCache()
   for (ChannelCache &c : g_cache) c = ChannelCache();
 }
 
-static const Spectrogram &cachedSpectrogram(MediaItem_Take *take, int ch, const AnalysisKey &key)
+static bool cached(int ch, const AnalysisKey &key) { return g_cache[ch].valid && g_cache[ch].key == key; }
+
+// The audio, read on the main thread (accessors must be), resampled to the analysis rate.
+static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<float> &left, std::vector<float> &right)
 {
-  ChannelCache &c = g_cache[ch];
-  if (c.valid && c.key == key) return c.spec;
-  c = ChannelCache();
-  if (ch == CH_CENTRE)
+  AudioAccessor *acc = CreateTakeAudioAccessor(take);
+  const int nch = std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
+  const long long n = (long long)(len * sr);
+  left.assign((size_t)std::max(0LL, n), 0), right.assign(left.size(), 0);
+  std::vector<double> buf;
+  const int chunk = 65536;
+  for (long long pos = 0; pos < n; pos += chunk)
   {
-    // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
-    c.spec = cachedSpectrogram(take, CH_MIX, key);
-    const Spectrogram &side = cachedSpectrogram(take, CH_SIDE, key);
-    if (side.mag.size() == c.spec.mag.size())
-      for (size_t i = 0; i < c.spec.mag.size(); i++) c.spec.mag[i] = std::max(0.0f, c.spec.mag[i] - side.mag[i]);
+    const int m = (int)std::min<long long>(chunk, n - pos);
+    buf.assign((size_t)m * nch, 0); // the accessor leaves the buffer untouched where there's no audio
+    GetAudioAccessorSamples(acc, (int)sr, nch, pos / sr, m, buf.data()); // time relative to item start
+    for (int i = 0; i < m; i++)
+      left[pos + i] = (float)buf[(size_t)i * nch], right[pos + i] = (float)buf[(size_t)i * nch + (nch - 1)];
   }
-  else c.spec = analyzeChannel(take, ch);
-  c.key = key, c.valid = true;
-  return c.spec;
+  DestroyAudioAccessor(acc);
 }
 
-static void analyze()
+// A background analysis of one channel. The worker only touches the job; the main thread polls
+// `done` from the timer and installs the results.
+struct Job
+{
+  std::thread thread;
+  std::atomic<bool> cancel{false}, done{false};
+  std::atomic<int> permille{0};
+  AnalysisKey key;
+  int channel;
+  std::vector<float> left, right;
+  bool need[4] = {};   // raw channels (CH_MIX..CH_SIDE) to compute
+  Spectrogram raw[4];  // computed, or copied from the cache when only needed for the centre
+  Spectrogram spec;    // the requested channel
+  Vocal vocal;
+  bool vocalNeeded = true;
+
+  void run()
+  {
+    int stages = 1, stage = 0;
+    for (bool b : need) stages += b;
+    for (int ch = 0; ch < 4; ch++)
+    {
+      if (!need[ch]) continue;
+      const std::vector<float> &l = left, &r = right;
+      raw[ch] = computeNSGT(key.p, (long long)l.size(), [&](long long start, int n, float *out) {
+        for (int i = 0; i < n; i++)
+        {
+          const long long j = start + i;
+          const float a = j >= 0 && j < (long long)l.size() ? l[j] : 0, b = j >= 0 && j < (long long)r.size() ? r[j] : 0;
+          out[i] = ch == CH_LEFT ? a : ch == CH_RIGHT ? b : ch == CH_SIDE ? 0.5f * (a - b) : 0.5f * (a + b);
+        }
+      }, [&](double f) {
+        permille = (int)(1000 * (stage + f) / stages);
+        return !cancel;
+      });
+      stage++;
+      if (cancel) return;
+    }
+    if (channel == CH_CENTRE)
+    {
+      // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
+      spec = raw[CH_MIX];
+      if (raw[CH_SIDE].mag.size() == spec.mag.size())
+        for (size_t i = 0; i < spec.mag.size(); i++) spec.mag[i] = std::max(0.0f, spec.mag[i] - raw[CH_SIDE].mag[i]);
+    }
+    else spec = raw[channel];
+    if (vocalNeeded) vocal = analyzeVocal(spec);
+    permille = 1000;
+    done = true;
+  }
+};
+static std::unique_ptr<Job> g_job;
+static bool g_autoOnInstall; // auto-calibrate the display once the analysis arrives
+
+static void cancelJob()
+{
+  if (!g_job) return;
+  g_job->cancel = true;
+  if (g_job->thread.joinable()) g_job->thread.join();
+  g_job.reset();
+}
+
+static void install(const ChannelCache &c)
+{
+  g_spec = c.spec;
+  g_contour = c.vocal.contour, g_segments = c.vocal.segments, g_onsets = c.vocal.onsets;
+  g_snapTimes.clear();
+  for (int f : g_onsets) g_snapTimes.push_back(frameTime(f));
+  for (const Segment &sg : g_segments) g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
+  std::sort(g_snapTimes.begin(), g_snapTimes.end());
+  estimateNoise(g_spec, g_rp.noiseFraction);
+  if (g_autoOnInstall) autoCalibrate(g_spec, g_rp), g_autoOnInstall = false;
+  g_analysisDirty = false;
+  updateValues();
+}
+
+// Starts (or reuses from the cache) the analysis for the current channel and settings.
+static void requestAnalysis(bool autoCalibrateAfter)
 {
   MediaItem_Take *take = GetActiveTake(g_audio);
   if (!take) return;
+  g_autoOnInstall |= autoCalibrateAfter;
+  cancelJob();
   const AnalysisKey key = {g_np, g_audioPos, g_audioLen, g_audioOffs, g_audioRate};
-  g_spec = cachedSpectrogram(take, g_channel, key);
-  ChannelCache &c = g_cache[g_channel];
-  if (!c.vocalValid)
+  const int ch = g_channel;
+  if (cached(ch, key) && g_cache[ch].vocalValid) { install(g_cache[ch]); return; }
+
+  std::unique_ptr<Job> job(new Job);
+  job->key = key, job->channel = ch;
+  bool needAudio = false;
+  const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
+  for (int r : rawCh)
   {
-    analyzeVocal();
-    c.contour = g_contour, c.segments = g_segments, c.onsets = g_onsets, c.snapTimes = g_snapTimes, c.vocalValid = true;
+    if (r < 0) continue;
+    if (cached(r, key)) job->raw[r] = g_cache[r].spec;
+    else job->need[r] = needAudio = true;
   }
-  else g_contour = c.contour, g_segments = c.segments, g_onsets = c.onsets, g_snapTimes = c.snapTimes;
-  estimateNoise(g_spec, g_rp.noiseFraction);
+  if (ch == CH_CENTRE && cached(CH_CENTRE, key)) // only the vocal analysis is missing
+  {
+    job->need[CH_MIX] = job->need[CH_SIDE] = needAudio = false;
+    job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
+  }
+  if (needAudio) readAudio(take, g_audioLen, g_np.sampleRate, job->left, job->right);
+  Job *j = job.get();
+  job->thread = std::thread([j] { j->run(); });
+  g_job = std::move(job);
   g_analysisDirty = false;
+  redraw();
+}
+
+// Called from the timer: installs a finished analysis into the cache and the view.
+static void pollJob()
+{
+  if (!g_job) return;
+  if (!g_job->done) { redraw(); return; } // keep the progress display moving
+  g_job->thread.join();
+  Job &j = *g_job;
+  for (int r = 0; r < 4; r++)
+    if (j.need[r] && r != j.channel)
+    {
+      ChannelCache &c = g_cache[r];
+      c = ChannelCache();
+      c.valid = true, c.key = j.key, c.spec = std::move(j.raw[r]);
+    }
+  ChannelCache &c = g_cache[j.channel];
+  c.valid = true, c.key = j.key, c.spec = std::move(j.spec), c.vocal = std::move(j.vocal), c.vocalValid = true;
+  g_job.reset();
+  install(c);
 }
 
 static void renderLayer(const Rect &n)
@@ -741,8 +842,7 @@ static void pressButton(int b)
   else if (b == B_RESET)
   {
     g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
-    analyze();
-    autoCalibrate(g_spec, g_rp);
+    requestAnalysis(true);
   }
   updateValues();
 }
@@ -783,7 +883,7 @@ static void panelMouse(int x, int y, bool down)
     if (i == *w.choice) return;
     *w.choice = i;
     if (w.choice == &g_speed) applySpeed();
-    else if (w.analysis) analyze(), updateValues();
+    else if (w.analysis) requestAnalysis(false);
   }
 }
 
@@ -1210,7 +1310,15 @@ static void paint(HDC hdc)
     }
   }
   static const char *const SNAP_NAMES[] = {"off", "onsets", "grid"};
-  snprintf(buf, sizeof(buf), "snap: %s (G)", SNAP_NAMES[g_snapMode]);
+  if (g_job)
+  {
+    const int pm = g_job->permille;
+    snprintf(buf, sizeof(buf), "analysing %d%%   snap: %s (G)", pm / 10, SNAP_NAMES[g_snapMode]);
+    cv.clip = {0, 0, w, c.b};
+    cv.fill(n.l, n.t, n.l + (n.r - n.l) * pm / 1000, n.t + 3, C_ACCENT);
+    cv.clip = {0, n.b, c.r, c.b};
+  }
+  else snprintf(buf, sizeof(buf), "snap: %s (G)", SNAP_NAMES[g_snapMode]);
   text(dc, status.c_str(), 6, n.b, c.r - 120, c.b, C_TEXT, DT_LEFT);
   text(dc, buf, 6, n.b, c.r - 6, c.b, C_DIM, DT_RIGHT);
 
@@ -1488,8 +1596,7 @@ static void setupEditorSnap()
 static void adjustGamma(double delta)
 {
   g_np.gamma = std::max(3.0, std::min(40.0, g_np.gamma + delta));
-  analyze();
-  updateValues();
+  requestAnalysis(false);
 }
 
 static void acceptSuggestion(int i)
@@ -1652,11 +1759,7 @@ int Window_TranslateAccel(MSG *msg)
 
 static void finishPanelDrag()
 {
-  if (g_analysisDirty)
-  {
-    analyze();
-    updateValues();
-  }
+  if (g_analysisDirty) requestAnalysis(false);
   g_panelWidget = -1;
 }
 
@@ -1798,6 +1901,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
   case WM_DESTROY:
     stopPreviews(false);
+    cancelJob();
     clearCache();
     g_edit = NULL; // destroyed with the window
     if (g_memdc) SWELL_DeleteGfxContext(g_memdc);
@@ -1827,9 +1931,9 @@ void Window_Open(MediaItem *audio, MediaItem *midi)
   MediaItem_Take *take = GetActiveTake(audio);
   g_audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
   g_audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
-  analyze();
-  autoCalibrate(g_spec, g_rp);
+  g_spec = Spectrogram(), g_contour = Contour(), g_segments.clear(), g_onsets.clear(), g_snapTimes.clear();
   updateValues();
+  requestAnalysis(true);
   setupEditorSnap();
   loadNotes();
 
@@ -1853,6 +1957,7 @@ void Window_Timer()
 {
   stopPreviews(true);
   if (!g_hwnd) return;
+  pollJob();
   if (!ValidatePtr2(NULL, g_audio, "MediaItem*")) { Window_Close(); return; }
 
   // the item may have been moved, trimmed, slipped or sped up: re-analyze
@@ -1860,11 +1965,17 @@ void Window_Timer()
   const double pos = GetMediaItemInfo_Value(g_audio, "D_POSITION"), len = GetMediaItemInfo_Value(g_audio, "D_LENGTH");
   const double offs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
   const double rate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
+  static double s_changedAt = -1; // re-analyze once the item has stopped changing for a moment
   if (pos != g_audioPos || len != g_audioLen || offs != g_audioOffs || rate != g_audioRate)
   {
     g_audioPos = pos, g_audioLen = len, g_audioOffs = offs, g_audioRate = rate;
-    analyze();
-    updateValues();
+    s_changedAt = time_precise();
+    redraw();
+  }
+  else if (s_changedAt >= 0 && time_precise() - s_changedAt > 0.3)
+  {
+    s_changedAt = -1;
+    requestAnalysis(false);
   }
   if (!g_ed.active() && takeHash(midiTake()) != g_hash) loadNotes(); // edited elsewhere, undo, ...
 

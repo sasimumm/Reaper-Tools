@@ -27,8 +27,10 @@ struct Spectrogram
 };
 
 // read(start, n, out) fills out[0..n) with mono samples from sample `start`; out-of-range samples are 0.
+// progress(fraction) is called after each block; returning false stops early (result incomplete).
 Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
-                        const std::function<void(long long start, int n, float *out)> &read);
+                        const std::function<void(long long start, int n, float *out)> &read,
+                        const std::function<bool(double)> &progress = nullptr);
 
 // Noise floor for spectral subtraction: mean spectrum of the quietest `fraction` of frames.
 void estimateNoise(Spectrogram &s, double fraction);
