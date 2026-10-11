@@ -117,7 +117,7 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch) {
 }
 
 Layout computeLayout(int width, int height, bool panelWanted) {
-    Layout L;
+    Layout L = {};
     L.client = {0, 0, std::max(0, width), std::max(0, height)};
     const Rect &c = L.client;
     L.tooSmall = c.r < MIN_W || c.b < MIN_H;
