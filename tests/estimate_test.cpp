@@ -12,7 +12,8 @@
 static const double SR = 22050;
 
 // Voice-like tones (from transcribe's mf0.synth): partials 1..8 at h^-0.6, slight vibrato.
-static void tone(std::vector<float> &x, double a, double b, double midi, float amp = 0.1f)
+static void tone(std::vector<float> &x, double a, double b, double midi, float amp = 0.1f, double rate = 5.5,
+                 double depth = 0.004, double evenGain = 1, double vibPhase = 0)
 {
   srand(1);
   const double f0 = 440 * pow(2, (midi - 69) / 12);
@@ -22,9 +23,9 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
   for (long long i = (long long)(a * SR); i < (long long)(b * SR) && i < (long long)x.size(); i++)
   {
     const double t = i / SR, env = std::min(1.0, std::min(t - a, b - t) / 0.02);
-    ph += 2 * M_PI * f0 * (1 + 0.004 * sin(2 * M_PI * 5.5 * t)) / SR;
+    ph += 2 * M_PI * f0 * (1 + depth * sin(2 * M_PI * rate * t + vibPhase)) / SR;
     double v = 0;
-    for (int h = 1; h <= 8; h++) v += sin(h * ph + phase[h]) * pow(h, -0.6);
+    for (int h = 1; h <= 8; h++) v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
     x[i] += (float)(amp * env * v);
   }
 }
@@ -140,6 +141,37 @@ int main()
   }
   assert(est.size() <= 6); // at most a stray short note or two
 
+  // octave doublings: a second singer an octave up (own vibrato) is added; one voice with strong even
+  // partials (a formant) is not, since its "octave" moves with its own partials
+  {
+    std::vector<float> y((size_t)(3 * SR));
+    for (float &v : y) v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);
+    tone(y, 0.5, 2.5, 62, 0.1f, 5.5, 0.006), tone(y, 0.5, 2.5, 74, 0.06f, 4.3, 0.006, 1, 2.0);
+    const Spectrogram sy = analyze(y);
+    BasicPitch by;
+    assert(runBasicPitch(BASIC_PITCH_MODEL, y, sy.frames, by));
+    std::vector<NoteEstimate> e = estimateNotes(sy, y, &by);
+    EstimateParams off;
+    off.octaveDoublings = false;
+    const std::vector<NoteEstimate> e0 = estimateNotes(sy, y, &by, off);
+    auto has = [](const std::vector<NoteEstimate> &v, int p) {
+      for (const NoteEstimate &n : v) if (n.pitch == p) return true;
+      return false;
+    };
+    printf("octave pair: D5 found %s without doublings, %s with\n", has(e0, 74) ? "yes" : "no", has(e, 74) ? "yes" : "no");
+    assert(has(e, 62) && has(e, 74));
+
+    std::vector<float> z((size_t)(3 * SR));
+    for (float &v : z) v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);
+    tone(z, 0.5, 2.5, 62, 0.1f, 5.5, 0.006, 3.0);
+    const Spectrogram sz = analyze(z);
+    BasicPitch bz;
+    assert(runBasicPitch(BASIC_PITCH_MODEL, z, sz.frames, bz));
+    e = estimateNotes(sz, z, &bz);
+    for (const NoteEstimate &n : e) printf("  formant tone: %d %.2f-%.2f s\n", n.pitch, n.f0 / fr, n.f1 / fr);
+    assert(has(e, 62) && !has(e, 74));
+  }
+
   // speed on three minutes
   {
     std::vector<float> y((size_t)(180 * SR));
@@ -155,6 +187,11 @@ int main()
     auto td = std::chrono::steady_clock::now();
     auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
     printf("180 s: basic-pitch %.0f ms, adapted NMF %.0f ms, SACF %.0f ms\n", ms(ta, tb), ms(tb, tc), ms(tc, td));
+    const std::vector<NoteEstimate> all = estimateNotes(sy, y, &by);
+    auto te = std::chrono::steady_clock::now();
+    const std::vector<int> voices = assignVoices(all, sy.frameRate(), 4);
+    auto tf = std::chrono::steady_clock::now();
+    printf("180 s: whole estimator %.0f ms (%zu notes), voices %.0f ms\n", ms(td, te), all.size(), ms(te, tf));
   }
   printf("ok\n");
 }

@@ -27,6 +27,7 @@ struct EstimateParams
   double minLength = 0.1;        // seconds
   double bridge = 0.07;          // seconds of dropout bridged inside a note
   bool adapt = true;             // learn partial amplitudes on the recording
+  bool octaveDoublings = true;   // add voices an octave above a note (even-partial surplus, common-fate veto)
 };
 
 // The spectrogram the estimator expects (fixed, since the display's settings can change).

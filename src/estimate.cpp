@@ -429,6 +429,241 @@ static Activity activity(const std::vector<float> &roll, int F, int n, const std
   return a;
 }
 
+// --- octave doublings (transcribe refine.octave_doublings) ----------------------------------------
+
+static const int RA_NFFT = 2048, RA_BINS = 520;     // reassigned spectrogram up to ~5.6 kHz
+static const double TOL = 0.45;                     // semitones a partial track may stray from its nominal frequency
+static const double ADD = 0.9;                      // even-partial surplus (log units) that adds the octave above
+static const double FM_VETO = 0.8, SELF_FM = 0.5;   // common fate: the upper F0 moving with the lower note's partials
+static const double CHUNK_S = 0.25;                 // seconds per surplus measurement (transcribe: an 8th-note slot)
+static const float REATTACK_DIP = 0.7f;             // a re-attack needs the level before it below this share of the level after
+
+// Reassigned spectrogram (librosa's: instantaneous frequency from the derivative window, magnitude
+// of the plain STFT), computed only for the frames asked for.
+struct Partials
+{
+  const std::vector<float> &y;
+  int frames;
+  std::vector<std::vector<float>> F, M;
+  std::vector<float> win, dwin;
+  std::vector<WDL_FFT_REAL> a, b;
+
+  Partials(const std::vector<float> &y, int frames) : y(y), frames(frames), F(frames), M(frames), win(RA_NFFT), dwin(RA_NFFT), a(RA_NFFT), b(RA_NFFT)
+  {
+    for (int i = 0; i < RA_NFFT; i++) win[i] = (float)(0.5 - 0.5 * cos(2 * M_PI * i / RA_NFFT));
+    for (int i = 0; i < RA_NFFT; i++) dwin[i] = 0.5f * (win[(i + 1) % RA_NFFT] - win[(i + RA_NFFT - 1) % RA_NFFT]); // cyclic gradient
+  }
+
+  void ensure(int f)
+  {
+    if (!F[f].empty()) return;
+    for (int i = 0; i < RA_NFFT; i++)
+    {
+      const long long j = (long long)f * HOP - RA_NFFT / 2 + i;
+      const float v = j >= 0 && j < (long long)y.size() ? y[j] : 0;
+      a[i] = v * win[i], b[i] = v * dwin[i];
+    }
+    WDL_real_fft(a.data(), RA_NFFT, 0);
+    WDL_real_fft(b.data(), RA_NFFT, 0);
+    const WDL_FFT_COMPLEX *X = (const WDL_FFT_COMPLEX *)a.data(), *D = (const WDL_FFT_COMPLEX *)b.data();
+    const int *perm = WDL_fft_permute_tab(RA_NFFT / 2);
+    F[f].assign(RA_BINS, 0), M[f].assign(RA_BINS, 0);
+    for (int k = 1; k < RA_BINS; k++)
+    {
+      // WDL's real FFT is twice numpy's; halve so the power threshold means the same
+      const std::complex<double> h(0.5 * X[perm[k]].re, 0.5 * X[perm[k]].im), d(0.5 * D[perm[k]].re, 0.5 * D[perm[k]].im);
+      const double mag = std::abs(h);
+      M[f][k] = (float)mag;
+      if (mag * mag < 1e-6) continue; // librosa's ref_power: no frequency (0, as transcribe's nan_to_num)
+      const double fr = (double)k * SR / RA_NFFT - std::imag(d / h) * 0.5 * SR / M_PI;
+      F[f][k] = (float)std::max(0.0, std::min(SR / 2.0, fr));
+    }
+  }
+
+  // log2 frequency (NaN where nothing is near) and log magnitude of the strongest bin near f0, frames a..b-1
+  void track(double f0, int a0, int b0, std::vector<double> &t, std::vector<double> &m, double tol = TOL)
+  {
+    b0 = std::min(b0, frames);
+    t.clear(), m.clear();
+    const double bw = (double)SR / RA_NFFT;
+    const int k0 = std::max(0, (int)floor(f0 * pow(2, -tol / 12) / bw - 1));
+    const int k1 = std::min(RA_BINS - 1, (int)ceil(f0 * pow(2, tol / 12) / bw + 1));
+    for (int f = std::max(0, a0); f < b0; f++)
+    {
+      ensure(f);
+      int best = k0;
+      for (int k = k0; k <= k1; k++)
+        if (M[f][k] > M[f][best]) best = k;
+      const double fr = F[f][best];
+      const bool ok = fr > 0 && fabs(12 * log2(std::max(fr, 1e-3) / f0)) < tol;
+      t.push_back(ok ? log2(std::max(fr, 1e-3)) : NAN), m.push_back(log(M[f][best] + 1e-6));
+    }
+  }
+
+  // log mean magnitude of partials 1..nh (up to 5 kHz)
+  std::vector<double> harmonicAmps(double f0, int a0, int b0, int nh = 10)
+  {
+    std::vector<double> out(nh, NAN), t, m;
+    for (int h = 1; h <= nh && h * f0 <= 5000; h++)
+    {
+      track(h * f0, a0, b0, t, m);
+      double sum = 0;
+      for (double v : m) sum += exp(v);
+      if (!m.empty()) out[h - 1] = log(sum / m.size() + 1e-6);
+    }
+    return out;
+  }
+};
+
+static double hzOf(int midi) { return 440 * pow(2.0, (midi - 69) / 12.0); }
+
+// How far the even partials stick out over their odd neighbours (log units); NaN if unmeasurable.
+static double evenSurplus(const std::vector<double> &amps)
+{
+  double sum = 0;
+  int n = 0;
+  for (int h : {2, 4, 6, 8})
+    if (h < (int)amps.size() && std::isfinite(amps[h - 2]) && std::isfinite(amps[h - 1]) && std::isfinite(amps[h]))
+      sum += amps[h - 1] - 0.5 * (amps[h - 2] + amps[h]), n++;
+  return n ? sum / n : NAN;
+}
+
+// Gaps filled, a quadratic trend removed, smoothed over 3 frames; false if too little is voiced.
+static bool detrend(const std::vector<double> &x, std::vector<double> &out)
+{
+  const int n = (int)x.size();
+  std::vector<int> ok;
+  for (int i = 0; i < n; i++)
+    if (std::isfinite(x[i])) ok.push_back(i);
+  if ((int)ok.size() < 8) return false;
+  std::vector<double> v(n);
+  for (int i = 0, j = 0; i < n; i++)
+  {
+    while (j + 1 < (int)ok.size() && ok[j + 1] <= i) j++;
+    if (i <= ok.front()) v[i] = x[ok.front()];
+    else if (i >= ok.back()) v[i] = x[ok.back()];
+    else
+    {
+      const int a = ok[j], b = ok[j + 1];
+      v[i] = a == i ? x[a] : x[a] + (x[b] - x[a]) * (i - a) / (b - a);
+    }
+  }
+  // least-squares quadratic, centred for conditioning
+  double S[5] = {}, T[3] = {};
+  const double c = (n - 1) / 2.0;
+  for (int i = 0; i < n; i++)
+  {
+    const double u = i - c;
+    double p = 1;
+    for (int k = 0; k < 5; k++) S[k] += p, p *= u;
+    T[0] += v[i], T[1] += v[i] * u, T[2] += v[i] * u * u;
+  }
+  double A[3][4] = {{S[0], S[1], S[2], T[0]}, {S[1], S[2], S[3], T[1]}, {S[2], S[3], S[4], T[2]}};
+  for (int i = 0; i < 3; i++)
+    for (int r = i + 1; r < 3; r++)
+    {
+      const double q = A[r][i] / A[i][i];
+      for (int k = i; k < 4; k++) A[r][k] -= q * A[i][k];
+    }
+  double coef[3];
+  for (int i = 2; i >= 0; i--)
+  {
+    double sum = A[i][3];
+    for (int k = i + 1; k < 3; k++) sum -= A[i][k] * coef[k];
+    coef[i] = sum / A[i][i];
+  }
+  std::vector<double> d(n);
+  for (int i = 0; i < n; i++)
+  {
+    const double u = i - c;
+    d[i] = v[i] - (coef[0] + coef[1] * u + coef[2] * u * u);
+  }
+  out.assign(n, 0);
+  auto at = [&](int i) { return d[i < 0 ? -i - 1 : i >= n ? 2 * n - i - 1 : i]; };
+  for (int i = 0; i < n; i++) out[i] = (at(i - 1) + at(i) + at(i + 1)) / 3;
+  return true;
+}
+
+// Pearson correlation of two frequency tracks, NaN if either is mostly unvoiced or flat.
+static double trackCorr(const std::vector<double> &x, const std::vector<double> &y)
+{
+  auto voiced = [](const std::vector<double> &v) {
+    int n = 0;
+    for (double e : v) n += std::isfinite(e);
+    return v.empty() ? 0.0 : (double)n / v.size();
+  };
+  std::vector<double> a, b;
+  if (voiced(x) < 0.6 || voiced(y) < 0.6 || !detrend(x, a) || !detrend(y, b)) return NAN;
+  const int n = (int)a.size();
+  double ma = 0, mb = 0;
+  for (int i = 0; i < n; i++) ma += a[i] / n, mb += b[i] / n;
+  double sab = 0, saa = 0, sbb = 0;
+  for (int i = 0; i < n; i++) sab += (a[i] - ma) * (b[i] - mb), saa += (a[i] - ma) * (a[i] - ma), sbb += (b[i] - mb) * (b[i] - mb);
+  if (sqrt(saa / n) < 1e-7 || sqrt(sbb / n) < 1e-7) return NAN;
+  return sab / sqrt(saa * sbb);
+}
+
+// Common fate: the upper note's F0 wobbles with the lower note's 1st or 3rd partial, which it can't
+// share, while those two move together: it is the lower voice's own overtone.
+static bool isOvertone(Partials &P, const NoteEstimate &up, const NoteEstimate &low)
+{
+  const int a = std::max(up.f0, low.f0) + 2, b = std::min(up.f1, low.f1) - 2;
+  if (b - a < 10) return false;
+  const double fl = hzOf(low.pitch);
+  std::vector<double> tu, t1, t3, m;
+  P.track(hzOf(up.pitch), a, b, tu, m);
+  P.track(fl, a, b, t1, m);
+  P.track(3 * fl, a, b, t3, m);
+  const double c1 = trackCorr(tu, t1), c3 = trackCorr(tu, t3), self = trackCorr(t1, t3);
+  double fm = -2;
+  if (std::isfinite(c1)) fm = std::max(fm, c1);
+  if (std::isfinite(c3)) fm = std::max(fm, c3);
+  return fm > -2 && std::isfinite(self) && fm > FM_VETO && self > SELF_FM;
+}
+
+// A voice an octave above another is folded into the lower note by the harmonic NMF; it shows as
+// even partials standing out over their odd neighbours. Adds the octave above where they do, unless
+// common fate says it is the lower voice's overtone; removes a detected upper octave that is one.
+static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate> &raw, Partials &P, int hi, double frameRate)
+{
+  std::vector<NoteEstimate> add;
+  std::vector<bool> drop(raw.size(), false);
+  auto overlaps = [](const NoteEstimate &a, const NoteEstimate &b) { return std::min(a.f1, b.f1) > std::max(a.f0, b.f0); };
+  const int L = std::max(4, (int)lround(CHUNK_S * frameRate));
+  for (const NoteEstimate &n : raw)
+  {
+    if (n.pitch + 12 > hi) continue;
+    const double f0 = hzOf(n.pitch);
+    std::vector<double> E;
+    std::vector<int> starts;
+    for (int c = n.f0; c < n.f1; c += L)
+    {
+      const int a = c + 1, b = std::min(n.f1, c + L) - 1;
+      E.push_back(b > a ? evenSurplus(P.harmonicAmps(f0, a, std::max(b, a + 2))) : NAN);
+      starts.push_back(c);
+    }
+    for (size_t s = 0; s < E.size();)
+    {
+      if (!(E[s] >= ADD)) { s++; continue; }
+      size_t e = s;
+      while (e < E.size() && E[e] >= ADD) e++;
+      const NoteEstimate up = {starts[s], e < E.size() ? starts[e] : n.f1, n.pitch + 12, n.strength * 0.5f};
+      bool exists = false;
+      for (const NoteEstimate &o : raw) exists |= o.pitch == up.pitch && overlaps(o, up);
+      if (!exists && !isOvertone(P, up, n)) add.push_back(up);
+      s = e;
+    }
+  }
+  for (size_t i = 0; i < raw.size(); i++)
+    for (const NoteEstimate &low : raw)
+      if (low.pitch == raw[i].pitch - 12 && overlaps(raw[i], low) && isOvertone(P, raw[i], low)) { drop[i] = true; break; }
+  std::vector<NoteEstimate> out;
+  for (size_t i = 0; i < raw.size(); i++)
+    if (!drop[i]) out.push_back(raw[i]);
+  out.insert(out.end(), add.begin(), add.end());
+  return out;
+}
+
 std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono, const BasicPitch *bp,
                                         const EstimateParams &ep, const std::function<bool(double)> &progress)
 {
@@ -478,7 +713,8 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
   }
 
   // runs: start on an `on` frame, continue over `hold` frames bridging short dropouts, split where
-  // basic-pitch sees a new onset at that pitch
+  // basic-pitch sees a new onset at that pitch and the note's own level dipped before it (basic-pitch
+  // also reports onsets on a held note when another voice stops)
   const double fr = (double)SR / HOP;
   const int minLen = std::max(1, (int)lround(ep.minLength * fr)), bridge = (int)lround(ep.bridge * fr);
   auto reattack = [&](int f, int midi) {
@@ -491,7 +727,11 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
       const int h = std::max(0, std::min(bp->frames - 1, g + d));
       if (d && (bp->onsetAt(h, midi) > o || (d < 0 && bp->onsetAt(h, midi) == o))) return false;
     }
-    return true;
+    const int p = midi - lo, w = (int)lround(0.07 * fr);
+    float dip = 1e30f, after = 0;
+    for (int h = std::max(0, f - w); h < f; h++) dip = std::min(dip, roll[(size_t)h * n + p]);
+    for (int h = f; h < std::min(F, f + w); h++) after = std::max(after, roll[(size_t)h * n + p]);
+    return dip < REATTACK_DIP * after;
   };
   for (int p = 0; p < n; p++)
   {
@@ -517,6 +757,11 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
       f = end;
       if (split) act.on[(size_t)end * n + p] = 1; // the re-attack starts the next note
     }
+  }
+  if (ep.octaveDoublings)
+  {
+    Partials P(mono, F);
+    out = octaveDoublings(out, P, hi, fr);
   }
   std::sort(out.begin(), out.end(), [](const NoteEstimate &a, const NoteEstimate &b) { return a.f0 < b.f0 || (a.f0 == b.f0 && a.pitch < b.pitch); });
   return out;
