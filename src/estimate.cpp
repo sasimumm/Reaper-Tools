@@ -514,7 +514,7 @@ struct Partials
       track(h * f0, a0, b0, t, m);
       double sum = 0;
       for (double v : m) sum += exp(v);
-      if (!m.empty()) out[h - 1] = log(sum / m.size() + 1e-6);
+      if (!m.empty()) out[h - 1] = log(sum / (double)m.size() + 1e-6);
     }
     return out;
   }
@@ -595,7 +595,7 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
   auto voiced = [](const std::vector<double> &v) {
     int n = 0;
     for (double e : v) n += std::isfinite(e);
-    return v.empty() ? 0.0 : (double)n / v.size();
+    return v.empty() ? 0.0 : (double)n / (double)v.size();
   };
   std::vector<double> a, b;
   if (voiced(x) < 0.6 || voiced(y) < 0.6 || !detrend(x, a) || !detrend(y, b)) return NAN;
@@ -822,7 +822,7 @@ static void vote(std::vector<NoteEstimate> &raw, const std::vector<std::vector<N
       std::fill(cov.begin(), cov.end(), 0);
       for (const NoteEstimate &e : v)
         if (e.pitch == pitch)
-          for (int f = e.f0; f < std::min(F, e.f1); f++) cov[f] = 1, str[f] += e.strength / voters.size();
+          for (int f = e.f0; f < std::min(F, e.f1); f++) cov[f] = 1, str[f] += e.strength / (float)voters.size();
       for (int f = 0; f < F; f++) all[f] &= cov[f];
     }
     for (int f = 0; f < F;)
@@ -921,7 +921,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
     for (int h = f; h < std::min(F, f + w); h++) after = std::max(after, roll[(size_t)h * n + p]);
     return dip < REATTACK_DIP * after;
   };
-  auto runs = [&](Activity &act, const std::vector<float> &roll) {
+  auto runs = [&](Activity &act) {
   std::vector<NoteEstimate> out;
   for (int p = 0; p < n; p++)
   {
@@ -950,7 +950,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
   }
   return out;
   };
-  out = runs(act, roll);
+  out = runs(act);
 
   if (ep.vote)
   {
@@ -975,7 +975,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         const std::vector<float> vr = nmfRoll(fe, lo, hi, false, voterProgress, v.cfp ? 1 : NH);
         if (cancelled) return;
         Activity va = activity(vr, F, n, gp, v.abs, ep.rel, ep.oct);
-        voters[i] = runs(va, vr);
+        voters[i] = runs(va);
       });
     for (std::thread &t : threads) t.join();
     if (cancelled) return {};
@@ -1021,7 +1021,7 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
   std::vector<double> rest(nv);
   for (int v = 0; v < nv; v++)
   {
-    const double pos = (1 - (v + 0.5) / nv) * (pitches.size() - 1);
+    const double pos = (1 - (v + 0.5) / nv) * (double)(pitches.size() - 1);
     const int i = (int)pos;
     rest[v] = pitches[i] + (i + 1 < (int)pitches.size() ? (pitches[i + 1] - pitches[i]) * (pos - i) : 0);
   }

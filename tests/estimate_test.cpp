@@ -22,7 +22,7 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
   double ph = 0;
   for (long long i = (long long)(a * SR); i < (long long)(b * SR) && i < (long long)x.size(); i++)
   {
-    const double t = i / SR, env = std::min(1.0, std::min(t - a, b - t) / 0.02);
+    const double t = (double)i / SR, env = std::min(1.0, std::min(t - a, b - t) / 0.02);
     ph += 2 * M_PI * f0 * (1 + depth * sin(2 * M_PI * rate * t + vibPhase)) / SR;
     double v = 0;
     for (int h = 1; h <= 8; h++) v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
@@ -105,7 +105,7 @@ int main()
   // CFP peaks at a tone's pitch and not at its octaves
   {
     std::vector<float> x((size_t)(3 * SR));
-    for (size_t i = 0; i < x.size(); i++) x[i] = 0.5f * (float)sin(2 * M_PI * 220 * i / SR);
+    for (size_t i = 0; i < x.size(); i++) x[i] = 0.5f * (float)sin(2 * M_PI * 220 * (double)i / SR);
     for (double scale : {1.0, 1.5})
       for (int bpo : {36, 60})
       {
@@ -194,7 +194,7 @@ int main()
     BasicPitch bz;
     assert(runBasicPitch(BASIC_PITCH_MODEL, z, sz.frames, bz));
     e = estimateNotes(sz, z, &bz);
-    for (const NoteEstimate &n : e) printf("  formant tone: %d %.2f-%.2f s\n", n.pitch, n.f0 / fr, n.f1 / fr);
+    for (const NoteEstimate &en : e) printf("  formant tone: %d %.2f-%.2f s\n", en.pitch, en.f0 / fr, en.f1 / fr);
     assert(has(e, 62) && !has(e, 74));
   }
 

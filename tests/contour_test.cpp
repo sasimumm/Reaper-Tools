@@ -13,7 +13,7 @@ static void tone(std::vector<float> &x, double sr, double t0, double t1, double 
   double phase[13] = {0};
   for (long long i = (long long)(t0 * sr); i < (long long)(t1 * sr); i++)
   {
-    const double t = i / sr;
+    const double t = (double)i / sr;
     const double p = pitch + vibratoCents / 100 * sin(2 * M_PI * 5.5 * t);
     const double f0 = 440 * pow(2.0, (p - 69) / 12);
     const double env = std::min(1.0, std::min(t - t0, t1 - t) / 0.01); // 10 ms fades

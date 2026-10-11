@@ -27,7 +27,7 @@ int main()
   // A4 sine at -6 dBFS: the A4 bin reads 0.5 everywhere away from the edges, and is the loudest bin.
   {
     std::vector<float> x((size_t)(10 * sr));
-    for (size_t i = 0; i < x.size(); i++) x[i] = 0.5f * (float)sin(2 * M_PI * 440 * i / sr);
+    for (size_t i = 0; i < x.size(); i++) x[i] = 0.5f * (float)sin(2 * M_PI * 440 * (double)i / sr);
     Spectrogram s = analyze(x);
     const int a4 = (int)lround(s.binOfPitch(69));
     double lo = 1e9, hi = 0;
@@ -61,7 +61,7 @@ int main()
   {
     std::vector<float> x((size_t)(8 * sr));
     for (size_t i = 0; i < x.size(); i++)
-      x[i] = 0.25f * (float)(sin(2 * M_PI * 55 * i / sr) + sin(2 * M_PI * 55 * pow(2, 1 / 12.0) * i / sr));
+      x[i] = 0.25f * (float)(sin(2 * M_PI * 55 * (double)i / sr) + sin(2 * M_PI * 55 * pow(2, 1 / 12.0) * (double)i / sr));
     auto read = [&](long long start, int n, float *out) {
       for (int i = 0; i < n; i++) out[i] = start + i >= 0 && start + i < (long long)x.size() ? x[start + i] : 0;
     };
@@ -100,7 +100,7 @@ int main()
     auto t0 = std::chrono::steady_clock::now();
     Spectrogram s = analyze(x);
     double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
-    printf("180 s of audio: %.0f ms, %.1f MB\n", ms, s.mag.size() * 4 / 1e6);
+    printf("180 s of audio: %.0f ms, %.1f MB\n", ms, (double)s.mag.size() * 4 / 1e6);
 
     RenderParams rp;
     autoCalibrate(s, rp);

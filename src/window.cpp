@@ -33,7 +33,7 @@ static const int GUIDE_THICKNESS = 3;  // overtone hover marks, pixels
 // The note area stays dark under the spectrogram; the rest follows REAPER's theme (applyTheme).
 static const unsigned int C_AREA = 0x1b1b1b;
 static unsigned int C_BG, C_RULER, C_TEXT, C_DIM, C_PANEL, C_BUTTON, C_TRACK;
-static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd, C_SEL_EDGE = 0x2ec4b6;
+static const unsigned int C_NOTE = 0x2ec4b6, C_NOTE_EDGE = 0x08302d, C_SEL = 0xeafffd;
 static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0x2ec4b6, 0xf4a261, 0xe56fd8, 0x9ee05a};
 static const char *const VOICES[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
 static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_ACCENT = 0x7fd6ff;
@@ -287,7 +287,7 @@ static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<f
   {
     const int m = (int)std::min<long long>(chunk, n - pos);
     buf.assign((size_t)m * nch, 0); // the accessor leaves the buffer untouched where there's no audio
-    GetAudioAccessorSamples(acc, (int)sr, nch, pos / sr, m, buf.data()); // time relative to item start
+    GetAudioAccessorSamples(acc, (int)sr, nch, (double)pos / sr, m, buf.data()); // time relative to item start
     for (int i = 0; i < m; i++)
       left[pos + i] = (float)buf[(size_t)i * nch], right[pos + i] = (float)buf[(size_t)i * nch + (nch - 1)];
   }
@@ -1661,11 +1661,11 @@ static void paint(HDC hdc)
     for (size_t k = 0; k < order.size(); k++)
     {
       const Note &nt = g_ed.notes[order[k]];
-      const int x = (int)lround(g_view.x(nt.start));
+      const int sx = (int)lround(g_view.x(nt.start));
       const int next = k + 1 < order.size() ? (int)lround(g_view.x(g_ed.notes[order[k + 1]].start)) : ly.r;
-      if (next < ly.l || x > ly.r) continue;
-      cv.fill(x, ly.t, x + 1, ly.t + 4, noteColour);
-      text(dc, nt.lyric.c_str(), std::max(x + 2, ly.l), ly.t, std::min(next - 1, ly.r), ly.b, nt.sel ? 0xffffff : C_TEXT, DT_LEFT);
+      if (next < ly.l || sx > ly.r) continue;
+      cv.fill(sx, ly.t, sx + 1, ly.t + 4, noteColour);
+      text(dc, nt.lyric.c_str(), std::max(sx + 2, ly.l), ly.t, std::min(next - 1, ly.r), ly.b, nt.sel ? 0xffffff : C_TEXT, DT_LEFT);
     }
   }
 

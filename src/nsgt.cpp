@@ -177,7 +177,7 @@ void estimateNoise(Spectrogram &s, double fraction)
   const int quiet = std::max(1, std::min(s.frames, (int)(s.frames * fraction)));
   std::nth_element(energy.begin(), energy.begin() + quiet - 1, energy.end());
   for (int i = 0; i < quiet; i++)
-    for (int b = 0; b < s.bins; b++) s.noise[b] += s.at(energy[i].second, b) / quiet;
+    for (int b = 0; b < s.bins; b++) s.noise[b] += s.at(energy[i].second, b) / (float)quiet;
 }
 
 void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1)
@@ -189,7 +189,7 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1)
   for (size_t i = a; i < n; i += stride) db.push_back(20 * log10f(std::max(s.mag[i], 1e-10f)));
   if (db.empty()) return;
   auto pct = [&](double q) {
-    auto it = db.begin() + std::min(db.size() - 1, (size_t)(q * db.size()));
+    auto it = db.begin() + std::min(db.size() - 1, (size_t)(q * (double)db.size()));
     std::nth_element(db.begin(), it, db.end());
     return (double)*it;
   };

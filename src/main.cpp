@@ -188,17 +188,17 @@ static void openSelected()
 
 static int g_cmdOpen;
 
-static bool onAction(KbdSectionInfo *sec, int command, int val, int val2, int relmode, HWND hwnd)
+static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND)
 {
   if (command != g_cmdOpen) return false;
   openSelected();
   return true;
 }
 
-static int translateAccel(MSG *msg, accelerator_register_t *ctx) { return Window_TranslateAccel(msg); }
+static int translateAccel(MSG *msg, accelerator_register_t *) { return Window_TranslateAccel(msg); }
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
-extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE hInstance, reaper_plugin_info_t *rec)
+extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE, reaper_plugin_info_t *rec)
 {
   if (!rec)
   {

@@ -7,6 +7,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
 set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
 
+# Warnings on our own sources only (vendor code and SDK headers are left alone: they are SYSTEM includes).
+option(REATRACE_WERROR "Treat warnings in ReaTrace's own sources as errors" ON)
+set(REATRACE_WARNINGS -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Wimplicit-fallthrough)
+if(REATRACE_WERROR)
+  list(APPEND REATRACE_WARNINGS -Werror)
+endif()
+file(GLOB REATRACE_SOURCES ${CMAKE_SOURCE_DIR}/src/*.cpp ${CMAKE_SOURCE_DIR}/src/*.mm ${CMAKE_SOURCE_DIR}/tests/*.cpp)
+set_source_files_properties(${REATRACE_SOURCES} PROPERTIES COMPILE_OPTIONS "${REATRACE_WARNINGS}")
+
 if(NOT APPLE)
   message(FATAL_ERROR "Only macOS is supported so far")
 endif()
@@ -24,7 +33,7 @@ add_library(reaper_reatrace MODULE
 )
 set_target_properties(reaper_reatrace PROPERTIES PREFIX "" SUFFIX ".dylib")
 set_source_files_properties(src/basicpitch.mm PROPERTIES COMPILE_FLAGS -fobjc-arc)
-target_include_directories(reaper_reatrace PRIVATE vendor/reaper-sdk/sdk ${WDL})
+target_include_directories(reaper_reatrace SYSTEM PRIVATE vendor/reaper-sdk/sdk ${WDL})
 target_compile_definitions(reaper_reatrace PRIVATE SWELL_PROVIDED_BY_APP)
 target_link_libraries(reaper_reatrace PRIVATE "-framework Cocoa" "-framework CoreML" "-framework Accelerate")
 
@@ -46,18 +55,18 @@ add_custom_target(deploy
   COMMENT "Copying to REAPER UserPlugins (restart REAPER to load)")
 
 add_executable(nsgt_test tests/nsgt_test.cpp src/nsgt.cpp ${WDL}/fft.c)
-target_include_directories(nsgt_test PRIVATE ${WDL})
+target_include_directories(nsgt_test SYSTEM PRIVATE ${WDL})
 target_compile_options(nsgt_test PRIVATE -UNDEBUG)
 
 add_executable(editor_test tests/editor_test.cpp src/editor.cpp)
 target_compile_options(editor_test PRIVATE -UNDEBUG)
 
 add_executable(contour_test tests/contour_test.cpp src/contour.cpp src/nsgt.cpp ${WDL}/fft.c)
-target_include_directories(contour_test PRIVATE ${WDL})
+target_include_directories(contour_test SYSTEM PRIVATE ${WDL})
 target_compile_options(contour_test PRIVATE -UNDEBUG)
 
 add_executable(estimate_test tests/estimate_test.cpp src/estimate.cpp src/basicpitch.mm src/nsgt.cpp ${WDL}/fft.c)
-target_include_directories(estimate_test PRIVATE ${WDL})
+target_include_directories(estimate_test SYSTEM PRIVATE ${WDL})
 target_compile_options(estimate_test PRIVATE -UNDEBUG)
 target_compile_definitions(estimate_test PRIVATE BASIC_PITCH_MODEL="${BASIC_PITCH_MODEL}")
 target_link_libraries(estimate_test PRIVATE "-framework Foundation" "-framework CoreML" "-framework Accelerate")

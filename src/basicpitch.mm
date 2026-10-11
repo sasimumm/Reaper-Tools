@@ -65,7 +65,7 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
       const long os1 = onset.strides[1].longValue, os2 = onset.strides[2].longValue;
       for (; f < out.frames && (long long)f * HOP < (long long)(w + 1) * WINDOW_HOP; f++)
       {
-        const int j = std::max(EDGE, std::min(OUT_FRAMES - EDGE - 1, (int)lround(((double)f * HOP - start) / HOP)));
+        const int j = std::max(EDGE, std::min(OUT_FRAMES - EDGE - 1, (int)lround(((double)f * HOP - (double)start) / HOP)));
         for (int p = 0; p < BasicPitch::PITCHES; p++)
         {
           out.note[(size_t)f * BasicPitch::PITCHES + p] = np[j * ns1 + p * ns2];

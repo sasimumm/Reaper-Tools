@@ -12,7 +12,7 @@ struct Note
   int pitch;
   bool sel;
   int idx; // index in the MIDI take, -1 for notes not written yet
-  std::string lyric;
+  std::string lyric = {};
   int lyricIdx = -1; // index of the lyric text event in the take, -1 if none
 };
 
