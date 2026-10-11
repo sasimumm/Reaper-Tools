@@ -208,7 +208,8 @@ struct AnalysisKey
   bool operator==(const AnalysisKey &o) const
   {
     return p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin && p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave &&
-           p.hop == o.p.hop && p.gamma == o.p.gamma && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
+           p.hop == o.p.hop && p.gamma == o.p.gamma && p.bass == o.p.bass &&
+           (!p.bass || p.bassCrossover == o.p.bassCrossover) && pos == o.pos && len == o.len && offs == o.offs && rate == o.rate;
   }
 };
 
@@ -817,6 +818,8 @@ static std::vector<Widget> widgets()
       {W_SLIDER, "Lowest frequency", &g_np.fmin, NULL, 20, 500, true, true, 1, "%.0f Hz"},
       {W_SLIDER, "Highest frequency", &g_np.fmax, NULL, 1000, 11000, true, true, 1, "%.0f Hz"},
       {W_CHOICE, "Channel", NULL, NULL, 0, 0, false, true, 0, NULL, 0, &g_channel, CHANNELS, 5},
+      {W_TOGGLE, "Bass analysis (sharper low notes)", NULL, &g_np.bass, 0, 0, false, true},
+      {W_SLIDER, "Bass crossover", &g_np.bassCrossover, NULL, 80, 500, true, true, 1, "%.0f Hz"},
       {W_BUTTON, "Reset to defaults", NULL, NULL, 0, 0, false, false, 0, NULL, B_RESET},
       {W_HEADER, "Guides"},
       {W_TOGGLE, "Overtone ghosts (H)", NULL, &g_ghosts},
@@ -908,6 +911,7 @@ struct Setting
 static const Setting SETTINGS[] = {
     {"gamma", &g_np.gamma, NULL, NULL, 3, 40}, {"fmin", &g_np.fmin, NULL, NULL, 20, 500},
     {"fmax", &g_np.fmax, NULL, NULL, 1000, 11000}, {"channel", NULL, NULL, &g_channel, 0, CH_CENTRE},
+    {"bass", NULL, &g_np.bass}, {"basscrossover", &g_np.bassCrossover, NULL, NULL, 80, 500},
     {"floor", &g_rp.dbFloor, NULL, NULL, -120, -20}, {"contrast", &g_rp.contrast, NULL, NULL, 0.1, 3},
     {"brightness", &g_rp.brightness, NULL, NULL, -1, 1}, {"bias", &g_rp.bias, NULL, NULL, -2, 2},
     {"peaks", NULL, &g_rp.peaksOnly}, {"peakdim", &g_rp.peakDim, NULL, NULL, 0, 1},
@@ -1062,7 +1066,8 @@ static void panelMouse(int x, int y, bool down)
   else if (down && w.type == W_TOGGLE)
   {
     *w.flag = !*w.flag;
-    if (isRenderParam(w.flag)) updateValues();
+    if (w.analysis) requestAnalysis(false);
+    else if (isRenderParam(w.flag)) updateValues();
     else redraw();
   }
   else if (down && w.type == W_BUTTON) pressButton(w.button);

@@ -61,7 +61,7 @@ Guiding principles (several learned the hard way in DrawScore):
 | SPEC-2 | P0 | ✅ | Pitch axis aligned so each note row is centred on its pitch's frequency (DrawScore: notes span pitch ±0.5 semitone, interpolated over bin centres). |
 | SPEC-3 | P0 | ✅ | Auto-calibrated contrast as the starting point; every parameter is adjustable (see §3a). |
 | SPEC-4 | P1 | ✅ | Recompute in the background with progress, so long items don't freeze REAPER. Cached per channel, keyed by the analysis settings and the item's position, length, offset and playrate; not saved to disk. |
-| SPEC-5 | P1 | — | Optional second "bass" analysis with longer windows, blended below a crossover pitch. |
+| SPEC-5 | P1 | ✅ | Optional second "bass" analysis with longer windows, blended below a crossover pitch. Panel toggle plus a crossover slider (80 … 500 Hz, default 200 Hz). The bass pass uses the longest windows a 32768-sample block allows (about 3 Hz bandwidth) and cross-fades over half an octave below the crossover; it adds ~70 ms per 3 minutes. Two low notes a semitone apart separate clearly (self-checked). |
 | SPEC-6 | P1 | ◐ | Display filters: peaks only and noise subtraction are done; visible-window normalisation (DrawScribe) is not. |
 | SPEC-7 | P1 | ◐ | Recompute automatically when the audio item's offset, length, position or playrate changes (debounced 0.3 s); a changed source file isn't detected. |
 | SPEC-8 | P1 | ✅ | Channel choice: mix (= mid), left, right, side, and centre (mid magnitudes minus side magnitudes, which pulls out a centre-panned lead vocal). |
