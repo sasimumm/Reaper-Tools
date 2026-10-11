@@ -72,7 +72,8 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | cmd+D | duplicate selected notes right after the selection |
 | K | split the note under the mouse at the mouse (snapped; alt: not), or the selected notes there; with the mouse outside the notes, the selected notes at the edit cursor |
 | J | join selected notes into one (lyrics joined: `hel-` + `lo` = `hello`) |
-| S | settings panel |
+| S | settings panel (its sections fold at their headers) |
+| toolbar | voice (shift-click a voice to hide it), snap, suggestions and their source, contour/ghosts/explain, what you hear and the speed; ? shows every shortcut |
 | D | dock in REAPER's docker / float (remembered) |
 | L | link the visible time range to REAPER's arrange view (both ways) |
 | 1–4 | edit voice 1 (lead) to 4; the other voices are shown dimmed |

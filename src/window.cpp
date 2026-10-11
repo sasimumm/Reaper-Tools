@@ -11,6 +11,7 @@
 #include "preview.h"
 #include "settings.h"
 #include "takesync.h"
+#include "toolbar.h"
 
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
@@ -381,8 +382,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             previewPitch(g_ui.view.pitchAt(y));
             return 0;
         }
-        if (x < KB_W && y < RULER_H) {
-            g_ui.panel = !g_ui.panel;
+        if (layout().toolbar.in(x, y)) {
+            toolbarClick(x, y, mods(), layout());
             redraw();
             return 0;
         }

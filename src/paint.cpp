@@ -6,6 +6,7 @@
 #include "draw.h"
 #include "lyrics.h"
 #include "panel.h"
+#include "toolbar.h"
 
 static const int GUIDE_THICKNESS = 3; // overtone hover marks, pixels
 
@@ -345,6 +346,9 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
             continue;
         }
         const int v = suggestionVoice(i);
+        if (v >= 0 && (g_ui.hiddenVoices >> v & 1)) {
+            continue;
+        }
         // a dashed outline in the colour of the voice A puts it in: not a note yet
         const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;
         const int a = v >= 0 ? 220 : 160;
@@ -489,6 +493,9 @@ static std::string hoverHint(const Layout &L) {
     }
     if (x >= 0 && x < KB_W && y >= L.notes.t && y < L.notes.b) {
         return "Click: hear this pitch";
+    }
+    if (L.toolbar.in(x, y)) {
+        return toolbarTip(x, y, L);
     }
     return "?: shortcuts";
 }
@@ -779,6 +786,9 @@ void paint(HDC hdc) {
     // other voices, dimmed and not editable
     if (g_ui.showOthers) {
         for (int v = 0; v < WINDOW_VOICES; v++) {
+            if (g_ui.hiddenVoices >> v & 1) {
+                continue;
+            }
             for (const Note &nt : g_session.others[v].notes) {
                 const int x0 = (int)lround(g_ui.view.x(nt.start)),
                           x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
@@ -852,18 +862,19 @@ void paint(HDC hdc) {
     cv.fill(n.l - 1, n.t, n.l, n.b, 0x000000);
 
     // ruler: bars on top, seconds below
-    cv.clip = {0, 0, ru.r, RULER_H};
-    cv.fill(0, 0, ru.r, RULER_H, g_theme.ruler);
-    cv.fill(0, RULER_H - 1, ru.r, RULER_H, 0x000000);
+    const int rt = ru.t; // under the toolbar
+    cv.clip = {0, rt, ru.r, ru.b};
+    cv.fill(0, rt, ru.r, ru.b, g_theme.ruler);
+    cv.fill(0, ru.b - 1, ru.r, ru.b, 0x000000);
     int lastLabel = -1000;
     for (const GridLine &g : grid) {
         if (g.level > 1) {
             continue;
         }
-        cv.fill(g.x, g.level == 0 ? 0 : 8, g.x + 1, 14, 0xa0a0a0);
+        cv.fill(g.x, rt + (g.level == 0 ? 0 : 8), g.x + 1, rt + 14, 0xa0a0a0);
         if (g.level == 0 && g.x - lastLabel >= 36) {
             snprintf(buf, sizeof(buf), "%d", g.measure + 1);
-            text(dc, buf, g.x + 3, 0, g.x + 60, 14, g_theme.text, DT_LEFT);
+            text(dc, buf, g.x + 3, rt, g.x + 60, rt + 14, g_theme.text, DT_LEFT);
             lastLabel = g.x;
         }
     }
@@ -878,17 +889,16 @@ void paint(HDC hdc) {
          (double)k * secStep <= g_ui.view.t(n.r); k++) {
         const double t = (double)k * secStep;
         const int x = (int)lround(g_ui.view.x(t));
-        cv.fill(x, 22, x + 1, RULER_H - 1, 0x707070);
+        cv.fill(x, rt + 22, x + 1, ru.b - 1, 0x707070);
         format_timestr_pos(t, buf, sizeof(buf), 0);
-        text(dc, buf, x + 3, 14, x + 90, RULER_H - 1, g_theme.dim, DT_LEFT);
+        monoText(dc, buf, x + 3, rt + 14, x + 90, ru.b - 1, g_theme.dim, DT_LEFT);
     }
     for (int f : g_analysis.onsets) {
         const int ox = (int)lround(g_ui.view.x(frameTime(f)));
-        cv.fill(ox - 1, RULER_H - 6, ox + 2, RULER_H - 1, 0xffa040);
+        cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, 0xffa040);
     }
-    cv.clip = {0, 0, KB_W, RULER_H};
-    cv.fill(0, 0, KB_W, RULER_H, g_theme.button);
-    text(dc, g_ui.panel ? "Hide (S)" : "Settings", 0, 0, KB_W, RULER_H, g_theme.text, DT_CENTER);
+    cv.clip = {0, rt, KB_W, ru.b};
+    cv.fill(0, rt, KB_W, ru.b, g_theme.button);
 
     // chords lane: the chord items' chords, edited in the arrange view
     {
@@ -912,21 +922,21 @@ void paint(HDC hdc) {
     }
 
     // time selection
-    cv.clip = {n.l, 0, n.r, n.b};
+    cv.clip = {n.l, ru.t, n.r, n.b};
     double selA = 0, selB = 0;
     GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
     if (selB > selA) {
         const int xa = (int)lround(g_ui.view.x(selA)), xb = (int)lround(g_ui.view.x(selB));
-        cv.fill(xa, 0, xb, n.b, 0xffffff, 22);
-        cv.fill(xa, 0, xa + 1, n.b, 0xffffff, 90), cv.fill(xb, 0, xb + 1, n.b, 0xffffff, 90);
+        cv.fill(xa, ru.t, xb, n.b, 0xffffff, 22);
+        cv.fill(xa, ru.t, xa + 1, n.b, 0xffffff, 90), cv.fill(xb, ru.t, xb + 1, n.b, 0xffffff, 90);
     }
 
     // cursors
     int x = (int)lround(g_ui.view.x(GetCursorPosition()));
-    cv.fill(x, 0, x + 1, n.b, C_EDIT_CURSOR);
+    cv.fill(x, ru.t, x + 1, n.b, C_EDIT_CURSOR);
     if (GetPlayState() & 1) {
         x = (int)lround(g_ui.view.x(GetPlayPosition2()));
-        cv.fill(x, 0, x + 1, n.b, C_PLAY_CURSOR);
+        cv.fill(x, ru.t, x + 1, n.b, C_PLAY_CURSOR);
     }
 
     // lyrics lane: the visible lyric line as text, each syllable at its note's start
@@ -986,6 +996,7 @@ void paint(HDC hdc) {
     if (L.panelShown) {
         drawPanel(cv, dc);
     }
+    drawToolbar(cv, dc, L);
 
     StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S,
                SRCCOPY); // 2:1 is SWELL's retina blit

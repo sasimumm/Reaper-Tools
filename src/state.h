@@ -75,7 +75,8 @@ struct WindowState {
     HWND edit = NULL; // lyric edit field while typing; identifies its note by start and pitch
     bool analysisDirty = false; // an analysis slider moved; recomputed on mouse up
     int mouseX = -1, mouseY = -1;
-    bool help = false; // the shortcut sheet is shown (?)
+    bool help = false;         // the shortcut sheet is shown (?)
+    unsigned hiddenVoices = 0; // bit per voice: not drawn (shift-click its toolbar chip)
 };
 inline WindowState g_ui;
 

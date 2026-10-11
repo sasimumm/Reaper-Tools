@@ -123,16 +123,18 @@ Layout computeLayout(int width, int height, bool panelWanted) {
     const Rect &c = L.client;
     L.tooSmall = c.r < MIN_W || c.b < MIN_H;
     L.panelShown = panelWanted && c.r >= KB_W + PANEL_W + 100;
+    const int top = TOOLBAR_H + RULER_H + CHORDS_H;
     const Rect n = {
-        KB_W, RULER_H + CHORDS_H, std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0)),
-        std::max(RULER_H + CHORDS_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
+        KB_W, top, std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0)),
+        std::max(top + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
     };
+    L.toolbar = {0, 0, c.r, TOOLBAR_H};
     L.notes = n;
-    L.ruler = {n.l, 0, n.r, RULER_H};
-    L.chords = {n.l, RULER_H, n.r, n.t};
+    L.ruler = {n.l, TOOLBAR_H, n.r, TOOLBAR_H + RULER_H};
+    L.chords = {n.l, TOOLBAR_H + RULER_H, n.r, n.t};
     L.lyrics = {n.l, n.b, n.r, n.b + LYRICS_H};
     L.overview = {n.l, n.b + LYRICS_H, n.r, n.b + LYRICS_H + OVERVIEW_H};
     L.status = {0, L.overview.b, c.r, c.b};
-    L.panel = {n.r, 0, c.r, c.b};
+    L.panel = {n.r, TOOLBAR_H, c.r, L.status.t};
     return L;
 }

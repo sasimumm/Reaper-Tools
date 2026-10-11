@@ -38,21 +38,22 @@ struct Settings {
 
 // --- layout, in points ------------------------------------------------------------------
 
-static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18,
-                 OVERVIEW_H = 28, CHORDS_H = 20;
+static const int KB_W = 56, TOOLBAR_H = 34, RULER_H = 30, STATUS_H = 22, PANEL_W = 250,
+                 LYRICS_H = 18, OVERVIEW_H = 28, CHORDS_H = 20;
 // Below this size only the background is drawn, so the areas always fit in the client rect.
 static const int MIN_W = KB_W + 40,
-                 MIN_H = RULER_H + CHORDS_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
+                 MIN_H = TOOLBAR_H + RULER_H + CHORDS_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
 
 struct Rect {
     int l, t, r, b;
     bool in(int x, int y) const { return x >= l && x < r && y >= t && y < b; }
 };
 
-// Top to bottom: ruler, chords lane, notes (keyboard to their left), lyrics lane, overview, status
-// line; the settings panel on the right when there is room for it.
+// Top to bottom: toolbar (full width), ruler, chords lane, notes (keyboard to their left), lyrics
+// lane, overview, status line (full width); the settings panel on the right, under the toolbar,
+// when there is room for it.
 struct Layout {
-    Rect client, ruler, chords, notes, lyrics, overview, status, panel;
+    Rect client, toolbar, ruler, chords, notes, lyrics, overview, status, panel;
     bool panelShown;
     bool tooSmall; // below MIN_W x MIN_H: only the background is drawn
 };

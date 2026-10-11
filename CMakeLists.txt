@@ -35,6 +35,7 @@ add_library(reaper_reatrace MODULE
   src/preview.cpp
   src/settings.cpp
   src/takesync.cpp
+  src/toolbar.cpp
   src/notesync.cpp
   src/model.cpp
   src/contour.cpp

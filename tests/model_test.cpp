@@ -69,11 +69,13 @@ int main() {
     {
         const Layout L = computeLayout(1300, 760, true);
         assert(L.panelShown && !L.tooSmall);
-        assert(L.ruler.t == 0 && L.ruler.b == L.chords.t && L.chords.b == L.notes.t);
+        assert(L.toolbar.t == 0 && L.toolbar.r == 1300 && L.toolbar.b == L.ruler.t);
+        assert(L.ruler.b == L.chords.t && L.chords.b == L.notes.t);
         assert(L.notes.b == L.lyrics.t && L.lyrics.b == L.overview.t && L.overview.b == L.status.t);
         assert(L.status.b == 760 && L.status.b - L.status.t == STATUS_H);
         assert(L.notes.l == KB_W && L.notes.r == L.panel.l && L.panel.r == 1300 &&
                1300 - L.panel.l == PANEL_W);
+        assert(L.panel.t == L.toolbar.b && L.panel.b == L.status.t);
         assert(L.ruler.l == L.notes.l && L.ruler.r == L.notes.r && L.overview.r == L.notes.r);
 
         const Layout off = computeLayout(1300, 760, false);

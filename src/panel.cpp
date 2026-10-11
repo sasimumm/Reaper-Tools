@@ -4,19 +4,14 @@
 #include "commands.h"
 #include "settings.h"
 
-static const char *const VOICES[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
-static const char *const SUGGEST_FROM[] = {"Note estimator", "Lead contour"};
-
 static const char *const CHANNELS[] = {
     "Mix", "Left", "Right", "Side", "Centre"
 }; // centre: mid minus side
 
-static const char *const SPEEDS[] = {"100%", "75%", "50%"};
 static const char *const COLORMAPS[] = {"Graphite", "Magma"}; // COLORMAP_*
 static const double SPEED_RATES[] = {1, 0.75, 0.5};
 static int g_speed;
 // Balance: which of audio and notes is heard (track mutes), and the voice tracks' volume.
-static const char *const LISTEN[] = {"Both", "Audio", "Notes"};
 enum { LISTEN_BOTH, LISTEN_AUDIO, LISTEN_NOTES };
 static int g_listen;
 static double g_notesDb; // read back from the lead voice track
@@ -53,30 +48,13 @@ struct Widget {
     int optionCount = 0;
 };
 
-static std::vector<Widget> widgets() {
+static const char *const AUTO[] = {"Auto: whole item", "Auto: visible"};
+
+// Sections fold at their header; what changes while transcribing is in the toolbar.
+static std::vector<Widget> allWidgets() {
     return {
-        {.type = W_BUTTONS,
-         .label = "Presets",
-         .button = B_PRESET,
-         .options = PRESETS,
-         .optionCount = 3},
-        {.type = W_BUTTONS,
-         .label = "Settings for new items",
-         .button = B_SAVE_DEFAULT,
-         .options = DEFAULTS,
-         .optionCount = 2},
-        {.type = W_CHOICE,
-         .label = "Voice (1-4)",
-         .choice = &g_ui.voicePick,
-         .options = VOICES,
-         .optionCount = WINDOW_VOICES},
-        {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_ui.showOthers},
-        {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
-        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_settings.followTheme},
-        {.type = W_TOGGLE,
-         .label = "Link time to arrange view (L)",
-         .flag = &g_settings.linkArrange},
         {.type = W_HEADER, .label = "Display"},
+        {.type = W_BUTTONS, .label = "", .button = B_AUTO_ALL, .options = AUTO, .optionCount = 2},
         {.type = W_SLIDER,
          .label = "Floor",
          .value = &g_settings.rp.dbFloor,
@@ -132,9 +110,46 @@ static std::vector<Widget> widgets() {
          .hi = 0.5,
          .display = 100,
          .fmt = "%.0f%%"},
-        {.type = W_BUTTON, .label = "Auto: whole item", .button = B_AUTO_ALL},
-        {.type = W_BUTTON, .label = "Auto: visible", .button = B_AUTO_VIEW},
+        {.type = W_HEADER, .label = "Suggestions and guides"},
+        {.type = W_TOGGLE,
+         .label = "Front-end vote (slower)",
+         .flag = &g_settings.estimateVote,
+         .analysis = true},
+        {.type = W_TOGGLE,
+         .label = "Drawn notes take the sung pitch",
+         .flag = &g_settings.pitchFromContour},
+        {.type = W_SLIDER,
+         .label = "Overtones",
+         .value = &g_settings.harmonics,
+         .lo = 2,
+         .hi = 16,
+         .display = 1,
+         .fmt = "%.0f"},
+        {.type = W_SLIDER,
+         .label = "Guide opacity",
+         .value = &g_settings.guideOpacity,
+         .hi = 1,
+         .display = 1,
+         .fmt = "%.2f"},
+        {.type = W_SLIDER,
+         .label = "Quantise strength",
+         .value = &g_settings.quantStrength,
+         .hi = 1,
+         .display = 100,
+         .fmt = "%.0f%%"},
+        {.type = W_BUTTON, .label = "Quantise selected notes (Q)", .button = B_QUANTISE},
         {.type = W_HEADER, .label = "Analysis"},
+        {.type = W_BUTTONS,
+         .label = "Presets",
+         .button = B_PRESET,
+         .options = PRESETS,
+         .optionCount = 3},
+        {.type = W_CHOICE,
+         .label = "Channel",
+         .analysis = true,
+         .choice = &g_settings.channel,
+         .options = CHANNELS,
+         .optionCount = 5},
         {.type = W_SLIDER,
          .label = "Resolution (gamma)",
          .value = &g_settings.np.gamma,
@@ -170,12 +185,6 @@ static std::vector<Widget> widgets() {
          .analysis = true,
          .display = 1,
          .fmt = "%.0f"},
-        {.type = W_CHOICE,
-         .label = "Channel",
-         .analysis = true,
-         .choice = &g_settings.channel,
-         .options = CHANNELS,
-         .optionCount = 5},
         {.type = W_TOGGLE,
          .label = "Bass analysis (sharper low notes)",
          .flag = &g_settings.np.bass,
@@ -190,58 +199,8 @@ static std::vector<Widget> widgets() {
          .display = 1,
          .fmt = "%.0f Hz"},
         {.type = W_BUTTON, .label = "Reset to defaults", .button = B_RESET},
-        {.type = W_HEADER, .label = "Guides"},
-        {.type = W_TOGGLE, .label = "Overtone ghosts (H)", .flag = &g_settings.ghosts},
-        {.type = W_TOGGLE, .label = "Explain away drawn notes (X)", .flag = &g_settings.explain},
-        {.type = W_SLIDER,
-         .label = "Overtones",
-         .value = &g_settings.harmonics,
-         .lo = 2,
-         .hi = 16,
-         .display = 1,
-         .fmt = "%.0f"},
-        {.type = W_SLIDER,
-         .label = "Guide opacity",
-         .value = &g_settings.guideOpacity,
-         .hi = 1,
-         .display = 1,
-         .fmt = "%.2f"},
-        {.type = W_TOGGLE, .label = "Pitch contour (P)", .flag = &g_settings.showContour},
-        {.type = W_TOGGLE,
-         .label = "Suggested notes (N, A: accept all)",
-         .flag = &g_settings.suggest},
-        {.type = W_CHOICE,
-         .label = "Suggest from",
-         .choice = &g_settings.suggestFrom,
-         .options = SUGGEST_FROM,
-         .optionCount = 2},
-        {.type = W_TOGGLE,
-         .label = "Estimator: front-end vote (slower)",
-         .flag = &g_settings.estimateVote,
-         .analysis = true},
-        {.type = W_TOGGLE,
-         .label = "Note pitch from contour",
-         .flag = &g_settings.pitchFromContour},
-        {.type = W_HEADER, .label = "Quantise"},
-        {.type = W_SLIDER,
-         .label = "Quantise strength",
-         .value = &g_settings.quantStrength,
-         .hi = 1,
-         .display = 100,
-         .fmt = "%.0f%%"},
-        {.type = W_BUTTON, .label = "Quantise selected notes (Q)", .button = B_QUANTISE},
         {.type = W_HEADER, .label = "Playback"},
         {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &g_settings.audition},
-        {.type = W_CHOICE,
-         .label = "Speed",
-         .choice = &g_speed,
-         .options = SPEEDS,
-         .optionCount = 3},
-        {.type = W_CHOICE,
-         .label = "Listen to (B: swap audio/notes)",
-         .choice = &g_listen,
-         .options = LISTEN,
-         .optionCount = 3},
         {.type = W_SLIDER,
          .label = "Notes volume",
          .value = &g_notesDb,
@@ -249,11 +208,45 @@ static std::vector<Widget> widgets() {
          .hi = 6,
          .display = 1,
          .fmt = "%+.1f dB"},
+        {.type = W_HEADER, .label = "Window"},
+        {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_ui.showOthers},
+        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_settings.followTheme},
+        {.type = W_TOGGLE,
+         .label = "Link time to arrange view (L)",
+         .flag = &g_settings.linkArrange},
+        {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
+        {.type = W_BUTTONS,
+         .label = "Settings for new items",
+         .button = B_SAVE_DEFAULT,
+         .options = DEFAULTS,
+         .optionCount = 2},
     };
 }
 
+// Folded sections, by header label; Analysis and Window start folded.
+static std::vector<std::string> g_folded = {"Analysis", "Window"};
+
+static bool folded(const char *header) {
+    return std::find(g_folded.begin(), g_folded.end(), header) != g_folded.end();
+}
+
+// The widgets shown: every header, and what's under the unfolded ones.
+static std::vector<Widget> widgets() {
+    std::vector<Widget> out;
+    bool hide = false;
+    for (const Widget &w : allWidgets()) {
+        if (w.type == W_HEADER) {
+            hide = folded(w.label);
+        }
+        if (w.type == W_HEADER || !hide) {
+            out.push_back(w);
+        }
+    }
+    return out;
+}
+
 static int widgetHeight(WidgetType t) {
-    return t == W_HEADER                     ? 22
+    return t == W_HEADER                     ? 30
            : t == W_SLIDER                   ? 32
            : t == W_TOGGLE                   ? 20
            : t == W_CHOICE || t == W_BUTTONS ? 42
@@ -280,7 +273,7 @@ static int panelContentHeight() {
     for (const Widget &w : widgets()) {
         h += widgetHeight(w.type);
     }
-    return h + 70; // room for the key help
+    return h + 12;
 }
 
 void scrollPanel(int dy) {
@@ -291,7 +284,7 @@ void scrollPanel(int dy) {
 
 static int widgetAt(int y) {
     std::vector<Widget> ws = widgets();
-    int top = 8 - g_panelScroll;
+    int top = panelArea().t + 8 - g_panelScroll;
     for (size_t i = 0; i < ws.size(); i++) {
         const int h = widgetHeight(ws[i].type);
         if (y >= top && y < top + h) {
@@ -425,6 +418,17 @@ static void applyNotesVolume() {
     TrackList_AdjustWindows(false);
 }
 
+int listenMode() { return g_listen; }
+void setListen(int mode) {
+    g_listen = std::clamp(mode, 0, 2);
+    applyListen();
+}
+int speedIndex() { return g_speed; }
+void setSpeed(int index) {
+    g_speed = std::clamp(index, 0, 2);
+    applySpeed();
+}
+
 // Mutes and volume can also change in REAPER: show what the tracks say.
 static void readBalance() {
     MediaTrack *a = GetMediaItem_Track(g_session.audio);
@@ -449,6 +453,18 @@ void panelMouse(int x, int y, bool down) {
         return;
     }
     const Widget &w = ws[g_panelWidget];
+    if (down && w.type == W_HEADER) { // fold or unfold the section
+        const auto it = std::find(g_folded.begin(), g_folded.end(), w.label);
+        if (it != g_folded.end()) {
+            g_folded.erase(it);
+        } else {
+            g_folded.push_back(w.label);
+        }
+        g_panelWidget = -1;
+        scrollPanel(0); // stay within the shorter content
+        redraw();
+        return;
+    }
     if (w.type == W_SLIDER) {
         const double v = sliderValue(w, (double)(x - p.l - 12) / (p.r - p.l - 24));
         if (v != *w.value) {
@@ -476,13 +492,7 @@ void panelMouse(int x, int y, bool down) {
             return;
         }
         *w.choice = i;
-        if (w.choice == &g_speed) {
-            applySpeed();
-        } else if (w.choice == &g_listen) {
-            applyListen();
-        } else if (w.choice == &g_ui.voicePick) {
-            g_ui.voicePick = g_session.voice, selectVoice(i);
-        } else if (isRenderParam(w.choice)) {
+        if (isRenderParam(w.choice)) {
             updateValues();
         } else if (w.analysis) {
             requestAnalysis(false);
@@ -495,24 +505,22 @@ void drawPanel(Canvas &cv, HDC dc) {
     if (p.r <= p.l) {
         return;
     }
+    cv.clip = p; // scrolled widgets stay out of the toolbar and the status line
     cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
     cv.fill(p.l, p.t, p.l + 1, p.b, 0x000000);
-    // show the actual playrate, which can also be changed elsewhere
-    const double rate = Master_GetPlayRate(NULL);
-    for (int i = 0; i < 3; i++) {
-        if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) {
-            g_speed = i;
-        }
-    }
-    readBalance();
+    syncPlayback();
     std::vector<Widget> ws = widgets();
-    int top = 8 - g_panelScroll;
+    int top = panelArea().t + 8 - g_panelScroll;
     char buf[64];
     const int l = p.l + 12, r = p.r - 12;
     for (const Widget &w : ws) {
         const int h = widgetHeight(w.type);
         if (w.type == W_HEADER) {
-            text(dc, w.label, l, top + 4, r, top + h, C_ACCENT, DT_LEFT);
+            if (top > p.t + 4) {
+                cv.fill(p.l + 1, top + 2, p.r, top + 3, g_theme.track);
+            }
+            text(dc, w.label, l, top + 6, r, top + h, g_theme.text, DT_LEFT);
+            text(dc, folded(w.label) ? "+" : "–", l, top + 6, r, top + h, g_theme.dim, DT_RIGHT);
         } else if (w.type == W_SLIDER) {
             text(dc, w.label, l, top, r, top + 16, g_theme.text, DT_LEFT);
             snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
@@ -545,13 +553,17 @@ void drawPanel(Canvas &cv, HDC dc) {
         }
         top += h;
     }
-    const char *help[] = {
-        "Keys: S panel, G snap, F fit, Z zoom to", "selection, H ghosts, X explain, Enter lyric,",
-        "[ ] brightness, - = contrast, , . resolution", "Scroll here to see more settings."
-    };
-    for (const char *line : help) {
-        text(dc, line, l, top + 6, r, top + 22, g_theme.dim, DT_LEFT), top += 16;
+}
+
+// The speed and what is heard, as REAPER has them (both can change elsewhere).
+void syncPlayback() {
+    const double rate = Master_GetPlayRate(NULL);
+    for (int i = 0; i < 3; i++) {
+        if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) {
+            g_speed = i;
+        }
     }
+    readBalance();
 }
 
 void finishPanelDrag() {
