@@ -38,7 +38,7 @@ std::vector<std::string> splitSyllables(const std::string &text);
 
 // No modes: drag on empty space draws, drag a note body moves, drag an edge resizes,
 // shift+drag on empty space selects with a marquee, cmd+click toggles selection.
-// alt disables snapping. Moves and resizes apply original + delta, snapped via the anchor note.
+// alt disables snapping, shift locks a move to time or pitch. Moves and resizes apply original + delta, snapped via the anchor note.
 class NoteEditor
 {
 public:
@@ -73,5 +73,6 @@ private:
   double downX = 0, downY = 0, curX = 0, curY = 0;
   int anchor = -1, drawIndex = -1;
   bool changed = false, cmdMarquee = false;
+  enum Axis { AXIS_FREE, AXIS_TIME, AXIS_PITCH } axis = AXIS_FREE; // shift+move: only along this
   std::vector<Note> orig; // notes at mouse down
 };

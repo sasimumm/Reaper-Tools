@@ -41,6 +41,21 @@ int main()
   ed.mouseUp(v, v.x(2.13), v.y(62), MOD_ALT);
   assert(near(ed.notes[0].start, 1.63));
 
+  // Shift locks a move to the axis it mostly went along, once past 10 px; releasing shift unlocks.
+  ed.notes = {{1.0, 2.0, 60, true, -1}};
+  ed.snap = [](double t) { return t; };
+  ed.mouseDown(v, v.x(1.5), v.y(60), 0);
+  ed.mouseMove(v, v.x(1.5) + 30, v.y(60) - 8, MOD_SHIFT); // mostly right: time only
+  ed.mouseMove(v, v.x(1.5) + 30, v.y(63), MOD_SHIFT);
+  assert(near(ed.notes[0].start, 1.3) && ed.notes[0].pitch == 60);
+  ed.mouseUp(v, v.x(1.5) + 30, v.y(63), 0); // shift released: free again
+  assert(near(ed.notes[0].start, 1.3) && ed.notes[0].pitch == 63);
+  ed.mouseDown(v, v.x(1.8), v.y(63), 0);
+  ed.mouseMove(v, v.x(1.8) + 4, v.y(65), MOD_SHIFT); // mostly up: pitch only
+  ed.mouseUp(v, v.x(2.8), v.y(65), MOD_SHIFT);
+  assert(near(ed.notes[0].start, 1.3) && ed.notes[0].pitch == 65);
+  ed.snap = [](double t) { return round(t * 4) / 4; };
+
   // Dragging the right edge resizes; the end can't pass the start.
   ed.notes[0] = {1.0, 2.0, 62, true, -1};
   ed.mouseDown(v, v.x(2.0) - 2, v.y(62), 0);

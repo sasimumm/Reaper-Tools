@@ -6,6 +6,8 @@
 // Hit zones from DrawScore: note rects are inflated by 3 px, 6 px edge zones resize,
 // notes narrower than 12 px can only be moved, and a drag starts after 3 px.
 static const double INFLATE = 3, EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD = 3;
+// Shift while moving locks to the axis the drag mostly went along once it passes this (DrawScribe).
+static const double AXIS_LOCK_THRESHOLD = 10;
 
 NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *noteIndex) const
 {
@@ -26,7 +28,7 @@ NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *n
 void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods)
 {
   downX = curX = x, downY = curY = y;
-  changed = false;
+  changed = false, axis = AXIS_FREE;
   orig = notes;
   int i = -1;
   Hit h = hitTest(v, x, y, &i);
@@ -79,9 +81,12 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods)
   }
   else if (mode == MOVE)
   {
+    const double ax = fabs(x - downX), ay = fabs(y - downY);
+    if (!(mods & MOD_SHIFT)) axis = AXIS_FREE;
+    else if (axis == AXIS_FREE && (ax > AXIS_LOCK_THRESHOLD || ay > AXIS_LOCK_THRESHOLD)) axis = ax >= ay ? AXIS_TIME : AXIS_PITCH;
     const Note &a = orig[anchor];
-    const double dt = sn(a.start + dtRaw) - a.start;
-    const int dp = v.pitchAt(y) - v.pitchAt(downY);
+    const double dt = axis == AXIS_PITCH ? 0 : sn(a.start + dtRaw) - a.start;
+    const int dp = axis == AXIS_TIME ? 0 : v.pitchAt(y) - v.pitchAt(downY);
     for (size_t i = 0; i < notes.size(); i++)
       if (orig[i].sel)
       {

@@ -143,7 +143,7 @@ vibrato, scoops and slides, so a sung note has to be reduced to one semitone.
 | EDIT-5 | P0 | ◐ | Delete/Backspace and right-click delete. Double-click edits the lyric instead of deleting. |
 | EDIT-6 | P0 | ✅ | Each gesture is one REAPER undo point (`Undo_BeginBlock2`/`EndBlock2`); selection-only changes make none. |
 | EDIT-7 | P1 | ✅ | Option/alt held = no snap while drawing, moving or resizing. |
-| EDIT-8 | P1 | — | Axis lock during a move once the drag passes 10 px (DrawScribe). |
+| EDIT-8 | P1 | ✅ | Axis lock during a move once the drag passes 10 px (DrawScribe). Only while shift is held, so diagonal moves still work; releasing shift unlocks (self-checked). |
 | EDIT-9 | P1 | — | Arrow keys nudge selection (left/right = one grid step, up/down = semitone, shift+up/down = octave). |
 | EDIT-10 | P1 | — | Copy, paste at edit cursor, duplicate (cmd+D), split at mouse, join selected notes. |
 | EDIT-11 | P1 | ✅ | Draw a note and audition it immediately (see §7). |
