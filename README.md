@@ -50,7 +50,11 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | P | pitch contour (white line: the sung pitch) |
 | N | suggested notes (dashed: stable stretches of the contour); click one to accept it |
 | A | accept all suggested notes in view |
-| cmd+V | paste lyrics: one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
+| cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |
+| cmd+V | after a copy here: paste the notes at the edit cursor. Once other text has been copied: paste lyrics, one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
+| cmd+D | duplicate selected notes right after the selection |
+| K | split the note under the mouse at the mouse (snapped; alt: not), or the selected notes there; with the mouse outside the notes, the selected notes at the edit cursor |
+| J | join selected notes into one (lyrics joined: `hel-` + `lo` = `hello`) |
 | S | settings panel |
 | D | dock in REAPER's docker / float (remembered) |
 | L | link the visible time range to REAPER's arrange view (both ways) |

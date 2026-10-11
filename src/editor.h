@@ -61,6 +61,13 @@ public:
   bool selectAll(bool sel);
   bool deleteAt(const ViewMap &v, double x, double y);
 
+  // Editing commands; all return true if notes changed. New notes come out selected.
+  std::vector<Note> copySelected() const;               // as unwritten notes, lyrics kept
+  void paste(const std::vector<Note> &clip, double at); // earliest clip note starts at `at`
+  bool duplicateSelected();                             // right after the selection
+  bool splitAt(double t, int note = -1);                // that note, or selected notes spanning t
+  bool joinSelected();                                  // one note from the first's start to the last's end
+
   bool marquee(double r[4]) const; // marquee rectangle while selecting
   int drawing() const { return mode == DRAW ? drawIndex : -1; }
   // the note being drawn, moved or resized, -1 if none

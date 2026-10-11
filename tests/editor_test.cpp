@@ -98,5 +98,28 @@ int main()
   assert(syl.size() == 9);
   for (int k = 0; k < 9; k++) assert(syl[k] == want[k]);
 
+  // Copy/paste at a time, duplicate after the selection, split, join (lyrics joined without hyphens).
+  {
+    NoteEditor e;
+    e.notes = {{1, 2, 60, true, 0, "hel-", 3}, {2, 3, 62, true, 1, "lo"}, {5, 6, 64, false, 2}};
+    const std::vector<Note> clip = e.copySelected();
+    e.paste(clip, 10);
+    assert(e.notes.size() == 5 && near(e.notes[3].start, 10) && near(e.notes[4].end, 12) && e.notes[3].idx == -1);
+    assert(e.notes[3].lyric == "hel-" && e.notes[3].lyricIdx == -1 && e.notes[3].sel && !e.notes[0].sel);
+    assert(e.duplicateSelected() && e.notes.size() == 7 && near(e.notes[5].start, 12) && near(e.notes[6].end, 14));
+
+    e.notes = {{1, 2, 60, false, 0, "la"}};
+    assert(!e.splitAt(1.5)); // nothing selected
+    assert(e.splitAt(1.5, 0) && e.notes.size() == 2 && near(e.notes[0].end, 1.5) && near(e.notes[1].start, 1.5));
+    assert(e.notes[0].lyric == "la" && e.notes[1].lyric.empty() && e.notes[1].pitch == 60);
+    assert(!e.splitAt(1.52, 1)); // too close to the edge
+
+    e.notes = {{2, 3, 62, true, 4, "lo"}, {1, 2, 60, true, 3, "hel-"}, {4, 5, 60, false, 5}};
+    e.deleted.clear();
+    assert(e.joinSelected() && e.notes.size() == 2);
+    assert(near(e.notes[0].start, 1) && near(e.notes[0].end, 3) && e.notes[0].pitch == 60 && e.notes[0].lyric == "hello");
+    assert(e.deleted.size() == 1 && e.deleted[0] == 4);
+  }
+
   printf("ok\n");
 }

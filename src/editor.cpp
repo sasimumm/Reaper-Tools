@@ -178,6 +178,79 @@ bool NoteEditor::deleteAt(const ViewMap &v, double x, double y)
   return true;
 }
 
+std::vector<Note> NoteEditor::copySelected() const
+{
+  std::vector<Note> out;
+  for (const Note &n : notes)
+    if (n.sel) out.push_back({n.start, n.end, n.pitch, true, -1, n.lyric});
+  return out;
+}
+
+void NoteEditor::paste(const std::vector<Note> &clip, double at)
+{
+  if (clip.empty()) return;
+  double first = clip[0].start;
+  for (const Note &n : clip) first = std::min(first, n.start);
+  for (Note &n : notes) n.sel = false;
+  for (Note n : clip)
+  {
+    n.start += at - first, n.end += at - first, n.sel = true, n.idx = n.lyricIdx = -1;
+    notes.push_back(n);
+  }
+}
+
+bool NoteEditor::duplicateSelected()
+{
+  const std::vector<Note> clip = copySelected();
+  if (clip.empty()) return false;
+  double a = clip[0].start, b = clip[0].end;
+  for (const Note &n : clip) a = std::min(a, n.start), b = std::max(b, n.end);
+  paste(clip, b);
+  return true;
+}
+
+bool NoteEditor::splitAt(double t, int note)
+{
+  bool any = false;
+  const size_t count = notes.size();
+  for (size_t i = 0; i < count; i++)
+  {
+    if (note >= 0 ? (int)i != note : !notes[i].sel) continue;
+    if (t < notes[i].start + minLen || t > notes[i].end - minLen) continue;
+    Note second = {t, notes[i].end, notes[i].pitch, notes[i].sel, -1}; // the lyric stays on the first half
+    notes[i].end = t;
+    notes.push_back(second);
+    any = true;
+  }
+  return any;
+}
+
+bool NoteEditor::joinSelected()
+{
+  std::vector<int> sel;
+  for (size_t i = 0; i < notes.size(); i++)
+    if (notes[i].sel) sel.push_back((int)i);
+  if (sel.size() < 2) return false;
+  std::sort(sel.begin(), sel.end(), [&](int a, int b) { return notes[a].start < notes[b].start; });
+  Note &first = notes[sel[0]];
+  // lyrics are joined, dropping the hyphens between syllables: "hel-" + "lo" -> "hello"
+  for (size_t k = 1; k < sel.size(); k++)
+  {
+    const Note &n = notes[sel[k]];
+    first.end = std::max(first.end, n.end);
+    if (n.lyric.empty()) continue;
+    if (!first.lyric.empty() && first.lyric.back() == '-') first.lyric.pop_back();
+    first.lyric += n.lyric;
+  }
+  std::sort(sel.begin() + 1, sel.end(), std::greater<int>());
+  for (size_t k = 1; k < sel.size(); k++)
+  {
+    if (notes[sel[k]].idx >= 0) deleted.push_back(notes[sel[k]].idx);
+    notes.erase(notes.begin() + sel[k]);
+  }
+  return true;
+}
+
 bool NoteEditor::marquee(double r[4]) const
 {
   if (mode != MARQUEE) return false;

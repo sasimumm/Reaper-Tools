@@ -1916,18 +1916,58 @@ static void pitchFromContour(Note &nt)
     nt.pitch = (int)lround(sung);
 }
 
-// cmd+V: one syllable per note, to the selected notes (several selected) or from the selected
-// note onwards (one selected, or none: from the first note).
-static void pasteLyrics()
+static std::string clipboardText()
 {
   std::string text;
-  if (!OpenClipboard(g_hwnd)) return;
+  if (!OpenClipboard(g_hwnd)) return text;
   if (HANDLE h = GetClipboardData(CF_TEXT))
   {
     if (const char *p = (const char *)GlobalLock(h)) text = p;
     GlobalUnlock(h);
   }
   CloseClipboard();
+  return text;
+}
+
+// cmd+V pastes notes after a copy here, until other text is copied (the system clipboard's text
+// at copy time is remembered; it isn't overwritten). Otherwise it pastes lyrics.
+static std::vector<Note> g_noteClip;
+static std::string g_noteClipText;
+
+static void copyNotes(bool cut)
+{
+  std::vector<Note> clip = g_ed.copySelected();
+  if (clip.empty()) return;
+  g_noteClip = clip, g_noteClipText = clipboardText();
+  if (cut && g_ed.deleteSelected()) commitNotes();
+}
+
+static void pasteLyrics(const std::string &text);
+
+static void paste()
+{
+  const std::string text = clipboardText();
+  if (g_noteClip.empty() || text != g_noteClipText) { pasteLyrics(text); return; }
+  g_ed.paste(g_noteClip, GetCursorPosition());
+  commitNotes();
+}
+
+// Split: the note under the mouse at the (snapped) mouse time, else the selected notes there; with
+// the mouse outside the notes, the selected notes at the edit cursor.
+static void splitNotes()
+{
+  const Rect n = noteArea();
+  int hit = -1;
+  const bool inArea = n.in(g_mouseX, g_mouseY);
+  if (inArea) g_ed.hitTest(g_view, g_mouseX, g_mouseY, &hit);
+  const double t = inArea ? ((mods() & MOD_ALT) ? g_view.t(g_mouseX) : g_ed.snap(g_view.t(g_mouseX))) : GetCursorPosition();
+  if (g_ed.splitAt(t, hit)) commitNotes();
+}
+
+// paste lyrics: one syllable per note, to the selected notes (several selected) or from the
+// selected note onwards (one selected, or none: from the first note).
+static void pasteLyrics(const std::string &text)
+{
   const std::vector<std::string> syl = splitSyllables(text);
   if (syl.empty()) return;
 
@@ -1978,7 +2018,12 @@ static bool onKey(int key)
   else if (key == 'L' && !m) g_linkArrange = !g_linkArrange;
   else if (key == 'N' && !m) g_suggest = !g_suggest;
   else if (key == 'A' && !m) acceptVisibleSuggestions();
-  else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
+  else if (key == 'V' && (m & MOD_CMD)) paste();
+  else if (key == 'C' && (m & MOD_CMD)) copyNotes(false);
+  else if (key == 'X' && (m & MOD_CMD)) copyNotes(true);
+  else if (key == 'D' && (m & MOD_CMD)) { if (g_ed.duplicateSelected()) commitNotes(); }
+  else if (key == 'K' && !m) splitNotes();
+  else if (key == 'J' && !m) { if (g_ed.joinSelected()) commitNotes(); }
   else if (key == 'F' && !m) fitItem();
   else if (key == 'Z' && !m) zoomToSelection();
   else if (key == ('[' | CHARKEY)) g_rp.brightness = std::max(-1.0, g_rp.brightness - 0.05), updateValues();
@@ -2001,9 +2046,10 @@ static bool isOurKey(int key, int flags)
   case '[' | CHARKEY: case ']' | CHARKEY: case '-' | CHARKEY: case '=' | CHARKEY: case ',' | CHARKEY: case '.' | CHARKEY:
     return true;
   case 'A': return true;
-  case 'V': return cmd;
+  case 'V': case 'C': return cmd;
+  case 'X': case 'D': return cmd || !(flags & (FALT | FSHIFT));
   case '1': case '2': case '3': case '4': return !cmd && !(flags & (FALT | FSHIFT));
-  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'X': case 'Q': case 'D': case 'L': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': case 'Q': case 'L': case 'K': case 'J': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
