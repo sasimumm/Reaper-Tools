@@ -32,6 +32,10 @@ struct ViewMap
 
 enum { MOD_SHIFT = 1, MOD_CMD = 2, MOD_ALT = 4 };
 
+// Splits pasted lyrics into one syllable per note: words split on whitespace, and after each
+// hyphen, which stays with its syllable ("hel-lo world" -> "hel-", "lo", "world").
+std::vector<std::string> splitSyllables(const std::string &text);
+
 // No modes: drag on empty space draws, drag a note body moves, drag an edge resizes,
 // shift+drag on empty space selects with a marquee, cmd+click toggles selection.
 // alt disables snapping. Moves and resizes apply original + delta, snapped via the anchor note.

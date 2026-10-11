@@ -12,6 +12,9 @@ See `docs/piano-roll.md` for the full feature plan.
 
 Restart REAPER after deploying.
 
+The settings panel also has the analysis channel (Centre = mid minus side, which helps pull a
+centre-panned lead vocal out of a mix) and playback speed (100/75/50 %, pitch preserved).
+
 Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's notation
 editor and lyrics view.
 
@@ -28,11 +31,15 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | click, cmd+click, shift+drag | select, toggle selection, marquee select |
 | right-click, Delete/Backspace | delete note / selected notes |
 | hover | overtone marks (1–8) for the pitch under the mouse, and the octave check: level at the pitch one octave, a 12th and two octaves below; orange means the real note is probably lower |
-| alt while dragging | no snapping |
+| alt while dragging | no snapping; a drawn note otherwise takes the sung pitch under it |
 | scroll / shift+scroll / horizontal scroll | scroll pitch / time / time |
 | cmd+scroll or pinch, alt+scroll | zoom time, zoom pitch |
 | F, Z | fit item, zoom to selection |
-| G | snap to grid on/off (off by default for free-tempo recordings) |
+| G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
+| P | pitch contour (white line: the sung pitch) |
+| N | suggested notes (dashed: stable stretches of the contour); click one to accept it |
+| A | accept all suggested notes in view |
+| cmd+V | paste lyrics: one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
 | S | settings panel |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
 | Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |

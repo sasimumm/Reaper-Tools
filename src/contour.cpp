@@ -208,9 +208,18 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate, const st
 std::vector<int> detectOnsets(const Spectrogram &s)
 {
   std::vector<double> flux(s.frames, 0);
-  for (int f = 1; f < s.frames; f++)
+  std::vector<float> prev(s.bins), cur(s.bins);
+  for (int f = 0; f < s.frames; f++)
+  {
+    double sum = 0;
     for (int b = 0; b < s.bins; b++)
-      flux[f] += std::max(0.0, log1p(100.0 * s.at(f, b)) - log1p(100.0 * s.at(f - 1, b)));
+    {
+      cur[b] = log1pf(100.0f * s.at(f, b));
+      sum += std::max(0.0f, cur[b] - prev[b]);
+    }
+    if (f > 0) flux[f] = sum;
+    prev.swap(cur);
+  }
   double mean = 0, var = 0;
   for (double v : flux) mean += v / std::max(1, s.frames);
   for (double v : flux) var += (v - mean) * (v - mean) / std::max(1, s.frames);

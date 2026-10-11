@@ -14,6 +14,7 @@
 #undef min
 #undef max
 
+#include "contour.h"
 #include "editor.h"
 #include "nsgt.h"
 
@@ -46,7 +47,25 @@ static ViewMap g_view;
 static NoteEditor g_ed;
 static std::vector<Note> g_loaded; // notes as read from the take, by take index
 static std::string g_hash;
-static bool g_snapGrid;            // off by default: recordings are usually free tempo
+// Snapping: onsets (and note changes in the pitch contour) by default, since recordings are
+// usually free tempo and the grid means nothing until a tempo map is fitted.
+enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
+static int g_snapMode = SNAP_ONSETS;
+static const double ONSET_SNAP_RANGE = 0.03; // seconds
+
+static Contour g_contour;
+static std::vector<Segment> g_segments;   // stable-pitch stretches, shown as suggested notes
+static std::vector<int> g_onsets;         // frames
+static std::vector<double> g_snapTimes;   // onsets and segment edges, project time, sorted
+static bool g_showContour = true, g_suggest = true, g_pitchFromContour = true;
+
+static const char *const CHANNELS[] = {"Mix", "Left", "Right", "Side", "Centre (mid - side)"};
+enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
+static int g_channel = CH_MIX;
+
+static const char *const SPEEDS[] = {"100%", "75%", "50%"};
+static const double SPEED_RATES[] = {1, 0.75, 0.5};
+static int g_speed;
 static bool g_panel = true;
 static bool g_ghosts = true;   // faint outlines at each note's overtones
 static bool g_audition = true; // play a note through the notes track when clicked or drawn
@@ -128,26 +147,55 @@ static void updateValues()
   redraw();
 }
 
-static void analyze()
+static double frameTime(double f) { return g_audioPos + f / g_spec.frameRate(); }
+
+static void analyzeVocal()
 {
-  MediaItem_Take *take = GetActiveTake(g_audio);
-  if (!take) return;
+  g_contour = trackPitch(g_spec);
+  g_onsets = detectOnsets(g_spec);
+  g_segments = segmentContour(g_contour, g_spec.frameRate(), &g_onsets);
+  g_snapTimes.clear();
+  for (int f : g_onsets) g_snapTimes.push_back(frameTime(f));
+  for (const Segment &sg : g_segments) g_snapTimes.push_back(frameTime(sg.f0)), g_snapTimes.push_back(frameTime(sg.f1 + 1));
+  std::sort(g_snapTimes.begin(), g_snapTimes.end());
+}
+
+// mode: one of CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE (mono sources always use the mix)
+static Spectrogram analyzeChannel(MediaItem_Take *take, int mode)
+{
   AudioAccessor *acc = CreateTakeAudioAccessor(take);
   const int nch = std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
+  if (nch == 1) mode = CH_MIX;
   std::vector<double> buf;
   const double sr = g_np.sampleRate;
-  g_spec = computeNSGT(g_np, (long long)(g_audioLen * sr), [&](long long start, int n, float *out) {
+  Spectrogram s = computeNSGT(g_np, (long long)(g_audioLen * sr), [&](long long start, int n, float *out) {
     buf.assign((size_t)n * nch, 0); // the accessor leaves the buffer untouched where there's no audio
     GetAudioAccessorSamples(acc, (int)sr, nch, start / sr, n, buf.data()); // time relative to item start
     for (int i = 0; i < n; i++)
     {
-      double s = 0;
-      for (int c = 0; c < nch; c++) s += buf[(size_t)i * nch + c];
-      out[i] = (float)(s / nch);
+      const double l = buf[(size_t)i * nch], r = nch > 1 ? buf[(size_t)i * nch + 1] : l;
+      out[i] = (float)(mode == CH_LEFT ? l : mode == CH_RIGHT ? r : mode == CH_SIDE ? 0.5 * (l - r) : 0.5 * (l + r));
     }
   });
   DestroyAudioAccessor(acc);
+  return s;
+}
+
+static void analyze()
+{
+  MediaItem_Take *take = GetActiveTake(g_audio);
+  if (!take) return;
+  if (g_channel == CH_CENTRE)
+  {
+    // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
+    g_spec = analyzeChannel(take, CH_MIX);
+    Spectrogram side = analyzeChannel(take, CH_SIDE);
+    if (side.mag.size() == g_spec.mag.size())
+      for (size_t i = 0; i < g_spec.mag.size(); i++) g_spec.mag[i] = std::max(0.0f, g_spec.mag[i] - side.mag[i]);
+  }
+  else g_spec = analyzeChannel(take, g_channel);
   estimateNoise(g_spec, g_rp.noiseFraction);
+  analyzeVocal();
   g_analysisDirty = false;
 }
 
@@ -406,7 +454,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
 // --- settings panel --------------------------------------------------------------
 
-enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON };
+enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE };
 enum { B_AUTO_ALL = 1, B_AUTO_VIEW, B_RESET };
 struct Widget
 {
@@ -419,6 +467,9 @@ struct Widget
   double display;  // shown value = value * display
   const char *fmt;
   int button;
+  int *choice;               // choices: click cycles through options
+  const char *const *options;
+  int optionCount;
 };
 
 static std::vector<Widget> widgets()
@@ -440,16 +491,22 @@ static std::vector<Widget> widgets()
       {W_SLIDER, "Resolution (gamma)", &g_np.gamma, NULL, 3, 40, true, true, 1, "%.1f Hz"},
       {W_SLIDER, "Lowest frequency", &g_np.fmin, NULL, 20, 500, true, true, 1, "%.0f Hz"},
       {W_SLIDER, "Highest frequency", &g_np.fmax, NULL, 1000, 11000, true, true, 1, "%.0f Hz"},
+      {W_CHOICE, "Channel", NULL, NULL, 0, 0, false, true, 0, NULL, 0, &g_channel, CHANNELS, 5},
       {W_BUTTON, "Reset to defaults", NULL, NULL, 0, 0, false, false, 0, NULL, B_RESET},
       {W_HEADER, "Guides"},
       {W_TOGGLE, "Overtone ghosts (H)", NULL, &g_ghosts},
       {W_SLIDER, "Overtones", &g_harmonics, NULL, 2, 16, false, false, 1, "%.0f"},
       {W_SLIDER, "Guide opacity", &g_guideOpacity, NULL, 0, 1, false, false, 1, "%.2f"},
+      {W_TOGGLE, "Pitch contour (P)", NULL, &g_showContour},
+      {W_TOGGLE, "Suggested notes (N, A: accept all)", NULL, &g_suggest},
+      {W_TOGGLE, "Note pitch from contour", NULL, &g_pitchFromContour},
+      {W_HEADER, "Playback"},
       {W_TOGGLE, "Play notes when clicked", NULL, &g_audition},
+      {W_CHOICE, "Speed", NULL, NULL, 0, 0, false, false, 0, NULL, 0, &g_speed, SPEEDS, 3},
   };
 }
 
-static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE ? 20 : 24; }
+static int widgetHeight(WidgetType t) { return t == W_HEADER ? 22 : t == W_SLIDER ? 32 : t == W_TOGGLE || t == W_CHOICE ? 20 : 24; }
 
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) { return p >= (const void *)&g_rp && p < (const void *)(&g_rp + 1); }
@@ -499,11 +556,22 @@ static void pressButton(int b)
   else if (b == B_AUTO_VIEW) autoCalibrateView();
   else if (b == B_RESET)
   {
-    g_np = NSGTParams(), g_rp = RenderParams();
+    g_np = NSGTParams(), g_rp = RenderParams(), g_channel = CH_MIX;
     analyze();
     autoCalibrate(g_spec, g_rp);
   }
   updateValues();
+}
+
+// Master playrate; slowed down with pitch preserved (REAPER's "preserve pitch in audio items when
+// changing master playrate" toggle is switched on if it is off).
+static const int CMD_TOGGLE_PRESERVE_PITCH = 40671;
+
+static void applySpeed()
+{
+  const double rate = SPEED_RATES[g_speed];
+  if (rate != 1 && GetToggleCommandState(CMD_TOGGLE_PRESERVE_PITCH) == 0) Main_OnCommand(CMD_TOGGLE_PRESERVE_PITCH, 0);
+  CSurf_OnPlayRateChange(rate);
 }
 
 static void panelMouse(int x, int y, bool down)
@@ -525,6 +593,12 @@ static void panelMouse(int x, int y, bool down)
     else redraw();
   }
   else if (down && w.type == W_BUTTON) pressButton(w.button);
+  else if (down && w.type == W_CHOICE)
+  {
+    *w.choice = (*w.choice + 1) % w.optionCount;
+    if (w.choice == &g_speed) applySpeed();
+    else if (w.analysis) analyze(), updateValues();
+  }
 }
 
 static void drawPanel(Canvas &cv, HDC dc)
@@ -533,6 +607,10 @@ static void drawPanel(Canvas &cv, HDC dc)
   if (p.r <= p.l) return;
   cv.fill(p.l, p.t, p.r, p.b, 0x222222);
   cv.fill(p.l, p.t, p.l + 1, p.b, 0x000000);
+  // show the actual playrate, which can also be changed elsewhere
+  const double rate = Master_GetPlayRate(NULL);
+  for (int i = 0; i < 3; i++)
+    if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) g_speed = i;
   std::vector<Widget> ws = widgets();
   int top = 8;
   char buf[64];
@@ -556,6 +634,11 @@ static void drawPanel(Canvas &cv, HDC dc)
       cv.frame(l, top + 5, l + 12, top + 17, C_TEXT);
       if (*w.flag) cv.fill(l + 3, top + 8, l + 9, top + 14, C_NOTE);
       text(dc, w.label, l + 18, top, r, top + 22, C_TEXT, DT_LEFT);
+    }
+    else if (w.type == W_CHOICE)
+    {
+      text(dc, w.label, l, top, r, top + h, C_TEXT, DT_LEFT);
+      text(dc, w.options[*w.choice], l, top, r, top + h, C_ACCENT, DT_RIGHT);
     }
     else
     {
@@ -655,6 +738,79 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n)
   }
 }
 
+// --- contour and suggestions -------------------------------------------------------------
+
+// Suggested notes are segments not already covered by a drawn note (vocals are one line at a time).
+static bool covered(const Segment &sg)
+{
+  const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
+  for (const Note &n : g_ed.notes)
+    if (std::min(b, n.end) - std::max(a, n.start) > 0.3 * (b - a)) return true;
+  return false;
+}
+
+static void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1)
+{
+  const int p = (int)lround(sg.pitch);
+  *x0 = (int)lround(g_view.x(frameTime(sg.f0))), *x1 = std::max(*x0 + 2, (int)lround(g_view.x(frameTime(sg.f1 + 1))));
+  *y0 = (int)lround(g_view.y(p + 0.5)), *y1 = std::max(*y0 + 3, (int)lround(g_view.y(p - 0.5)));
+}
+
+static int suggestionAt(int x, int y)
+{
+  if (!g_suggest) return -1;
+  for (size_t i = 0; i < g_segments.size(); i++)
+  {
+    int x0, y0, x1, y1;
+    segmentRect(g_segments[i], &x0, &y0, &x1, &y1);
+    if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !covered(g_segments[i])) return (int)i;
+  }
+  return -1;
+}
+
+static void drawSuggestions(Canvas &cv, const Rect &n)
+{
+  if (!g_suggest) return;
+  for (const Segment &sg : g_segments)
+  {
+    int x0, y0, x1, y1;
+    segmentRect(sg, &x0, &y0, &x1, &y1);
+    if (x1 < n.l || x0 > n.r || covered(sg)) continue;
+    cv.fill(x0, y0, x1, y1, C_NOTE, 50);
+    for (int x = x0; x < x1; x += 6) cv.fill(x, y0, std::min(x + 3, x1), y0 + 1, C_NOTE), cv.fill(x, y1 - 1, std::min(x + 3, x1), y1, C_NOTE);
+    for (int y = y0; y < y1; y += 4) cv.fill(x0, y, x0 + 1, std::min(y + 2, y1), C_NOTE), cv.fill(x1 - 1, y, x1, std::min(y + 2, y1), C_NOTE);
+  }
+}
+
+// The sung pitch as a white line with a dark edge, one pixel column at a time.
+static void drawContour(Canvas &cv, const Rect &n)
+{
+  if (!g_showContour || g_contour.pitch.empty()) return;
+  const double fr = g_spec.frameRate();
+  auto pitchAt = [&](double f) -> double { // linear between voiced frames, -1 if unvoiced
+    const int a = (int)floor(f), b = a + 1;
+    if (a < 0 || b >= (int)g_contour.pitch.size()) return -1;
+    const double pa = g_contour.pitch[a], pb = g_contour.pitch[b];
+    if (pa < 0 || pb < 0) return pa >= 0 && f - a < 0.5 ? pa : pb >= 0 && f - a >= 0.5 ? pb : -1;
+    return pa + (pb - pa) * (f - a);
+  };
+  double prev = -1;
+  for (int x = n.l; x < n.r; x++)
+  {
+    const double fa = (g_view.t(x) - g_audioPos) * fr, fb = (g_view.t(x + 1) - g_audioPos) * fr;
+    double lo = 1e9, hi = -1e9;
+    auto add = [&](double p) { if (p >= 0) lo = std::min(lo, p), hi = std::max(hi, p); };
+    add(pitchAt(fa)), add(pitchAt(fb));
+    for (int f = (int)ceil(fa); f < fb; f++) add(f >= 0 && f < (int)g_contour.pitch.size() ? g_contour.pitch[f] : -1);
+    if (hi < 0) { prev = -1; continue; }
+    if (prev >= 0) add(prev); // connect to the previous column
+    prev = pitchAt(fb) >= 0 ? pitchAt(fb) : hi;
+    const int y0 = (int)lround(g_view.y(hi)), y1 = (int)lround(g_view.y(lo));
+    cv.fill(x, y0 - 2, x + 1, y1 + 3, 0x000000, 180);
+    cv.fill(x, y0 - 1, x + 1, y1 + 2, 0xffffff);
+  }
+}
+
 // --- paint -------------------------------------------------------------------------
 
 static void placeEdit();
@@ -711,6 +867,8 @@ static void paint(HDC hdc)
   for (const GridLine &g : grid) cv.fill(g.x, n.t, g.x + 1, n.b, 0xffffff, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
 
   drawGhosts(cv);
+  drawContour(cv, n);
+  drawSuggestions(cv, n);
   drawHoverGuides(cv, dc, n);
 
   // notes
@@ -785,6 +943,11 @@ static void paint(HDC hdc)
     format_timestr_pos(t, buf, sizeof(buf), 0);
     text(dc, buf, x + 3, 14, x + 90, RULER_H - 1, C_DIM, DT_LEFT);
   }
+  for (int f : g_onsets)
+  {
+    const int ox = (int)lround(g_view.x(frameTime(f)));
+    cv.fill(ox - 1, RULER_H - 6, ox + 2, RULER_H - 1, 0xffa040);
+  }
   cv.clip = {0, 0, KB_W, RULER_H};
   cv.fill(0, 0, KB_W, RULER_H, 0x303030);
   text(dc, g_panel ? "Hide (S)" : "Settings", 0, 0, KB_W, RULER_H, C_TEXT, DT_CENTER);
@@ -831,7 +994,20 @@ static void paint(HDC hdc)
       }
     }
   }
-  snprintf(buf, sizeof(buf), "snap: %s (G)", g_snapGrid ? "grid" : "off");
+  int hovered = -1;
+  if (n.in(g_mouseX, g_mouseY) && g_ed.hitTest(g_view, g_mouseX, g_mouseY, &hovered) != NoteEditor::NONE)
+  {
+    const Note &hn = g_ed.notes[hovered];
+    double sung;
+    const int f0 = (int)lround((hn.start - g_audioPos) * g_spec.frameRate()), f1 = (int)lround((hn.end - g_audioPos) * g_spec.frameRate());
+    if (contourMedian(g_contour, f0, f1, (int)lround(0.05 * g_spec.frameRate()), &sung))
+    {
+      snprintf(buf, sizeof(buf), "   note sung %+.0f c", (sung - hn.pitch) * 100);
+      status += buf;
+    }
+  }
+  static const char *const SNAP_NAMES[] = {"off", "onsets", "grid"};
+  snprintf(buf, sizeof(buf), "snap: %s (G)", SNAP_NAMES[g_snapMode]);
   text(dc, status.c_str(), 6, n.b, c.r - 120, c.b, C_TEXT, DT_LEFT);
   text(dc, buf, 6, n.b, c.r - 6, c.b, C_DIM, DT_RIGHT);
 
@@ -1080,9 +1256,20 @@ static int mods()
          ((GetAsyncKeyState(VK_MENU) & 0x8000) ? MOD_ALT : 0);
 }
 
+static double snapToOnsets(double t)
+{
+  auto it = std::lower_bound(g_snapTimes.begin(), g_snapTimes.end(), t);
+  double best = t, dist = ONSET_SNAP_RANGE;
+  if (it != g_snapTimes.end() && *it - t <= dist) best = *it, dist = *it - t;
+  if (it != g_snapTimes.begin() && t - *(it - 1) < dist) best = *(it - 1);
+  return best;
+}
+
 static void setupEditorSnap()
 {
-  g_ed.snap = g_snapGrid ? snapToGrid : [](double t) { return t; };
+  if (g_snapMode == SNAP_GRID) g_ed.snap = snapToGrid;
+  else if (g_snapMode == SNAP_ONSETS) g_ed.snap = snapToOnsets;
+  else g_ed.snap = [](double t) { return t; };
 }
 
 static void adjustGamma(double delta)
@@ -1090,6 +1277,73 @@ static void adjustGamma(double delta)
   g_np.gamma = std::max(3.0, std::min(40.0, g_np.gamma + delta));
   analyze();
   updateValues();
+}
+
+static void acceptSuggestion(int i)
+{
+  const Segment &sg = g_segments[i];
+  for (Note &o : g_ed.notes) o.sel = false;
+  g_ed.notes.push_back({frameTime(sg.f0), frameTime(sg.f1 + 1), (int)lround(sg.pitch), true, -1});
+  previewPitch((int)lround(sg.pitch));
+  commitNotes();
+}
+
+static void acceptVisibleSuggestions()
+{
+  const Rect n = noteArea();
+  bool any = false;
+  for (const Segment &sg : g_segments)
+  {
+    const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
+    if (b < g_view.t(n.l) || a > g_view.t(n.r) || covered(sg)) continue;
+    g_ed.notes.push_back({a, b, (int)lround(sg.pitch), false, -1});
+    any = true;
+  }
+  if (any) commitNotes();
+}
+
+// A freshly drawn note takes the median sung pitch under it when that is within two semitones.
+static void pitchFromContour(Note &nt)
+{
+  const double fr = g_spec.frameRate();
+  double sung;
+  if (contourMedian(g_contour, (int)lround((nt.start - g_audioPos) * fr), (int)lround((nt.end - g_audioPos) * fr),
+                    (int)lround(0.05 * fr), &sung) &&
+      fabs(sung - nt.pitch) <= 2)
+    nt.pitch = (int)lround(sung);
+}
+
+// cmd+V: one syllable per note, to the selected notes (several selected) or from the selected
+// note onwards (one selected, or none: from the first note).
+static void pasteLyrics()
+{
+  std::string text;
+  if (!OpenClipboard(g_hwnd)) return;
+  if (HANDLE h = GetClipboardData(CF_TEXT))
+  {
+    if (const char *p = (const char *)GlobalLock(h)) text = p;
+    GlobalUnlock(h);
+  }
+  CloseClipboard();
+  const std::vector<std::string> syl = splitSyllables(text);
+  if (syl.empty()) return;
+
+  std::vector<int> order(g_ed.notes.size());
+  for (size_t i = 0; i < order.size(); i++) order[i] = (int)i;
+  std::sort(order.begin(), order.end(), [](int a, int b) {
+    const Note &x = g_ed.notes[a], &y = g_ed.notes[b];
+    return x.start < y.start || (x.start == y.start && x.pitch < y.pitch);
+  });
+  int selected = 0;
+  for (const Note &nt : g_ed.notes) selected += nt.sel;
+  std::vector<int> targets;
+  bool started = selected == 0;
+  for (int i : order)
+  {
+    if (selected > 1 ? g_ed.notes[i].sel : (started |= g_ed.notes[i].sel)) targets.push_back(i);
+  }
+  for (size_t k = 0; k < targets.size() && k < syl.size(); k++) g_ed.notes[targets[k]].lyric = syl[k];
+  commitNotes();
 }
 
 // Punctuation arrives as a character code without FVIRTKEY, and some collide with VK codes
@@ -1112,7 +1366,11 @@ static bool onKey(int key)
   }
   else if (key == 'H' && !m) g_ghosts = !g_ghosts;
   else if (key == 'S' && !m) g_panel = !g_panel;
-  else if (key == 'G' && !m) g_snapGrid = !g_snapGrid, setupEditorSnap();
+  else if (key == 'G' && !m) g_snapMode = (g_snapMode + 1) % 3, setupEditorSnap();
+  else if (key == 'P' && !m) g_showContour = !g_showContour;
+  else if (key == 'N' && !m) g_suggest = !g_suggest;
+  else if (key == 'A' && !m) acceptVisibleSuggestions();
+  else if (key == 'V' && (m & MOD_CMD)) pasteLyrics();
   else if (key == 'F' && !m) fitItem();
   else if (key == 'Z' && !m) zoomToSelection();
   else if (key == ('[' | CHARKEY)) g_rp.brightness = std::max(-1.0, g_rp.brightness - 0.05), updateValues();
@@ -1134,8 +1392,9 @@ static bool isOurKey(int key, int flags)
   case VK_DELETE: case VK_BACK: case VK_ESCAPE: case VK_RETURN:
   case '[' | CHARKEY: case ']' | CHARKEY: case '-' | CHARKEY: case '=' | CHARKEY: case ',' | CHARKEY: case '.' | CHARKEY:
     return true;
-  case 'A': return cmd;
-  case 'S': case 'G': case 'F': case 'Z': case 'H': return !cmd && !(flags & (FALT | FSHIFT));
+  case 'A': return true;
+  case 'V': return cmd;
+  case 'S': case 'G': case 'F': case 'Z': case 'H': case 'P': case 'N': return !cmd && !(flags & (FALT | FSHIFT));
   }
   return false;
 }
@@ -1216,6 +1475,12 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     else if (rulerArea().in(x, y)) g_drag = DRAG_RULER, SetEditCurPos(g_view.t(x), false, true);
     else if (noteArea().in(x, y))
     {
+      int sug = -1;
+      if (g_ed.hitTest(g_view, x, y, NULL) == NoteEditor::NONE && !(mods() & (MOD_SHIFT | MOD_CMD)) && (sug = suggestionAt(x, y)) >= 0)
+      {
+        acceptSuggestion(sug); // click a suggested note to make it a note
+        return 0;
+      }
       g_drag = DRAG_NOTES, g_ed.mouseDown(g_view, x, y, mods());
       int hit = -1;
       if (g_ed.hitTest(g_view, x, y, &hit) != NoteEditor::NONE) previewPitch(g_ed.notes[hit].pitch);
@@ -1242,7 +1507,12 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     const Drag d = g_drag;
     g_drag = DRAG_NONE;
     ReleaseCapture();
-    if (d == DRAG_NOTES && g_ed.mouseUp(g_view, x, y, mods())) commitNotes();
+    const int drawn = d == DRAG_NOTES ? g_ed.drawing() : -1;
+    if (d == DRAG_NOTES && g_ed.mouseUp(g_view, x, y, mods()))
+    {
+      if (drawn >= 0 && drawn < (int)g_ed.notes.size() && g_pitchFromContour && !(mods() & MOD_ALT)) pitchFromContour(g_ed.notes[drawn]);
+      commitNotes();
+    }
     if (d == DRAG_PANEL) finishPanelDrag();
     redraw();
     return 0;

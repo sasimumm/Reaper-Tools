@@ -1,6 +1,7 @@
 #include "editor.h"
 
 #include <algorithm>
+#include <cctype>
 
 // Hit zones from DrawScore: note rects are inflated by 3 px, 6 px edge zones resize,
 // notes narrower than 12 px can only be moved, and a drag starts after 3 px.
@@ -178,4 +179,22 @@ bool NoteEditor::marquee(double r[4]) const
   r[0] = std::min(downX, curX), r[1] = std::min(downY, curY);
   r[2] = std::max(downX, curX), r[3] = std::max(downY, curY);
   return true;
+}
+
+std::vector<std::string> splitSyllables(const std::string &text)
+{
+  std::vector<std::string> out;
+  std::string cur;
+  for (char ch : text)
+  {
+    if (isspace((unsigned char)ch))
+    {
+      if (!cur.empty()) out.push_back(cur), cur.clear();
+      continue;
+    }
+    cur += ch;
+    if (ch == '-' && cur != "-") out.push_back(cur), cur.clear();
+  }
+  if (!cur.empty() && cur != "-") out.push_back(cur);
+  return out;
 }

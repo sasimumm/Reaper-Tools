@@ -33,9 +33,13 @@
 #define REAPERAPI_WANT_GetSelectedMediaItem
 #define REAPERAPI_WANT_GetSetMediaTrackInfo_String
 #define REAPERAPI_WANT_GetTakeName
+#define REAPERAPI_WANT_GetToggleCommandState
+#define REAPERAPI_WANT_CSurf_OnPlayRateChange
+#define REAPERAPI_WANT_Master_GetPlayRate
 #define REAPERAPI_WANT_GetTrack
 #define REAPERAPI_WANT_GetTrackMediaItem
 #define REAPERAPI_WANT_InsertTrackAtIndex
+#define REAPERAPI_WANT_Main_OnCommand
 #define REAPERAPI_WANT_MIDI_CountEvts
 #define REAPERAPI_WANT_MIDI_DeleteNote
 #define REAPERAPI_WANT_MIDI_GetHash

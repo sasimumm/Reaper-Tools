@@ -2,6 +2,8 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <string>
+#include <vector>
 
 #include "../src/editor.h"
 
@@ -75,5 +77,11 @@ int main()
   ed.notes = {{1, 1.05, 60, false, 0}};
   int i;
   assert(ed.hitTest(v, v.x(1.0), v.y(60), &i) == NoteEditor::BODY);
+  // Pasted lyrics: one syllable per note, hyphens stay with their syllable.
+  std::vector<std::string> syl = splitSyllables("Hel-lo  dar-k-ness\nmy _ old\tfriend- -");
+  const char *want[] = {"Hel-", "lo", "dar-", "k-", "ness", "my", "_", "old", "friend-"};
+  assert(syl.size() == 9);
+  for (int k = 0; k < 9; k++) assert(syl[k] == want[k]);
+
   printf("ok\n");
 }
