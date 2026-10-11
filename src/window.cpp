@@ -16,7 +16,9 @@
 
 // Layout, in pixels.
 static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250;
-static const double PINCH_SENSITIVITY = 0.3; // exponent applied to each pinch event's zoom factor
+// Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
+static const double PINCH_STEP = 1.03;
+static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
 
 // Colours, 0xRRGGBB.
 static const unsigned int C_BG = 0x1b1b1b, C_RULER = 0x262626, C_TEXT = 0xd0d0d0, C_DIM = 0x8a8a8a;
@@ -875,8 +877,8 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     const double steps = (short)HIWORD(wParam) / 120.0;
     const int m = mods();
     if (msg == WM_MOUSEHWHEEL) g_view.t0 -= steps * 40 / g_view.pps;
-    else if (m & MOD_CMD) zoomTime(pow(1.15, steps), pt.x);
-    else if (m & MOD_ALT) zoomPitch(pow(1.15, steps), pt.y);
+    else if (m & MOD_CMD) zoomTime(pow(WHEEL_ZOOM, steps), pt.x);
+    else if (m & MOD_ALT) zoomPitch(pow(WHEEL_ZOOM, steps), pt.y);
     else if (m & MOD_SHIFT) g_view.t0 -= steps * 40 / g_view.pps;
     else scrollPitch(steps * 2);
     redraw();
@@ -891,7 +893,7 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
       POINT pt = {gi->ptsLocation.x, gi->ptsLocation.y};
       ScreenToClient(hwnd, &pt);
       syncViewOrigin();
-      const double f = pow(gi->ullArguments / 1024.0, PINCH_SENSITIVITY);
+      const double f = gi->ullArguments > 1024 ? PINCH_STEP : gi->ullArguments < 1024 ? 1 / PINCH_STEP : 1;
       if (mods() & MOD_ALT) zoomPitch(f, pt.y);
       else zoomTime(f, pt.x);
     }
