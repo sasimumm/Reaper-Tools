@@ -1,0 +1,17 @@
+# Checks that find bugs, not style. Run: cmake --build build --target lint
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  performance-*,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-type-member-init,
+  misc-redundant-expression,
+  misc-misplaced-const,
+  readability-misleading-indentation
+HeaderFilterRegex: '.*/(src|tests)/.*'
+WarningsAsErrors: ''

@@ -256,7 +256,7 @@ static void biquadRun(const Biquad &q, float *x, int n, int step)
   double z1 = 0, z2 = 0;
   for (int i = 0; i < n; i++)
   {
-    float &v = x[(size_t)i * step];
+    float &v = x[(ptrdiff_t)i * step]; // signed: the backward pass steps by -1
     const double in = v, y = q.b0 * in + z1;
     z1 = q.b1 * in - q.a1 * y + z2;
     z2 = q.b2 * in - q.a2 * y;

@@ -3,6 +3,7 @@ project(reatrace LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # for clang-tidy
 # Bounds-checked operator[] on std::vector, std::span, std::string etc. (libc++'s cheap checks), also in the plugin.
 add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
 set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
@@ -71,3 +72,25 @@ target_compile_options(estimate_test PRIVATE -UNDEBUG)
 target_compile_definitions(estimate_test PRIVATE BASIC_PITCH_MODEL="${BASIC_PITCH_MODEL}")
 target_link_libraries(estimate_test PRIVATE "-framework Foundation" "-framework CoreML" "-framework Accelerate")
 add_dependencies(estimate_test basic_pitch_model)
+
+# Sanitized self-checks: cmake -B build-asan -DREATRACE_SANITIZE=address,undefined (or thread), in a
+# separate build directory; the plugin itself is not sanitized (it runs inside REAPER).
+set(REATRACE_SANITIZE "" CACHE STRING "Sanitizers for the self-check programs, e.g. address,undefined or thread")
+if(REATRACE_SANITIZE)
+  foreach(t nsgt_test editor_test contour_test estimate_test)
+    target_compile_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
+    target_link_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE})
+  endforeach()
+endif()
+
+# clang-tidy over our sources (.clang-tidy has the checks); Xcode has none, Homebrew's llvm does.
+find_program(CLANG_TIDY clang-tidy HINTS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin)
+if(CLANG_TIDY)
+  # Homebrew's clang-tidy doesn't know the macOS SDK
+  execute_process(COMMAND xcrun --show-sdk-path OUTPUT_VARIABLE MACOS_SDK OUTPUT_STRIP_TRAILING_WHITESPACE)
+  add_custom_target(lint
+    COMMAND ${CLANG_TIDY} -p ${CMAKE_BINARY_DIR} --quiet --extra-arg=-isysroot${MACOS_SDK} ${REATRACE_SOURCES}
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "clang-tidy"
+    VERBATIM)
+endif()
