@@ -27,6 +27,14 @@ add_library(reaper_reatrace MODULE
   src/nsgt.cpp
   src/editor.cpp
   src/window.cpp
+  src/analysis.cpp
+  src/commands.cpp
+  src/lyrics.cpp
+  src/paint.cpp
+  src/panel.cpp
+  src/preview.cpp
+  src/settings.cpp
+  src/takesync.cpp
   src/contour.cpp
   src/estimate.cpp
   src/basicpitch.mm
