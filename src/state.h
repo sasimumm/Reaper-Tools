@@ -18,6 +18,7 @@
 
 #include "contour.h"
 #include "editor.h"
+#include "model.h"
 #include "nsgt.h"
 
 // Layout, in pixels.
@@ -29,33 +30,6 @@ struct OtherVoice {
     MediaItem *item = NULL;
     std::string hash;
     std::vector<Note> notes;
-};
-// Snapping: onsets (and note changes in the pitch contour) by default, since recordings are
-// usually free tempo and the grid means nothing until a tempo map is fitted.
-enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
-
-
-enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
-
-// Everything remembered per item (settings.cpp saves and loads it): the defaults are here only.
-struct Settings {
-    NSGTParams np;
-    double binsPerSemitone = 5; // slider for np.binsPerOctave, applied in requestAnalysis()
-    RenderParams rp;
-    int channel = CH_MIX;
-    int snapMode = SNAP_ONSETS;
-    double quantStrength = 1;
-    bool ghosts = true; // faint outlines at each note's overtones
-    double harmonics = 8, guideOpacity = 0.4;
-    // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
-    // bright is what still needs transcribing.
-    bool explain = false;
-    bool showContour = true, suggest = true, pitchFromContour = true;
-    int suggestFrom = 0;      // SUGGEST_FROM
-    bool estimateVote = true; // the estimator's front-end vote (EstimateParams::vote)
-    bool audition = true;     // play a note through the notes track when clicked or drawn
-    bool followTheme = true;  // else the built-in dark colours
-    bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
 };
 inline Settings g_settings;
 

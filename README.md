@@ -8,7 +8,7 @@ See `docs/piano-roll.md` for the full feature plan.
     git submodule update --init
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
     cmake --build build --target deploy   # copies reaper_reatrace.dylib to UserPlugins
-    ./build/nsgt_test && ./build/editor_test && ./build/notesync_test && ./build/contour_test && ./build/estimate_test
+    ./build/nsgt_test && ./build/editor_test && ./build/notesync_test && ./build/model_test && ./build/contour_test && ./build/estimate_test
 
 Checks while developing:
 

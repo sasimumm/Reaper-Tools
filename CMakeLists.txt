@@ -36,6 +36,7 @@ add_library(reaper_reatrace MODULE
   src/settings.cpp
   src/takesync.cpp
   src/notesync.cpp
+  src/model.cpp
   src/contour.cpp
   src/estimate.cpp
   src/basicpitch.mm
@@ -73,6 +74,10 @@ add_executable(editor_test tests/editor_test.cpp src/editor.cpp)
 
 add_executable(notesync_test tests/notesync_test.cpp src/notesync.cpp)
 target_compile_options(notesync_test PRIVATE -UNDEBUG)
+
+add_executable(model_test tests/model_test.cpp src/model.cpp src/nsgt.cpp ${WDL}/fft.c)
+target_include_directories(model_test SYSTEM PRIVATE ${WDL})
+target_compile_options(model_test PRIVATE -UNDEBUG)
 target_compile_options(editor_test PRIVATE -UNDEBUG)
 
 add_executable(contour_test tests/contour_test.cpp src/contour.cpp src/nsgt.cpp ${WDL}/fft.c)
@@ -90,7 +95,7 @@ add_dependencies(estimate_test basic_pitch_model)
 # separate build directory; the plugin itself is not sanitized (it runs inside REAPER).
 set(REATRACE_SANITIZE "" CACHE STRING "Sanitizers for the self-check programs, e.g. address,undefined or thread")
 if(REATRACE_SANITIZE)
-  foreach(t nsgt_test editor_test notesync_test contour_test estimate_test)
+  foreach(t nsgt_test editor_test notesync_test model_test contour_test estimate_test)
     target_compile_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
     target_link_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE})
   endforeach()

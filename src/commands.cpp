@@ -44,20 +44,8 @@ static double snapToGrid(double t) {
 
 // Moves selected notes' starts and ends towards the grid by the quantise strength.
 void quantiseSelected() {
-    bool any = false;
-    for (Note &n : g_session.ed.notes) {
-        if (!n.sel) {
-            continue;
-        }
-        const double s = n.start + (snapToGrid(n.start) - n.start) * g_settings.quantStrength;
-        double e = n.end + (snapToGrid(n.end) - n.end) * g_settings.quantStrength;
-        if (e < s + g_session.ed.minLen) {
-            e = std::max(n.end - n.start + s, s + g_session.ed.minLen);
-        }
-        any |= s != n.start || e != n.end;
-        n.start = s, n.end = e;
-    }
-    if (any) {
+    if (quantiseNotes(g_session.ed.notes, snapToGrid, g_settings.quantStrength,
+                      g_session.ed.minLen)) {
         commitNotes();
     }
 }
@@ -68,18 +56,14 @@ void quantiseSelected() {
 // the same pitch (within a semitone, for corrected pitches) over a third of its length.
 bool covered(const Segment &sg) {
     const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
-    auto covers = [&](const Note &n) {
-        return fabs(n.pitch - sg.pitch) <= 1 &&
-               std::min(b, n.end) - std::max(a, n.start) > 0.3 * (b - a);
-    };
     for (const Note &n : g_session.ed.notes) {
-        if (covers(n)) {
+        if (coversSuggestion(n, a, b, sg.pitch)) {
             return true;
         }
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
         for (const Note &n : g_session.others[v].notes) {
-            if (v != g_session.voice && covers(n)) {
+            if (v != g_session.voice && coversSuggestion(n, a, b, sg.pitch)) {
                 return true;
             }
         }
