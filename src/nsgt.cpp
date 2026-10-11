@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <climits>
 #include <cstring>
 
 #include "fft.h"
@@ -25,15 +26,29 @@ double Spectrogram::binOfPitch(double midiPitch) const
   return p.binsPerOctave * log2(f / p.fmin);
 }
 
-Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
+// Parameters come from user settings: keep them in the range the indexing below assumes.
+static NSGTParams sanitize(NSGTParams p)
+{
+  p.sampleRate = std::max(8000.0, std::min(96000.0, p.sampleRate));
+  p.binsPerOctave = std::max(12, std::min(120, p.binsPerOctave));
+  p.hop = std::max(64, std::min(BLOCK / 8, nextPow2(std::max(1, std::min(p.hop, BLOCK))))); // power of two dividing the block
+  p.fmin = std::max(10.0, std::min(p.sampleRate * 0.25, p.fmin));
+  p.fmax = std::max(p.fmin * 2, std::min(p.sampleRate * 0.45, p.fmax));
+  p.gamma = std::max(0.0, std::min(1000.0, p.gamma));
+  return p;
+}
+
+Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
                         const std::function<void(long long, int, float *)> &read)
 {
+  const NSGTParams p = sanitize(params);
+  numSamples = std::max(0LL, std::min(numSamples, (long long)INT_MAX * 64)); // frames fit in an int
   static bool fftInit = (WDL_fft_init(), true);
   (void)fftInit;
 
   const int N = BLOCK, hop = p.hop;
   const double sr = p.sampleRate, freqRes = sr / N;
-  const double fmax = std::min(p.fmax, 0.45 * sr);
+  const double fmax = p.fmax;
   const double Q = 1 / (pow(2.0, 1.0 / p.binsPerOctave) - 1);
   // A bin's time kernel is a Gaussian with sigmaT = 1/(2 pi sigmaF). Its +-3 sigma must fit in a
   // quarter block, which caps how small gamma can usefully get (~3 Hz at 22050 Hz).
@@ -71,7 +86,9 @@ Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
   const int valid = N - 2 * margin, framesPerBlock = valid / hop;
 
   std::vector<WDL_FFT_REAL> block(N);
-  std::vector<WDL_FFT_COMPLEX> small(nextPow2(N / 2));
+  int maxM = 0;
+  for (const Bin &bn : bins) maxM = std::max(maxM, bn.M);
+  std::vector<WDL_FFT_COMPLEX> small(maxM);
   const int *permN = WDL_fft_permute_tab(N / 2);
   // Y = 2*X*w for the analytic signal and |ifft|/N; WDL's real FFT output is already 2x a plain DFT, so 2/N -> 1/N.
   const float scale = 1.0f / N;
@@ -107,7 +124,12 @@ Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
     }
   }
 
-  // Noise floor estimate for spectral subtraction: mean spectrum of the quietest 10% of frames.
+  estimateNoise(s, 0.1);
+  return s;
+}
+
+void estimateNoise(Spectrogram &s, double fraction)
+{
   std::vector<std::pair<double, int>> energy(s.frames);
   for (int f = 0; f < s.frames; f++)
   {
@@ -115,12 +137,12 @@ Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
     for (int b = 0; b < s.bins; b++) e += (double)s.at(f, b) * s.at(f, b);
     energy[f] = {e, f};
   }
-  const int quiet = std::max(1, s.frames / 10);
-  std::nth_element(energy.begin(), energy.begin() + quiet - 1, energy.end());
   s.noise.assign(s.bins, 0);
+  if (!s.frames) return;
+  const int quiet = std::max(1, std::min(s.frames, (int)(s.frames * fraction)));
+  std::nth_element(energy.begin(), energy.begin() + quiet - 1, energy.end());
   for (int i = 0; i < quiet; i++)
     for (int b = 0; b < s.bins; b++) s.noise[b] += s.at(energy[i].second, b) / quiet;
-  return s;
 }
 
 void autoCalibrate(const Spectrogram &s, RenderParams &rp)
@@ -155,7 +177,7 @@ double cellValue(const Spectrogram &s, const RenderParams &rp, int f, int b)
   v = std::max(0.0, std::min(1.0, v));
   if (rp.peaksOnly && b > 0 && b + 1 < s.bins &&
       !(m > displayMag(s, rp, f, b - 1) && m > displayMag(s, rp, f, b + 1)))
-    v *= 0.15;
+    v *= rp.peakDim;
   return v;
 }
 

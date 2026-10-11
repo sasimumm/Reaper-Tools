@@ -19,7 +19,7 @@ struct Spectrogram
   NSGTParams p;
   int bins = 0, frames = 0;
   std::vector<float> mag;   // frames*bins, linear amplitude, a full-scale sine is ~1
-  std::vector<float> noise; // per bin: mean of the quietest 10% of frames
+  std::vector<float> noise; // per bin: mean spectrum of the quietest frames, see estimateNoise()
 
   float at(int f, int b) const { return mag[(size_t)f * bins + b]; }
   double frameRate() const { return p.sampleRate / p.hop; }
@@ -30,13 +30,18 @@ struct Spectrogram
 Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
                         const std::function<void(long long start, int n, float *out)> &read);
 
+// Noise floor for spectral subtraction: mean spectrum of the quietest `fraction` of frames.
+void estimateNoise(Spectrogram &s, double fraction);
+
 struct RenderParams
 {
   double dbFloor = -80, brightness = 0, contrast = 1;
   double bias = -0.8;         // colormap gamma: t^(2^-bias), negative darkens the low end
   bool subtractNoise = false;
   double noiseAlpha = 1.5;
+  double noiseFraction = 0.1; // passed to estimateNoise()
   bool peaksOnly = false;     // dim everything except per-frame local maxima along frequency
+  double peakDim = 0.15;      // brightness kept by non-peaks
 };
 
 // Picks dbFloor/contrast from the 30th and 95th percentile of the data (from Specter).

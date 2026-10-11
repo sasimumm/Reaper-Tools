@@ -56,6 +56,18 @@ int main()
     }
   }
 
+  // Nonsense parameters (from user settings) are clamped instead of breaking the indexing.
+  {
+    NSGTParams bad;
+    bad.fmin = 0, bad.fmax = -1, bad.hop = 1000, bad.binsPerOctave = 100000, bad.gamma = -5, bad.sampleRate = 1;
+    std::vector<float> x(50000, 0.1f);
+    Spectrogram s = computeNSGT(bad, (long long)x.size(), [&](long long, int n, float *out) {
+      for (int i = 0; i < n; i++) out[i] = 0.1f;
+    });
+    assert(s.bins > 0 && s.frames > 0 && s.mag.size() == (size_t)s.bins * s.frames);
+    printf("bad params: bins=%d frames=%d hop=%d\n", s.bins, s.frames, s.p.hop);
+  }
+
   // Speed on three minutes of noise.
   {
     std::vector<float> x((size_t)(180 * sr));
