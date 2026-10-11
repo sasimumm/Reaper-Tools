@@ -36,7 +36,8 @@ static const unsigned int C_EDIT_CURSOR = 0xff5050, C_PLAY_CURSOR = 0xffffff, C_
 // --- state ---------------------------------------------------------------------
 
 static HWND g_hwnd;
-static MediaItem *g_audio, *g_midi;
+static MediaItem *g_audio, *g_midi; // g_midi: the active voice's notes item
+static int g_voice;                 // active voice, 0 = lead
 static double g_audioPos, g_audioLen, g_audioOffs, g_audioRate;
 
 static NSGTParams g_np;
@@ -483,7 +484,7 @@ static void commitNotes()
   }
   if (dataChanged) Undo_BeginBlock2(NULL);
   MediaItem_Take *take = midiTake();
-  if (!take && dataChanged && (g_midi = EnsureMidiItem(g_audio))) take = GetActiveTake(g_midi);
+  if (!take && dataChanged && (g_midi = VoiceItem(g_audio, g_voice, true))) take = GetActiveTake(g_midi);
   if (take)
   {
     const bool noSort = true;
@@ -876,7 +877,7 @@ static const Setting SETTINGS[] = {
     {"pitchfromcontour", NULL, &g_pitchFromContour}, {"audition", NULL, &g_audition},
     {"snap", NULL, NULL, &g_snapMode, 0, SNAP_GRID}, {"quantise", &g_quantStrength, NULL, NULL, 0, 1},
 };
-static const char *SETTINGS_KEY = "P_EXT:reascribe_settings", *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
+static const char *EXT_SECTION = "reascribe", *EXT_DEFAULTS = "defaults";
 
 static std::string saveSettings()
 {
@@ -924,14 +925,23 @@ static void resetSettings()
 static void setupEditorSnap();
 static std::string g_savedSettings; // last written to the item, to only write on change
 
+// Per-item settings live in the project's extended state under the item's GUID (that API takes
+// a buffer size, unlike item P_EXT strings).
+static bool itemKey(char *key)
+{
+  const GUID *g = g_audio ? (const GUID *)GetSetMediaItemInfo(g_audio, "GUID", NULL) : NULL;
+  if (!g) return false;
+  guidToString(g, key);
+  return true;
+}
+
 // Returns true if the item had saved settings.
 static bool loadItemSettings()
 {
   resetSettings();
   loadSettings(GetExtState(EXT_SECTION, EXT_DEFAULTS));
-  static char buf[65536]; // "NeedBig" API: no size is passed, so leave plenty of room
-  buf[0] = 0;
-  const bool has = GetSetMediaItemInfo_String(g_audio, SETTINGS_KEY, buf, false) && *buf;
+  char key[64], buf[4096] = "";
+  const bool has = itemKey(key) && GetProjExtState(NULL, EXT_SECTION, key, buf, sizeof(buf)) > 0 && *buf;
   buf[sizeof(buf) - 1] = 0;
   if (has) loadSettings(buf);
   g_savedSettings = saveSettings();
@@ -943,9 +953,9 @@ static void saveItemSettings()
   if (!g_audio || !ValidatePtr2(NULL, g_audio, "MediaItem*")) return;
   const std::string cur = saveSettings();
   if (cur == g_savedSettings) return;
-  static char buf[65536];
-  snprintf(buf, sizeof(buf), "%s", cur.c_str());
-  GetSetMediaItemInfo_String(g_audio, SETTINGS_KEY, buf, true);
+  char key[64];
+  if (!itemKey(key)) return;
+  SetProjExtState(NULL, EXT_SECTION, key, cur.c_str());
   g_savedSettings = cur;
 }
 

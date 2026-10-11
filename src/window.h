@@ -8,5 +8,8 @@ void Window_Close();
 void Window_Timer();                // called from REAPER's timer, ~30 Hz
 int Window_TranslateAccel(MSG *msg); // accelerator hook, see accelerator_register_t
 
-// Implemented in main.cpp: the MIDI item that holds the notes for an audio item, created if missing.
-MediaItem *EnsureMidiItem(MediaItem *audio);
+static const int WINDOW_VOICES = 4;
+
+// Implemented in main.cpp: the MIDI item holding a voice's notes for an audio item (voice 0 is
+// the lead), optionally created along with its track.
+MediaItem *VoiceItem(MediaItem *audio, int voice, bool create);

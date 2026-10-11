@@ -78,19 +78,35 @@
 #define REAPERAPI_WANT_MIDI_SetTextSysexEvt
 #define REAPERAPI_WANT_SetExtState
 #define REAPERAPI_WANT_GetExtState
-#define REAPERAPI_WANT_GetSetMediaItemInfo_String
+#define REAPERAPI_WANT_GetProjExtState
+#define REAPERAPI_WANT_SetProjExtState
+#define REAPERAPI_WANT_GetSetMediaItemInfo
+#define REAPERAPI_WANT_guidToString
 #define REAPERAPI_WANT_ValidatePtr2
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
 
 #include "window.h"
 
-static const char *NOTES_TRACK_NAME = "Reascribe notes";
-
-static bool isNotesTrack(MediaTrack *tr)
+// Voice v lives on the v-th track below the audio track: "Reascribe notes" for the lead, then
+// "Reascribe voice 2", "Reascribe voice 3", ...
+static void voiceTrackName(int voice, char *buf, int sz)
 {
-  char name[256] = "";
-  return tr && GetSetMediaTrackInfo_String(tr, "P_NAME", name, false) && !strcmp(name, NOTES_TRACK_NAME);
+  if (voice == 0) snprintf(buf, sz, "Reascribe notes");
+  else snprintf(buf, sz, "Reascribe voice %d", voice + 1);
+}
+
+// -1 if the track isn't a Reascribe voice track
+static int voiceOfTrack(MediaTrack *tr)
+{
+  char name[256] = "", want[64];
+  if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) return -1;
+  for (int v = 0; v < WINDOW_VOICES; v++)
+  {
+    voiceTrackName(v, want, sizeof(want));
+    if (!strcmp(name, want)) return v;
+  }
+  return -1;
 }
 
 static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool midi)
@@ -105,48 +121,49 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
   return NULL;
 }
 
-static MediaItem *findMidiItem(MediaItem *audio, bool create)
+// The voice's track among the Reascribe tracks directly below the audio track, created (after the
+// last existing voice track) if asked.
+static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create)
 {
-  const double pos = GetMediaItemInfo_Value(audio, "D_POSITION"), len = GetMediaItemInfo_Value(audio, "D_LENGTH");
-  const int idx = (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
+  const int first = (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
+  int idx = first;
+  for (MediaTrack *tr; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++)
+    if (voiceOfTrack(tr) == voice) return tr;
+  if (!create) return NULL;
+  InsertTrackAtIndex(idx, true);
   MediaTrack *tr = GetTrack(NULL, idx);
-  if (!isNotesTrack(tr))
-  {
-    if (!create) return NULL;
-    InsertTrackAtIndex(idx, true);
-    tr = GetTrack(NULL, idx);
-    char name[256];
-    snprintf(name, sizeof(name), "%s", NOTES_TRACK_NAME);
-    GetSetMediaTrackInfo_String(tr, "P_NAME", name, true);
-    TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
-  }
-  MediaItem *midi = overlappingItem(tr, pos, len, true);
-  if (!midi && create)
-  {
-    const bool qn = false;
-    midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
-    if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move notes
-  }
-  return midi;
+  char name[64];
+  voiceTrackName(voice, name, sizeof(name));
+  GetSetMediaTrackInfo_String(tr, "P_NAME", name, true);
+  TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
+  return tr;
 }
 
-MediaItem *EnsureMidiItem(MediaItem *audio)
+MediaItem *VoiceItem(MediaItem *audio, int voice, bool create)
 {
+  const double pos = GetMediaItemInfo_Value(audio, "D_POSITION"), len = GetMediaItemInfo_Value(audio, "D_LENGTH");
+  MediaTrack *tr = voiceTrack(audio, voice, false);
+  MediaItem *midi = tr ? overlappingItem(tr, pos, len, true) : NULL;
+  if (midi || !create) return midi;
   Undo_BeginBlock2(NULL);
-  MediaItem *midi = findMidiItem(audio, true);
+  if (!tr) tr = voiceTrack(audio, voice, true);
+  const bool qn = false;
+  midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
+  if (midi) SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0); // timebase time: tempo edits don't move notes
   Undo_EndBlock2(NULL, "Reascribe: create notes item", -1);
   UpdateArrange();
   return midi;
 }
 
-// The audio item on the track above a Reascribe MIDI item.
+// The audio item above a Reascribe MIDI item: on the first track above its voice tracks.
 static MediaItem *audioForMidi(MediaItem *midi)
 {
   MediaTrack *tr = GetMediaItem_Track(midi);
-  if (!isNotesTrack(tr)) return NULL;
-  const int above = (int)GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 2;
+  if (voiceOfTrack(tr) < 0) return NULL;
+  int idx = (int)GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 2;
+  while (idx >= 0 && voiceOfTrack(GetTrack(NULL, idx)) >= 0) idx--;
   const double pos = GetMediaItemInfo_Value(midi, "D_POSITION"), len = GetMediaItemInfo_Value(midi, "D_LENGTH");
-  return above >= 0 ? overlappingItem(GetTrack(NULL, above), pos, len, false) : NULL;
+  return idx >= 0 ? overlappingItem(GetTrack(NULL, idx), pos, len, false) : NULL;
 }
 
 static void openSelected()
@@ -159,7 +176,7 @@ static void openSelected()
     ShowMessageBox("Select an audio item (or a MIDI item on a \"Reascribe notes\" track) first.", "Reascribe", 0);
     return;
   }
-  Window_Open(audio, EnsureMidiItem(audio));
+  Window_Open(audio, VoiceItem(audio, 0, true));
 }
 
 static int g_cmdOpen;
