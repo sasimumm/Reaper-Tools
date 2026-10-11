@@ -32,7 +32,7 @@ Layout layout() {
     if (g_ui.hwnd) {
         GetClientRect(g_ui.hwnd, &r);
     }
-    return computeLayout((int)r.right, (int)r.bottom, g_ui.panel);
+    return computeLayout((int)r.right, (int)r.bottom, g_ui.panel, g_ui.foldedLanes);
 }
 
 Rect clientRect() { return layout().client; }
@@ -387,6 +387,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             redraw();
             return 0;
         }
+        if (const unsigned lane = laneLabelAt(x, y, layout())) {
+            g_ui.foldedLanes ^= lane;
+            redraw();
+            return 0;
+        }
         if (panelShown() && panelArea().in(x, y)) {
             g_drag = DRAG_PANEL, panelMouse(x, y, true);
         } else if (rulerArea().in(x, y) && (mods() & MOD_SHIFT)) {
@@ -397,9 +402,9 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             setSelection(g_selectAnchor, g_selectAnchor);
         } else if (rulerArea().in(x, y)) {
             g_drag = DRAG_RULER, SetEditCurPos(g_ui.view.t(x), false, true);
-        } else if (overviewArea().in(x, y)) {
+        } else if (overviewArea().in(x, y) && !(g_ui.foldedLanes & LANE_OVERVIEW)) {
             g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
-        } else if (lyricsArea().in(x, y)) {
+        } else if (lyricsArea().in(x, y) && !(g_ui.foldedLanes & LANE_LYRICS)) {
             beginLyric(lyricAt(x));
             return 0;
         } else if (noteArea().in(x, y)) {

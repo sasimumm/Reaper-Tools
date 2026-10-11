@@ -479,10 +479,14 @@ static std::string hoverHint(const Layout &L) {
                  "Drag: draw a note in %s  ·  Shift+drag: select  ·  Alt: no snap", voice);
         return buf;
     }
-    if (L.lyrics.in(x, y)) {
+    if (const unsigned lane = laneLabelAt(x, y, L)) {
+        return g_ui.foldedLanes & lane ? "Click: show this lane"
+                                       : "Click: fold this lane to give the notes more room";
+    }
+    if (L.lyrics.in(x, y) && !(g_ui.foldedLanes & LANE_LYRICS)) {
         return "Click: edit this syllable  ·  Cmd+V: paste lyrics onto the selected notes";
     }
-    if (L.overview.in(x, y)) {
+    if (L.overview.in(x, y) && !(g_ui.foldedLanes & LANE_OVERVIEW)) {
         return "Click or drag: scroll to that part of the item";
     }
     if (L.ruler.in(x, y)) {
@@ -684,6 +688,50 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
             y += 17;
         }
     }
+}
+
+// Each lane's label in the keyboard column; a folded lane is a thin strip.
+static void drawLaneLabels(Canvas &cv, HDC dc, const Layout &L) {
+    const struct {
+        unsigned bit;
+        Rect r;
+        const char *label;
+    } lanes[] = {
+        {LANE_CHORDS, L.chords, "Chords"},
+        {LANE_LYRICS, L.lyrics, "Lyrics"},
+        {LANE_OVERVIEW, L.overview, "Overview"}
+    };
+    for (const auto &lane : lanes) {
+        const Rect lr = {0, lane.r.t, KB_W, lane.r.b};
+        cv.clip = {0, lane.r.t, L.client.r, lane.r.b};
+        const bool hov = lr.in(g_ui.mouseX, g_ui.mouseY);
+        cv.fill(lr.l, lr.t, lr.r, lr.b, hov ? g_theme.track : g_theme.button);
+        if (g_ui.foldedLanes & lane.bit) {
+            cv.fill(lane.r.l, lane.r.t, L.notes.r, lane.r.b, g_theme.ruler);
+            cv.fill(8, (lr.t + lr.b) / 2 - 1, KB_W - 8, (lr.t + lr.b) / 2 + 1, g_theme.dim);
+        } else {
+            text(dc, lane.label, 6, lr.t, KB_W - 4, lr.b, hov ? g_theme.text : g_theme.dim,
+                 DT_LEFT);
+        }
+        cv.fill(0, lr.t, L.notes.r, lr.t + 1, 0x000000);
+    }
+}
+
+// The lane whose label is at (x, y), or 0.
+unsigned laneLabelAt(int x, int y, const Layout &L) {
+    if (x < 0 || x >= KB_W) {
+        return 0;
+    }
+    if (y >= L.chords.t && y < L.chords.b) {
+        return LANE_CHORDS;
+    }
+    if (y >= L.lyrics.t && y < L.lyrics.b) {
+        return LANE_LYRICS;
+    }
+    if (y >= L.overview.t && y < L.overview.b) {
+        return LANE_OVERVIEW;
+    }
+    return 0;
 }
 
 void paint(HDC hdc) {
@@ -901,11 +949,8 @@ void paint(HDC hdc) {
     cv.fill(0, rt, KB_W, ru.b, g_theme.button);
 
     // chords lane: the chord items' chords, edited in the arrange view
-    {
+    if (!(g_ui.foldedLanes & LANE_CHORDS)) {
         const Rect ch = L.chords;
-        cv.clip = {0, ch.t, KB_W, ch.b};
-        cv.fill(0, ch.t, KB_W, ch.b, g_theme.button);
-        text(dc, "Chords", 0, ch.t, KB_W, ch.b, g_theme.dim, DT_CENTER);
         cv.clip = ch;
         cv.fill(ch.l, ch.t, ch.r, ch.b, g_theme.ruler);
         for (const ChordSpan &span : Chords_Spans()) {
@@ -940,7 +985,7 @@ void paint(HDC hdc) {
     }
 
     // lyrics lane: the visible lyric line as text, each syllable at its note's start
-    {
+    if (!(g_ui.foldedLanes & LANE_LYRICS)) {
         const Rect ly = L.lyrics;
         cv.clip = ly;
         cv.fill(ly.l, ly.t, ly.r, ly.b, g_theme.ruler);
@@ -961,7 +1006,7 @@ void paint(HDC hdc) {
     }
 
     // overview: whole item, notes, and the visible range
-    {
+    if (!(g_ui.foldedLanes & LANE_OVERVIEW)) {
         const Rect o = L.overview;
         const int ow = (o.r - o.l) * S, oh = (o.b - o.t) * S;
         if (ow != g_ovW || oh != g_ovH || g_ovVersion != g_analysis.valVersion ||
@@ -988,6 +1033,7 @@ void paint(HDC hdc) {
 
     drawEmptyStates(cv, dc, n);
     drawStatus(cv, dc, L);
+    drawLaneLabels(cv, dc, L);
     if (g_ui.help) {
         drawShortcuts(cv, dc, L);
     }

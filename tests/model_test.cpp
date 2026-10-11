@@ -90,6 +90,12 @@ int main() {
                min.notes.r > min.notes.l);
         assert(computeLayout(MIN_W - 1, MIN_H, true).tooSmall &&
                computeLayout(MIN_W, MIN_H - 1, true).tooSmall);
+        // folded lanes become thin strips and give their room to the notes
+        const Layout f = computeLayout(1300, 760, true, LANE_CHORDS | LANE_OVERVIEW);
+        assert(f.chords.b - f.chords.t == FOLDED_H && f.overview.b - f.overview.t == FOLDED_H);
+        assert(f.lyrics.b - f.lyrics.t == LYRICS_H && f.overview.b == f.status.t);
+        assert((f.notes.b - f.notes.t) - (L.notes.b - L.notes.t) ==
+               (CHORDS_H - FOLDED_H) + (OVERVIEW_H - FOLDED_H));
         const Layout tiny = computeLayout(-5, 3, true);
         assert(tiny.tooSmall && tiny.client.r == 0);
     }

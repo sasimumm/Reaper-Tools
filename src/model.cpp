@@ -117,23 +117,26 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch) {
            std::min(end, n.end) - std::max(start, n.start) > 0.3 * (end - start);
 }
 
-Layout computeLayout(int width, int height, bool panelWanted) {
+Layout computeLayout(int width, int height, bool panelWanted, unsigned folded) {
+    const int chordsH = folded & LANE_CHORDS ? FOLDED_H : CHORDS_H,
+              lyricsH = folded & LANE_LYRICS ? FOLDED_H : LYRICS_H,
+              overviewH = folded & LANE_OVERVIEW ? FOLDED_H : OVERVIEW_H;
     Layout L = {};
     L.client = {0, 0, std::max(0, width), std::max(0, height)};
     const Rect &c = L.client;
     L.tooSmall = c.r < MIN_W || c.b < MIN_H;
     L.panelShown = panelWanted && c.r >= KB_W + PANEL_W + 100;
-    const int top = TOOLBAR_H + RULER_H + CHORDS_H;
+    const int top = TOOLBAR_H + RULER_H + chordsH;
     const Rect n = {
         KB_W, top, std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0)),
-        std::max(top + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
+        std::max(top + 1, c.b - STATUS_H - overviewH - lyricsH)
     };
     L.toolbar = {0, 0, c.r, TOOLBAR_H};
     L.notes = n;
     L.ruler = {n.l, TOOLBAR_H, n.r, TOOLBAR_H + RULER_H};
     L.chords = {n.l, TOOLBAR_H + RULER_H, n.r, n.t};
-    L.lyrics = {n.l, n.b, n.r, n.b + LYRICS_H};
-    L.overview = {n.l, n.b + LYRICS_H, n.r, n.b + LYRICS_H + OVERVIEW_H};
+    L.lyrics = {n.l, n.b, n.r, n.b + lyricsH};
+    L.overview = {n.l, n.b + lyricsH, n.r, n.b + lyricsH + overviewH};
     L.status = {0, L.overview.b, c.r, c.b};
     L.panel = {n.r, TOOLBAR_H, c.r, L.status.t};
     return L;

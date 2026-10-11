@@ -57,7 +57,10 @@ struct Layout {
     bool panelShown;
     bool tooSmall; // below MIN_W x MIN_H: only the background is drawn
 };
-Layout computeLayout(int width, int height, bool panelWanted);
+// Lanes that can be folded to a thin strip by clicking their label (bits of `folded`).
+enum { LANE_CHORDS = 1, LANE_LYRICS = 2, LANE_OVERVIEW = 4 };
+static const int FOLDED_H = 6;
+Layout computeLayout(int width, int height, bool panelWanted, unsigned folded = 0);
 
 // --- settings ------------------------------------------------------------------------------
 
