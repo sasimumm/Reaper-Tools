@@ -26,42 +26,22 @@ static Drag g_drag;
 static int g_lastPlayState, g_lastProjChange;
 static double g_lastPlayPos, g_lastCursor;
 
-Rect clientRect() {
+Layout layout() {
     RECT r = {0, 0, 0, 0};
     if (g_ui.hwnd) {
         GetClientRect(g_ui.hwnd, &r);
     }
-    return {0, 0, (int)r.right, (int)r.bottom};
+    return computeLayout((int)r.right, (int)r.bottom, g_ui.panel);
 }
 
-bool panelShown() { return g_ui.panel && clientRect().r >= KB_W + PANEL_W + 100; }
-Rect noteArea() {
-    Rect c = clientRect();
-    return {
-        KB_W, RULER_H + CHORDS_H, std::max(KB_W + 1, c.r - (panelShown() ? PANEL_W : 0)),
-        std::max(RULER_H + CHORDS_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
-    };
-}
-Rect rulerArea() {
-    Rect n = noteArea();
-    return {n.l, 0, n.r, RULER_H};
-}
-Rect chordsArea() {
-    Rect n = noteArea();
-    return {n.l, RULER_H, n.r, n.t};
-}
-Rect lyricsArea() {
-    Rect n = noteArea();
-    return {n.l, n.b, n.r, n.b + LYRICS_H};
-}
-Rect overviewArea() {
-    Rect n = noteArea();
-    return {n.l, n.b + LYRICS_H, n.r, n.b + LYRICS_H + OVERVIEW_H};
-}
-Rect panelArea() {
-    Rect c = clientRect(), n = noteArea();
-    return {n.r, 0, c.r, c.b};
-}
+Rect clientRect() { return layout().client; }
+bool panelShown() { return layout().panelShown; }
+Rect noteArea() { return layout().notes; }
+Rect rulerArea() { return layout().ruler; }
+Rect chordsArea() { return layout().chords; }
+Rect lyricsArea() { return layout().lyrics; }
+Rect overviewArea() { return layout().overview; }
+Rect panelArea() { return layout().panel; }
 
 void syncViewOrigin() {
     Rect n = noteArea();

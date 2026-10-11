@@ -115,3 +115,23 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch) {
     return fabs(n.pitch - pitch) <= 1 &&
            std::min(end, n.end) - std::max(start, n.start) > 0.3 * (end - start);
 }
+
+Layout computeLayout(int width, int height, bool panelWanted) {
+    Layout L;
+    L.client = {0, 0, std::max(0, width), std::max(0, height)};
+    const Rect &c = L.client;
+    L.tooSmall = c.r < MIN_W || c.b < MIN_H;
+    L.panelShown = panelWanted && c.r >= KB_W + PANEL_W + 100;
+    const Rect n = {
+        KB_W, RULER_H + CHORDS_H, std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0)),
+        std::max(RULER_H + CHORDS_H + 1, c.b - STATUS_H - OVERVIEW_H - LYRICS_H)
+    };
+    L.notes = n;
+    L.ruler = {n.l, 0, n.r, RULER_H};
+    L.chords = {n.l, RULER_H, n.r, n.t};
+    L.lyrics = {n.l, n.b, n.r, n.b + LYRICS_H};
+    L.overview = {n.l, n.b + LYRICS_H, n.r, n.b + LYRICS_H + OVERVIEW_H};
+    L.status = {0, L.overview.b, c.r, c.b};
+    L.panel = {n.r, 0, c.r, c.b};
+    return L;
+}

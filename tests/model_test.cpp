@@ -65,5 +65,31 @@ int main() {
         assert(coversSuggestion(n, 1.5, 2.5, 60));  // half overlaps
         assert(!coversSuggestion(n, 1.8, 2.8, 60)); // a fifth overlaps
     }
+    // layout: the areas stack without gaps, the panel only when there is room
+    {
+        const Layout L = computeLayout(1300, 760, true);
+        assert(L.panelShown && !L.tooSmall);
+        assert(L.ruler.t == 0 && L.ruler.b == L.chords.t && L.chords.b == L.notes.t);
+        assert(L.notes.b == L.lyrics.t && L.lyrics.b == L.overview.t && L.overview.b == L.status.t);
+        assert(L.status.b == 760 && L.status.b - L.status.t == STATUS_H);
+        assert(L.notes.l == KB_W && L.notes.r == L.panel.l && L.panel.r == 1300 &&
+               1300 - L.panel.l == PANEL_W);
+        assert(L.ruler.l == L.notes.l && L.ruler.r == L.notes.r && L.overview.r == L.notes.r);
+
+        const Layout off = computeLayout(1300, 760, false);
+        assert(!off.panelShown && off.notes.r == 1300);
+        const Layout narrow =
+            computeLayout(KB_W + PANEL_W + 99, 760, true); // no room for the panel
+        assert(!narrow.panelShown && narrow.notes.r == KB_W + PANEL_W + 99);
+
+        // at the minimum size every area still fits; below it only the background is drawn
+        const Layout min = computeLayout(MIN_W, MIN_H, true);
+        assert(!min.tooSmall && min.notes.b > min.notes.t && min.status.b <= MIN_H &&
+               min.notes.r > min.notes.l);
+        assert(computeLayout(MIN_W - 1, MIN_H, true).tooSmall &&
+               computeLayout(MIN_W, MIN_H - 1, true).tooSmall);
+        const Layout tiny = computeLayout(-5, 3, true);
+        assert(tiny.tooSmall && tiny.client.r == 0);
+    }
     printf("ok\n");
 }

@@ -29,9 +29,6 @@ struct LayerKey {
     }
 };
 static LayerKey g_layerKey;
-// Below this size only the background is drawn, so the areas below always fit in the client rect.
-static const int MIN_W = KB_W + 40,
-                 MIN_H = RULER_H + CHORDS_H + LYRICS_H + OVERVIEW_H + STATUS_H + 20;
 
 static unsigned int mix(unsigned int a, unsigned int b, double f) {
     unsigned int out = 0;
@@ -433,7 +430,8 @@ int lyricAt(int x) {
 }
 
 void paint(HDC hdc) {
-    const Rect c = clientRect();
+    const Layout L = layout(); // once per frame, so every area agrees
+    const Rect c = L.client;
     if (c.r < 2 || c.b < 2) {
         return;
     }
@@ -464,7 +462,7 @@ void paint(HDC hdc) {
     if (!fb) {
         return;
     }
-    if (c.r < MIN_W || c.b < MIN_H) {
+    if (L.tooSmall) {
         for (size_t i = 0; i < (size_t)w * h; i++) {
             fb[i] = 0xff000000 | g_theme.bg;
         }
@@ -472,7 +470,7 @@ void paint(HDC hdc) {
         return;
     }
     syncViewOrigin();
-    const Rect n = noteArea(), ru = rulerArea();
+    const Rect n = L.notes, ru = L.ruler;
     Canvas cv = {fb, w, h, {0, 0, c.r, c.b}, S};
     cv.fill(0, 0, c.r, c.b, g_theme.bg);
     HDC dc = g_memdc;
@@ -629,7 +627,7 @@ void paint(HDC hdc) {
 
     // chords lane: the chord items' chords, edited in the arrange view
     {
-        const Rect ch = chordsArea();
+        const Rect ch = L.chords;
         cv.clip = {0, ch.t, KB_W, ch.b};
         cv.fill(0, ch.t, KB_W, ch.b, g_theme.button);
         text(dc, "Chords", 0, ch.t, KB_W, ch.b, g_theme.dim, DT_CENTER);
@@ -668,7 +666,7 @@ void paint(HDC hdc) {
 
     // lyrics lane: the visible lyric line as text, each syllable at its note's start
     {
-        const Rect ly = lyricsArea();
+        const Rect ly = L.lyrics;
         cv.clip = ly;
         cv.fill(ly.l, ly.t, ly.r, ly.b, g_theme.ruler);
         const std::vector<int> order = lyricOrder();
@@ -689,7 +687,7 @@ void paint(HDC hdc) {
 
     // overview: whole item, notes, and the visible range
     {
-        const Rect o = overviewArea();
+        const Rect o = L.overview;
         const int ow = (o.r - o.l) * S, oh = (o.b - o.t) * S;
         if (ow != g_ovW || oh != g_ovH || g_ovVersion != g_analysis.valVersion ||
             g_ovPos != g_session.audioPos || g_ovLen != g_session.audioLen) {
@@ -714,7 +712,7 @@ void paint(HDC hdc) {
     }
 
     // status line: pitch, frequency, cents of the strongest nearby peak, time, bar.beat, level
-    const int sy = n.b + LYRICS_H + OVERVIEW_H; // status line top
+    const int sy = L.status.t;
     cv.clip = {0, n.b, n.l, sy};
     cv.fill(0, n.b, n.l, sy, g_theme.button);
     cv.clip = {0, sy, c.r, c.b};
@@ -789,7 +787,7 @@ void paint(HDC hdc) {
     text(dc, buf, 6, sy, c.r - 6, c.b, g_theme.dim, DT_RIGHT);
 
     cv.clip = {0, 0, c.r, c.b};
-    if (panelShown()) {
+    if (L.panelShown) {
         drawPanel(cv, dc);
     }
 

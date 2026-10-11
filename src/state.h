@@ -21,9 +21,6 @@
 #include "model.h"
 #include "nsgt.h"
 
-// Layout, in pixels.
-static const int KB_W = 56, RULER_H = 30, STATUS_H = 20, PANEL_W = 250, LYRICS_H = 18,
-                 OVERVIEW_H = 28, CHORDS_H = 20;
 // --- state ---------------------------------------------------------------------
 
 struct OtherVoice {
@@ -79,12 +76,8 @@ struct WindowState {
 };
 inline WindowState g_ui;
 
-struct Rect {
-    int l, t, r, b;
-    bool in(int x, int y) const { return x >= l && x < r && y >= t && y < b; }
-};
-
 // window.cpp
+Layout layout(); // of the window as it is now
 Rect clientRect();
 bool panelShown();
 Rect noteArea();
