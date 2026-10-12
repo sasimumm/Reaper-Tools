@@ -1,5 +1,6 @@
 #include "model.h"
 
+#include "index.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -78,7 +79,7 @@ void decodeSettings(const char *str, Settings &settings) {
         if (!eq || !end || eq > end) {
             break;
         }
-        const std::string name(p, eq - p);
+        const std::string name(p, idx(eq - p));
         const double v = strtod(eq + 1, NULL);
         for (const Setting &st : fs) {
             if (name == st.name) {

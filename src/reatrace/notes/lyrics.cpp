@@ -1,5 +1,6 @@
 #include "notes/lyrics.h"
 
+#include "index.h"
 #include "notes/takesync.h"
 
 static double g_editStart;
@@ -19,7 +20,7 @@ static int findNote(double start, int pitch) {
 
 // The note after (dir > 0) or before (dir < 0) note i in time; same-start notes ordered by pitch.
 static int neighbourNote(int i, int dir) {
-    const Note &c = g_session.ed.notes[i];
+    const Note &c = g_session.ed.notes[idx(i)];
     int best = -1;
     for (size_t j = 0; j < g_session.ed.notes.size(); j++) {
         const Note &o = g_session.ed.notes[j];
@@ -32,7 +33,7 @@ static int neighbourNote(int i, int dir) {
             best = static_cast<int>(j);
             continue;
         }
-        const Note &b = g_session.ed.notes[best];
+        const Note &b = g_session.ed.notes[idx(best)];
         const bool closer = dir > 0
                                 ? (o.start < b.start || (o.start == b.start && o.pitch < b.pitch))
                                 : (o.start > b.start || (o.start == b.start && o.pitch > b.pitch));
@@ -48,7 +49,7 @@ void placeEdit() {
     if (!g_ui.edit || i < 0) {
         return;
     }
-    const Note &nt = g_session.ed.notes[i];
+    const Note &nt = g_session.ed.notes[idx(i)];
     const int x = static_cast<int>(lround(g_ui.view.x(nt.start))),
               y = static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5)));
     const int w = std::max(90, static_cast<int>(lround(g_ui.view.x(nt.end))) - x);
@@ -68,7 +69,7 @@ void beginLyric(int i) {
     }
     // scroll so the note is visible
     const Rect n = noteArea();
-    const Note &nt = g_session.ed.notes[i];
+    const Note &nt = g_session.ed.notes[idx(i)];
     if (g_ui.view.x(nt.start) < n.l + 20 || g_ui.view.x(nt.start) > n.r - 100) {
         g_ui.view.t0 = nt.start - 60 / g_ui.view.pps - (n.l - g_ui.view.x0) / g_ui.view.pps;
     }
@@ -78,7 +79,7 @@ void beginLyric(int i) {
     for (Note &o : g_session.ed.notes) {
         o.sel = false;
     }
-    g_session.ed.notes[i].sel = true;
+    g_session.ed.notes[idx(i)].sel = true;
     g_editStart = nt.start;
     g_editPitch = nt.pitch;
     if (!g_ui.edit) {
@@ -122,11 +123,11 @@ void endLyric(bool commit, int dir) {
     double nextStart = 0;
     int nextPitch = -1;
     if (next >= 0) {
-        nextStart = g_session.ed.notes[next].start;
-        nextPitch = g_session.ed.notes[next].pitch;
+        nextStart = g_session.ed.notes[idx(next)].start;
+        nextPitch = g_session.ed.notes[idx(next)].pitch;
     }
-    if (commit && text != g_session.ed.notes[i].lyric) {
-        g_session.ed.notes[i].lyric = text;
+    if (commit && text != g_session.ed.notes[idx(i)].lyric) {
+        g_session.ed.notes[idx(i)].lyric = text;
         commitNotes();
     }
     if (nextPitch >= 0) {
@@ -163,7 +164,7 @@ void pasteLyrics(const std::string &text) {
         order[i] = static_cast<int>(i);
     }
     std::sort(order.begin(), order.end(), [](int a, int b) {
-        const Note &x = g_session.ed.notes[a], &y = g_session.ed.notes[b];
+        const Note &x = g_session.ed.notes[idx(a)], &y = g_session.ed.notes[idx(b)];
         return x.start < y.start || (x.start == y.start && x.pitch < y.pitch);
     });
     int selected = 0;
@@ -173,12 +174,13 @@ void pasteLyrics(const std::string &text) {
     std::vector<int> targets;
     bool started = selected == 0;
     for (int i : order) {
-        if (selected > 1 ? g_session.ed.notes[i].sel : (started |= g_session.ed.notes[i].sel)) {
+        if (selected > 1 ? g_session.ed.notes[idx(i)].sel
+                         : (started |= g_session.ed.notes[idx(i)].sel)) {
             targets.push_back(i);
         }
     }
     for (size_t k = 0; k < targets.size() && k < syl.size(); k++) {
-        g_session.ed.notes[targets[k]].lyric = syl[k];
+        g_session.ed.notes[idx(targets[k])].lyric = syl[k];
     }
     commitNotes();
 }

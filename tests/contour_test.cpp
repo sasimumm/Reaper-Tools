@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "dsp/contour.h"
+#include "index.h"
 
 // A sung-like tone: 12 harmonics with a "formant" making the 3rd louder than the fundamental.
 static void tone(std::vector<float> &x, double sr, double t0, double t1, double pitch,
@@ -21,7 +22,7 @@ static void tone(std::vector<float> &x, double sr, double t0, double t1, double 
             phase[h] += 2 * M_PI * f0 * h / sr;
             v += (h == 3 ? 2.0 : 1.0 / h) * sin(phase[h]);
         }
-        x[i] += static_cast<float>(0.1 * env * v);
+        x[idx(i)] += static_cast<float>(0.1 * env * v);
     }
 }
 
@@ -39,7 +40,7 @@ int main() {
         NSGTParams(), static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
             for (int i = 0; i < n; i++) {
                 const long long j = st + i;
-                o[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[j] : 0;
+                o[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
             }
         });
     const double fr = s.frameRate();
@@ -62,7 +63,8 @@ int main() {
         const Spectrogram sb =
             computeNSGT(np, static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
                 for (int i = 0; i < n; i++) {
-                    o[i] = st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[st + i] : 0;
+                    o[i] = st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[idx(st + i)]
+                                                                                    : 0;
                 }
             });
         const Contour cb = trackPitch(sb);
@@ -76,7 +78,7 @@ int main() {
     }
     int voicedInRest = 0;
     for (int f = static_cast<int>(1.38 * fr); f < static_cast<int>(1.52 * fr); f++) {
-        voicedInRest += c.pitch[f] >= 0;
+        voicedInRest += c.pitch[idx(f)] >= 0;
     }
     printf("voiced frames in the rest: %d\n", voicedInRest);
     assert(voicedInRest == 0);
@@ -89,7 +91,7 @@ int main() {
     }
     assert(segs.size() == 3);
     for (int i = 0; i < 3; i++) {
-        assert(lround(segs[i].pitch) == lround(notes[i].pitch));
+        assert(lround(segs[idx(i)].pitch) == lround(notes[idx(i)].pitch));
     }
     assert(fabs(segs[0].f1 / fr - 0.7) < 0.03 && fabs(segs[1].f0 / fr - 0.7) < 0.03);
     assert(fabs(segs[0].f0 / fr - 0.2) < 0.03 && fabs(segs[2].f0 / fr - 1.6) < 0.03);

@@ -2,6 +2,7 @@
 // posteriors per semitone, used to confirm the NMF note estimates (see estimate.h).
 #pragma once
 
+#include "index.h"
 #include <functional>
 #include <string>
 #include <vector>
@@ -11,12 +12,8 @@ struct BasicPitch {
     int frames = 0; // on the uniform 256-sample hop at 22050 Hz: frame f is sample f*256
     std::vector<float> note, onset; // frames*PITCHES, 0..1
 
-    float noteAt(int f, int midi) const {
-        return note[static_cast<size_t>(f) * PITCHES + midi - LOWEST];
-    }
-    float onsetAt(int f, int midi) const {
-        return onset[static_cast<size_t>(f) * PITCHES + midi - LOWEST];
-    }
+    float noteAt(int f, int midi) const { return note[idx(f) * PITCHES + idx(midi) - LOWEST]; }
+    float onsetAt(int f, int midi) const { return onset[idx(f) * PITCHES + idx(midi) - LOWEST]; }
 };
 
 // mono: audio at 22050 Hz. modelPath: the compiled model (nmp.mlmodelc). progress(fraction)

@@ -1,5 +1,6 @@
 #include "notes/editor.h"
 
+#include "index.h"
 #include <algorithm>
 #include <cctype>
 
@@ -12,7 +13,7 @@ static const double AXIS_LOCK_THRESHOLD = 10;
 NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *noteIndex) const {
     for (int i = static_cast<int>(notes.size()) - 1; i >= 0; i--) // last drawn is on top
     {
-        const Note &n = notes[i];
+        const Note &n = notes[idx(i)];
         const double x0 = v.x(n.start), x1 = v.x(n.end), y0 = v.y(n.pitch + 0.5),
                      y1 = v.y(n.pitch - 0.5);
         if (x < x0 - INFLATE || x > x1 + INFLATE || y < y0 - INFLATE || y > y1 + INFLATE) {
@@ -49,16 +50,16 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
         return;
     }
     if (mods & MOD_CMD) {
-        notes[i].sel = !notes[i].sel;
+        notes[idx(i)].sel = !notes[idx(i)].sel;
         changed = true;
         mode = IDLE;
         return;
     }
-    if (!notes[i].sel) {
+    if (!notes[idx(i)].sel) {
         for (Note &n : notes) {
             n.sel = false;
         }
-        notes[i].sel = true;
+        notes[idx(i)].sel = true;
         changed = true;
         orig = notes;
     }
@@ -89,7 +90,7 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
 
     const double dtRaw = v.t(x) - v.t(downX);
     if (mode == DRAW) {
-        Note &n = notes[drawIndex];
+        Note &n = notes[idx(drawIndex)];
         const double a = sn(v.t(downX)), b = sn(v.t(x));
         n.start = std::min(a, b);
         n.end = std::max(std::max(a, b), n.start + minLen);
@@ -100,7 +101,7 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         } else if (axis == AXIS_FREE && (ax > AXIS_LOCK_THRESHOLD || ay > AXIS_LOCK_THRESHOLD)) {
             axis = ax >= ay ? AXIS_TIME : AXIS_PITCH;
         }
-        const Note &a = orig[anchor];
+        const Note &a = orig[idx(anchor)];
         const double dt = axis == AXIS_PITCH ? 0 : sn(a.start + dtRaw) - a.start;
         const int dp = axis == AXIS_TIME ? 0 : v.pitchAt(y) - v.pitchAt(downY);
         for (size_t i = 0; i < notes.size(); i++) {
@@ -111,7 +112,7 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
             }
         }
     } else if (mode == RESIZE_R || mode == RESIZE_L) {
-        const Note &a = orig[anchor];
+        const Note &a = orig[idx(anchor)];
         const double edge = mode == RESIZE_R ? a.end : a.start, dt = sn(edge + dtRaw) - edge;
         for (size_t i = 0; i < notes.size(); i++) {
             if (orig[i].sel) {
@@ -178,7 +179,7 @@ bool NoteEditor::deleteSelected() {
             if (notes[i].idx >= 0) {
                 deleted.push_back(notes[i].idx);
             }
-            notes.erase(notes.begin() + i);
+            notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
             any = true;
         }
     }
@@ -199,8 +200,8 @@ bool NoteEditor::deleteAt(const ViewMap &v, double x, double y) {
     if (hitTest(v, x, y, &i) == NONE) {
         return false;
     }
-    if (notes[i].idx >= 0) {
-        deleted.push_back(notes[i].idx);
+    if (notes[idx(i)].idx >= 0) {
+        deleted.push_back(notes[idx(i)].idx);
     }
     notes.erase(notes.begin() + i);
     return true;
@@ -302,11 +303,11 @@ bool NoteEditor::joinSelected() {
         return false;
     }
     std::sort(sel.begin(), sel.end(),
-              [&](int a, int b) { return notes[a].start < notes[b].start; });
-    Note &first = notes[sel[0]];
+              [&](int a, int b) { return notes[idx(a)].start < notes[idx(b)].start; });
+    Note &first = notes[idx(sel[0])];
     // lyrics are joined, dropping the hyphens between syllables: "hel-" + "lo" -> "hello"
     for (size_t k = 1; k < sel.size(); k++) {
-        const Note &n = notes[sel[k]];
+        const Note &n = notes[idx(sel[k])];
         first.end = std::max(first.end, n.end);
         if (n.lyric.empty()) {
             continue;
@@ -318,8 +319,8 @@ bool NoteEditor::joinSelected() {
     }
     std::sort(sel.begin() + 1, sel.end(), std::greater<int>());
     for (size_t k = 1; k < sel.size(); k++) {
-        if (notes[sel[k]].idx >= 0) {
-            deleted.push_back(notes[sel[k]].idx);
+        if (notes[idx(sel[k])].idx >= 0) {
+            deleted.push_back(notes[idx(sel[k])].idx);
         }
         notes.erase(notes.begin() + sel[k]);
     }

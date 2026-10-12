@@ -101,6 +101,7 @@
 #define REAPERAPI_WANT_DockWindowActivate
 #define REAPERAPI_WANT_ValidatePtr2
 #define REAPERAPI_WANT_plugin_getapi
+#include "index.h"
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
 
@@ -112,9 +113,9 @@
 // are still recognised.
 static void voiceTrackName(int voice, char *buf, int sz, const char *prefix = "ReaTrace") {
     if (voice == 0) {
-        snprintf(buf, sz, "%s notes", prefix);
+        snprintf(buf, idx(sz), "%s notes", prefix);
     } else {
-        snprintf(buf, sz, "%s voice %d", prefix, voice + 1);
+        snprintf(buf, idx(sz), "%s voice %d", prefix, voice + 1);
     }
 }
 

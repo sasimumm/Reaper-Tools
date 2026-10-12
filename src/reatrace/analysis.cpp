@@ -5,6 +5,7 @@
 #include <thread>
 
 #include "dsp/estimate.h"
+#include "index.h"
 
 // --- spectrogram ---------------------------------------------------------------
 
@@ -110,18 +111,18 @@ static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<f
     const int nch =
         std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
     const long long n = static_cast<long long>(len * sr);
-    left.assign(static_cast<size_t>(std::max(0LL, n)), 0), right.assign(left.size(), 0);
+    left.assign(idx(std::max(0LL, n)), 0), right.assign(left.size(), 0);
     std::vector<double> buf;
     const int chunk = 65536;
     for (long long pos = 0; pos < n; pos += chunk) {
         const int m = static_cast<int>(std::min<long long>(chunk, n - pos));
-        buf.assign(static_cast<size_t>(m) * nch,
+        buf.assign(idx(m) * idx(nch),
                    0); // the accessor leaves the buffer untouched where there's no audio
         GetAudioAccessorSamples(acc, static_cast<int>(sr), nch, static_cast<double>(pos) / sr, m,
                                 buf.data()); // time relative to item start
         for (int i = 0; i < m; i++) {
-            left[pos + i] = static_cast<float>(buf[static_cast<size_t>(i) * nch]);
-            right[pos + i] = static_cast<float>(buf[static_cast<size_t>(i) * nch + (nch - 1)]);
+            left[idx(pos + i)] = static_cast<float>(buf[idx(i) * idx(nch)]);
+            right[idx(pos + i)] = static_cast<float>(buf[idx(i) * idx(nch) + (idx(nch - 1))]);
         }
     }
     DestroyAudioAccessor(acc);
@@ -174,7 +175,7 @@ struct Job {
                 [&](long long start, int n, float *out) {
                     for (int i = 0; i < n; i++) {
                         out[i] = start + i >= 0 && start + i < static_cast<long long>(mono.size())
-                                     ? mono[start + i]
+                                     ? mono[idx(start + i)]
                                      : 0;
                     }
                 },
@@ -268,8 +269,10 @@ struct Job {
                 [&](long long start, int n, float *out) {
                     for (int i = 0; i < n; i++) {
                         const long long j = start + i;
-                        const float a = j >= 0 && j < static_cast<long long>(l.size()) ? l[j] : 0,
-                                    b = j >= 0 && j < static_cast<long long>(r.size()) ? r[j] : 0;
+                        const float a = j >= 0 && j < static_cast<long long>(l.size()) ? l[idx(j)]
+                                                                                       : 0,
+                                    b = j >= 0 && j < static_cast<long long>(r.size()) ? r[idx(j)]
+                                                                                       : 0;
                         out[i] = ch == CH_LEFT    ? a
                                  : ch == CH_RIGHT ? b
                                  : ch == CH_SIDE  ? 0.5f * (a - b)

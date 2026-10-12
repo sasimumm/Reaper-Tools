@@ -10,6 +10,7 @@
 #include "dsp/estimate.h"
 #include "dsp/parallel.h"
 
+#include "index.h"
 #include <atomic>
 #include <stdexcept>
 
@@ -35,7 +36,7 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
         for (int h = 1; h <= 8; h++) {
             v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
         }
-        x[i] += static_cast<float>(static_cast<double>(amp) * env * v);
+        x[idx(i)] += static_cast<float>(static_cast<double>(amp) * env * v);
     }
 }
 
@@ -43,7 +44,8 @@ static Spectrogram analyze(const std::vector<float> &x) {
     return computeNSGT(
         estimateNSGTParams(), static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
             for (int i = 0; i < n; i++) {
-                o[i] = st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[st + i] : 0;
+                o[i] =
+                    st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[idx(st + i)] : 0;
             }
         });
 }
@@ -51,25 +53,25 @@ static Spectrogram analyze(const std::vector<float> &x) {
 // The k strongest local maxima of a roll's mean over frames f0..f1, as MIDI pitches.
 static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int f0, int f1,
                               int k) {
-    std::vector<double> m(n, 0);
+    std::vector<double> m(idx(n), 0);
     for (int f = f0; f < f1; f++) {
         for (int p = 0; p < n; p++) {
-            m[p] += static_cast<double>(roll[static_cast<size_t>(f) * n + p]);
+            m[idx(p)] += static_cast<double>(roll[idx(f, n, p)]);
         }
     }
-    std::vector<int> idx;
+    std::vector<int> peaks;
     for (int p = 1; p + 1 < n; p++) {
-        if (m[p] >= m[p - 1] && m[p] > m[p + 1]) {
-            idx.push_back(p);
+        if (m[idx(p)] >= m[idx(p - 1)] && m[idx(p)] > m[idx(p + 1)]) {
+            peaks.push_back(p);
         }
     }
-    std::sort(idx.begin(), idx.end(), [&](int a, int b) { return m[a] > m[b]; });
-    idx.resize(std::min(static_cast<int>(idx.size()), k));
-    for (int &p : idx) {
+    std::sort(peaks.begin(), peaks.end(), [&](int a, int b) { return m[idx(a)] > m[idx(b)]; });
+    peaks.resize(idx(std::min(static_cast<int>(peaks.size()), k)));
+    for (int &p : peaks) {
         p += lo;
     }
-    std::sort(idx.begin(), idx.end());
-    return idx;
+    std::sort(peaks.begin(), peaks.end());
+    return peaks;
 }
 
 int main() {
@@ -159,8 +161,8 @@ int main() {
         const std::vector<int> got = peaks(r, lo, n, 20, frames - 20, 1);
         double at = 0, sub = 0;
         for (int f = 20; f < frames - 20; f++) {
-            at += static_cast<double>(r[static_cast<size_t>(f) * n + 57 - lo]);
-            sub += static_cast<double>(r[static_cast<size_t>(f) * n + 45 - lo]);
+            at += static_cast<double>(r[idx(f) * n + 57 - lo]);
+            sub += static_cast<double>(r[idx(f) * n + 45 - lo]);
         }
         printf("sacf A3 -> %d, sub-octave %.2f of it\n", got[0], sub / at);
         assert(got[0] == 57 && sub < 0.3 * at);

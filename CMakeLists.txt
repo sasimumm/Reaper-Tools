@@ -11,7 +11,7 @@ set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
 # Warnings on our own sources only (vendor code and SDK headers are left alone: they are SYSTEM includes).
 # -Wno-format-nonliteral: the panel's slider formats come from its table.
 option(REATRACE_WERROR "Treat warnings in ReaTrace's own sources as errors" ON)
-set(REATRACE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow-all -Wconversion -Wno-sign-conversion
+set(REATRACE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow-all -Wconversion -Wsign-conversion
   -Wimplicit-fallthrough -Wcomma -Wformat=2 -Wno-format-nonliteral -Wundef -Wcast-qual -Wextra-semi -Wnon-virtual-dtor
   -Wmissing-prototypes -Wzero-as-null-pointer-constant -Wnewline-eof -Wunreachable-code-aggressive
   -Wdouble-promotion -Wold-style-cast)

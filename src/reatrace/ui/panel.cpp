@@ -1,6 +1,7 @@
 #include "ui/panel.h"
 
 #include "analysis.h"
+#include "index.h"
 #include "notes/commands.h"
 #include "settings.h"
 #include "ui/theme.h"
@@ -484,10 +485,10 @@ static double sliderDefault(const Widget &w) {
 void panelDoubleClick(int y) {
     const int i = widgetAt(y);
     std::vector<Widget> ws = widgets();
-    if (i >= 0 && ws[i].type == W_SLIDER && *ws[i].value != sliderDefault(ws[i])) {
+    if (i >= 0 && ws[idx(i)].type == W_SLIDER && *ws[idx(i)].value != sliderDefault(ws[idx(i)])) {
         g_panelWidget = i;
-        *ws[i].value = sliderDefault(ws[i]);
-        changedSetting(ws[i]);
+        *ws[idx(i)].value = sliderDefault(ws[idx(i)]);
+        changedSetting(ws[idx(i)]);
     }
 }
 
@@ -500,7 +501,7 @@ void panelMouse(int x, int y, bool down) {
     if (g_panelWidget < 0) {
         return;
     }
-    const Widget &w = ws[g_panelWidget];
+    const Widget &w = ws[idx(g_panelWidget)];
     if (down && w.type == W_HEADER) { // fold or unfold the section
         const auto it = std::find(g_folded.begin(), g_folded.end(), w.label);
         if (it != g_folded.end()) {

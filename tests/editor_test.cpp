@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "index.h"
 #include "notes/editor.h"
 
 static bool near(double a, double b) { return fabs(a - b) < 1e-9; }
@@ -98,7 +99,7 @@ int main() {
     const char *want[] = {"Hel-", "lo", "dar-", "k-", "ness", "my", "_", "old", "friend-"};
     assert(syl.size() == 9);
     for (int k = 0; k < 9; k++) {
-        assert(syl[k] == want[k]);
+        assert(syl[idx(k)] == want[idx(k)]);
     }
 
     // Copy/paste at a time, duplicate after the selection, split, join (lyrics joined without hyphens).

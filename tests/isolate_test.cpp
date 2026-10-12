@@ -10,6 +10,7 @@
 
 #include "eel2/ns-eel-int.h" // NSEEL_PProc_THIS
 #include "eel2/ns-eel.h"
+#include "index.h"
 #include "playback/isolate.h"
 
 // EEL2 asks its host for a lock around its global tables; single-threaded here
@@ -28,7 +29,7 @@ struct Fx {
     static EEL_F NSEEL_CGEN_CALL sliderByIndex(void *self, EEL_F *i) {
         const std::vector<EEL_F *> &s = static_cast<Fx *>(self)->sliders;
         const int k = static_cast<int>(*i) - 1;
-        return k >= 0 && k < static_cast<int>(s.size()) ? *s[k] : 0;
+        return k >= 0 && k < static_cast<int>(s.size()) ? *s[idx(k)] : 0;
     }
 
     Fx() {
@@ -53,8 +54,8 @@ struct Fx {
                 const std::string name = "slider" + std::to_string(n);
                 EEL_F *v = NSEEL_VM_regvar(vm, name.c_str());
                 *v = strtod(l.c_str() + l.find(':') + 1, nullptr);
-                sliders.resize(std::max(sliders.size(), static_cast<size_t>(n)));
-                sliders[static_cast<size_t>(n) - 1] = v;
+                sliders.resize(std::max(sliders.size(), idx(n)));
+                sliders[idx(n) - 1] = v;
             }
             static const char *const NAMES[] = {"@init", "@slider", "@block", "@sample"};
             bool header = false;
@@ -91,9 +92,8 @@ struct Fx {
         *sliders[0] = width;
         *sliders[1] = bgDb;
         for (int v = 0; v < ISOLATE_VOICES; v++) {
-            const Changes c =
-                v < static_cast<int>(voices.size()) ? voices[static_cast<size_t>(v)] : Changes();
-            const size_t at = static_cast<size_t>(isolateParam(v));
+            const Changes c = v < static_cast<int>(voices.size()) ? voices[idx(v)] : Changes();
+            const size_t at = idx(isolateParam(v));
             *sliders[at] = static_cast<double>(c.size());
             for (size_t i = 0; i < c.size(); i++) {
                 *sliders[at + 1 + 2 * i] = c[i].first;

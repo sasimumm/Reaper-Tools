@@ -1,5 +1,6 @@
 #include "ui/window.h"
 
+#include "index.h"
 #include "state.h"
 
 #include "analysis.h"
@@ -493,9 +494,9 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             g_session.ed.mouseDown(g_ui.view, x, y, mods());
             int hit = -1;
             if (g_session.ed.hitTest(g_ui.view, x, y, &hit) != NoteEditor::NONE) {
-                previewPitch(g_session.ed.notes[hit].pitch);
+                previewPitch(g_session.ed.notes[idx(hit)].pitch);
             }
-            previewDragStarted(hit >= 0 ? g_session.ed.notes[hit].pitch : -1);
+            previewDragStarted(hit >= 0 ? g_session.ed.notes[idx(hit)].pitch : -1);
         } else {
             return 0;
         }
@@ -532,7 +533,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
             if (drawn >= 0 && drawn < static_cast<int>(g_session.ed.notes.size()) &&
                 g_settings.pitchFromContour && !(mods() & MOD_ALT)) {
-                pitchFromContour(g_session.ed.notes[drawn]);
+                pitchFromContour(g_session.ed.notes[idx(drawn)]);
             }
             commitNotes();
         }

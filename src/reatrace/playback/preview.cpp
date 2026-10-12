@@ -1,5 +1,6 @@
 #include "playback/preview.h"
 
+#include "index.h"
 #include <fcntl.h>
 #include <unistd.h>
 
@@ -108,7 +109,7 @@ void previewDragStarted(int pitch) { g_lastDragPitch = pitch; }
 // While drawing or moving, play the dragged note again whenever its pitch changes.
 void previewDragged() {
     const int dn = g_session.ed.dragNote();
-    const int pitch = dn >= 0 ? g_session.ed.notes[dn].pitch : -1;
+    const int pitch = dn >= 0 ? g_session.ed.notes[idx(dn)].pitch : -1;
     if (pitch >= 0 && pitch != g_lastDragPitch) {
         previewPitch(pitch);
     }

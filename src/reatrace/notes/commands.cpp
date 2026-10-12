@@ -1,6 +1,7 @@
 #include "notes/commands.h"
 
 #include "analysis.h"
+#include "index.h"
 #include "notes/lyrics.h"
 #include "notes/takesync.h"
 #include "playback/preview.h"
@@ -54,7 +55,7 @@ void nudgeSelected(int steps, int semitones) {
     };
     if (g_session.ed.nudgeSelected(move, semitones)) {
         if (semitones != 0) {
-            previewPitch(g_session.ed.notes[firstSelected()].pitch);
+            previewPitch(g_session.ed.notes[idx(firstSelected())].pitch);
         }
         commitNotes();
     }
@@ -157,7 +158,7 @@ int firstSelected() {
     int best = -1;
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         if (g_session.ed.notes[i].sel &&
-            (best < 0 || g_session.ed.notes[i].start < g_session.ed.notes[best].start)) {
+            (best < 0 || g_session.ed.notes[i].start < g_session.ed.notes[idx(best)].start)) {
             best = static_cast<int>(i);
         }
     }
@@ -188,7 +189,7 @@ void setupEditorSnap() {
 }
 
 void acceptSuggestion(int i) {
-    const Segment &sg = suggestions()[i];
+    const Segment &sg = suggestions()[idx(i)];
     for (Note &o : g_session.ed.notes) {
         o.sel = false;
     }

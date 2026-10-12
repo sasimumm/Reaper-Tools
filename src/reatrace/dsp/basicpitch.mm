@@ -2,6 +2,7 @@
 
 #import <CoreML/CoreML.h>
 
+#include "index.h"
 #include <algorithm>
 #include <cmath>
 
@@ -40,7 +41,7 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
         }
 
         out.frames = std::max(0, frames);
-        out.note.assign(static_cast<size_t>(out.frames) * BasicPitch::PITCHES, 0);
+        out.note.assign(idx(out.frames) * BasicPitch::PITCHES, 0);
         out.onset.assign(out.note.size(), 0);
         // Output frame j of window w is original sample w*WINDOW_HOP - OVERLAP/2 + j*HOP. Each uniform
         // frame takes the nearest kept output frame of the window covering it, which avoids the drift
@@ -57,7 +58,8 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
                 const long long start = static_cast<long long>(w) * WINDOW_HOP - OVERLAP / 2;
                 for (int i = 0; i < WINDOW; i++) {
                     const long long j = start + i;
-                    buf[i] = j >= 0 && j < static_cast<long long>(mono.size()) ? mono[j] : 0;
+                    buf[idx(i)] =
+                        j >= 0 && j < static_cast<long long>(mono.size()) ? mono[idx(j)] : 0;
                 }
                 MLMultiArray *in =
                     [[MLMultiArray alloc] initWithDataPointer:buf.data()
@@ -99,10 +101,8 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
                                                                 static_cast<double>(start)) /
                                                                HOP))));
                     for (int p = 0; p < BasicPitch::PITCHES; p++) {
-                        out.note[static_cast<size_t>(f) * BasicPitch::PITCHES + p] =
-                            np[j * ns1 + p * ns2];
-                        out.onset[static_cast<size_t>(f) * BasicPitch::PITCHES + p] =
-                            op[j * os1 + p * os2];
+                        out.note[idx(f) * BasicPitch::PITCHES + idx(p)] = np[j * ns1 + p * ns2];
+                        out.onset[idx(f) * BasicPitch::PITCHES + idx(p)] = op[j * os1 + p * os2];
                     }
                 }
                 if (progress && !progress(static_cast<double>(w + 1) / windows)) {

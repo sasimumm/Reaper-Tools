@@ -6,6 +6,7 @@
 #include <cstring>
 
 #include "fft.h"
+#include "index.h"
 
 // WDL's FFT tops out at 32768 points, so the signal is processed in overlapping blocks
 // (sliCQ-style). Each block gets one forward FFT; every bin then multiplies its Gaussian
@@ -60,13 +61,13 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
     s.p = p;
     s.bins = std::max(1, static_cast<int>(ceil(p.binsPerOctave * log2(fmax / p.fmin))));
     s.frames = static_cast<int>(numSamples / hop) + 1;
-    s.mag.assign(static_cast<size_t>(s.frames) * s.bins, 0);
+    s.mag.assign(idx(s.frames) * idx(s.bins), 0);
 
     struct Bin {
         int k0 = 0, k1 = 0, M = 0, step = 0;
         std::vector<float> w;
     };
-    std::vector<Bin> bins(s.bins);
+    std::vector<Bin> bins(idx(s.bins));
     double maxSigmaT = 0;
     for (int b = 0; b < s.bins; b++) {
         const double f = p.fmin * pow(2.0, static_cast<double>(b) / p.binsPerOctave);
@@ -74,7 +75,7 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
         maxSigmaT = std::max(maxSigmaT, 1 / (2 * M_PI * sigmaF));
         const int r = std::max(1, static_cast<int>(ceil(3 * sigmaF / freqRes))),
                   c = static_cast<int>(lround(f / freqRes));
-        Bin &bn = bins[b];
+        Bin &bn = bins[idx(b)];
         bn.k0 = std::max(1, c - r);
         bn.k1 = std::min(N / 2 - 1, c + r);
         bn.M = std::max(nextPow2(bn.k1 - bn.k0 + 1), N / hop);
@@ -94,7 +95,7 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
     for (const Bin &bn : bins) {
         maxM = std::max(maxM, bn.M);
     }
-    std::vector<WDL_FFT_COMPLEX> small(maxM);
+    std::vector<WDL_FFT_COMPLEX> small(idx(maxM));
     const int *permN = WDL_fft_permute_tab(N / 2);
     // Y = 2*X*w for the analytic signal and |ifft|/N; WDL's real FFT output is already 2x a plain DFT, so 2/N -> 1/N.
     const float scale = 1.0f / N;
@@ -107,21 +108,21 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
         const int nf = std::min(framesPerBlock, s.frames - first);
 
         for (int b = 0; b < s.bins; b++) {
-            const Bin &bn = bins[b];
+            const Bin &bn = bins[idx(b)];
             const int *permM = WDL_fft_permute_tab(bn.M);
-            memset(small.data(), 0, bn.M * sizeof(WDL_FFT_COMPLEX));
+            memset(small.data(), 0, static_cast<unsigned long>(bn.M) * sizeof(WDL_FFT_COMPLEX));
             // Shifting the band down to bin 0 only changes phase, not magnitude.
             for (int k = bn.k0; k <= bn.k1; k++) {
                 const WDL_FFT_COMPLEX &x = X[permN[k]];
-                WDL_FFT_COMPLEX &y = small[permM[k - bn.k0]];
-                float w = bn.w[k - bn.k0] * scale;
+                WDL_FFT_COMPLEX &y = small[idx(permM[k - bn.k0])];
+                float w = bn.w[idx(k - bn.k0)] * scale;
                 y.re = x.re * w;
                 y.im = x.im * w;
             }
             WDL_fft(small.data(), bn.M, 1);
             for (int i = 0; i < nf; i++) {
-                const WDL_FFT_COMPLEX &z = small[static_cast<size_t>(margin / hop + i) * bn.step];
-                s.mag[static_cast<size_t>(first + i) * s.bins + b] = hypotf(z.re, z.im);
+                const WDL_FFT_COMPLEX &z = small[idx(margin / hop + i) * idx(bn.step)];
+                s.mag[idx(first + i, s.bins, b)] = hypotf(z.re, z.im);
             }
         }
         if (progress && !progress(static_cast<double>(first + nf) / s.frames)) {
@@ -142,15 +143,15 @@ Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
 }
 
 void estimateNoise(Spectrogram &s, double fraction) {
-    std::vector<std::pair<double, int>> energy(s.frames);
+    std::vector<std::pair<double, int>> energy(idx(s.frames));
     for (int f = 0; f < s.frames; f++) {
         double e = 0;
         for (int b = 0; b < s.bins; b++) {
             e += static_cast<double>(s.at(f, b)) * static_cast<double>(s.at(f, b));
         }
-        energy[f] = {e, f};
+        energy[idx(f)] = {e, f};
     }
-    s.noise.assign(s.bins, 0);
+    s.noise.assign(idx(s.bins), 0);
     if (!s.frames) {
         return;
     }
@@ -158,7 +159,7 @@ void estimateNoise(Spectrogram &s, double fraction) {
     std::nth_element(energy.begin(), energy.begin() + quiet - 1, energy.end());
     for (int i = 0; i < quiet; i++) {
         for (int b = 0; b < s.bins; b++) {
-            s.noise[b] += s.at(energy[i].second, b) / static_cast<float>(quiet);
+            s.noise[idx(b)] += s.at(energy[idx(i)].second, b) / static_cast<float>(quiet);
         }
     }
 }
@@ -169,7 +170,7 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
     }
     f0 = std::max(0, std::min(f0, f1));
     std::vector<float> db;
-    const size_t a = static_cast<size_t>(f0) * s.bins, n = static_cast<size_t>(f1) * s.bins,
+    const size_t a = idx(f0) * idx(s.bins), n = idx(f1) * idx(s.bins),
                  stride = std::max<size_t>(1, (n - a) / 200000);
     for (size_t i = a; i < n; i += stride) {
         db.push_back(20 * log10f(std::max(s.mag[i], 1e-10f)));
@@ -179,7 +180,8 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
     }
     auto pct = [&](double q) {
         auto it = db.begin() +
-                  std::min(db.size() - 1, static_cast<size_t>(q * static_cast<double>(db.size())));
+                  static_cast<std::ptrdiff_t>(std::min(
+                      db.size() - 1, static_cast<size_t>(q * static_cast<double>(db.size()))));
         std::nth_element(db.begin(), it, db.end());
         return static_cast<double>(*it);
     };
@@ -192,8 +194,9 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
 
 static float displayMag(const Spectrogram &s, const RenderParams &rp, int f, int b) {
     float m = s.at(f, b);
-    return rp.subtractNoise ? std::max(0.0f, m - static_cast<float>(rp.noiseAlpha) * s.noise[b])
-                            : m;
+    return rp.subtractNoise
+               ? std::max(0.0f, m - static_cast<float>(rp.noiseAlpha) * s.noise[idx(b)])
+               : m;
 }
 
 double cellValue(const Spectrogram &s, const RenderParams &rp, int f, int b) {
@@ -230,23 +233,23 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
     };
 
     out.resize(s.mag.size());
-    std::vector<float> row(s.bins);
+    std::vector<float> row(idx(s.bins));
     const float alpha = static_cast<float>(rp.noiseAlpha);
     const int dim = static_cast<int>(lround(std::max(0.0, std::min(1.0, rp.peakDim)) * 256));
     for (int f = 0; f < s.frames; f++) {
-        const float *m = &s.mag[static_cast<size_t>(f) * s.bins];
+        const float *m = &s.mag[idx(f) * idx(s.bins)];
         if (rp.subtractNoise) {
             for (int b = 0; b < s.bins; b++) {
-                row[b] = std::max(0.0f, m[b] - alpha * s.noise[b]);
+                row[idx(b)] = std::max(0.0f, m[b] - alpha * s.noise[idx(b)]);
             }
         } else {
-            memcpy(row.data(), m, s.bins * sizeof(float));
+            memcpy(row.data(), m, static_cast<unsigned long>(s.bins) * sizeof(float));
         }
-        unsigned char *o = &out[static_cast<size_t>(f) * s.bins];
+        unsigned char *o = &out[idx(f) * idx(s.bins)];
         for (int b = 0; b < s.bins; b++) {
-            int v = value(row[b]);
+            int v = value(row[idx(b)]);
             if (rp.peaksOnly && b > 0 && b + 1 < s.bins &&
-                !(row[b] > row[b - 1] && row[b] > row[b + 1])) {
+                !(row[idx(b)] > row[idx(b - 1)] && row[idx(b)] > row[idx(b + 1)])) {
                 v = (v * dim) >> 8;
             }
             o[b] = static_cast<unsigned char>(v);

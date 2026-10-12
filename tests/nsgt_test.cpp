@@ -8,15 +8,16 @@
 #include <vector>
 
 #include "dsp/nsgt.h"
+#include "index.h"
 
 static Spectrogram analyze(const std::vector<float> &x) {
-    return computeNSGT(NSGTParams(), static_cast<long long>(x.size()),
-                       [&](long long start, int n, float *out) {
-                           for (int i = 0; i < n; i++) {
-                               long long j = start + i;
-                               out[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[j] : 0;
-                           }
-                       });
+    return computeNSGT(
+        NSGTParams(), static_cast<long long>(x.size()), [&](long long start, int n, float *out) {
+            for (int i = 0; i < n; i++) {
+                long long j = start + i;
+                out[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
+            }
+        });
 }
 
 int main() {
@@ -48,7 +49,7 @@ int main() {
         std::vector<float> x(static_cast<size_t>(6 * sr));
         const long long clicks[] = {12345, 25000, 28160, 28300, 56320, 77777, 100000};
         for (long long c : clicks) {
-            x[c] = 1;
+            x[idx(c)] = 1;
         }
         Spectrogram s = analyze(x);
         const int b = static_cast<int>(lround(s.binOfPitch(96))); // C7, ~2 kHz: short kernel
@@ -81,8 +82,7 @@ int main() {
                     out[i] = 0.1f;
                 }
             });
-        assert(s.bins > 0 && s.frames > 0 &&
-               s.mag.size() == static_cast<size_t>(s.bins) * s.frames);
+        assert(s.bins > 0 && s.frames > 0 && s.mag.size() == idx(s.bins) * idx(s.frames));
         printf("bad params: bins=%d frames=%d hop=%d\n", s.bins, s.frames, s.p.hop);
     }
 
@@ -113,7 +113,7 @@ int main() {
             for (int f = 0; f < s.frames; f += 7) {
                 for (int b = 0; b < s.bins; b++) {
                     worst = std::max(worst,
-                                     abs(val[static_cast<size_t>(f) * s.bins + b] -
+                                     abs(val[idx(f, s.bins, b)] -
                                          static_cast<int>(lround(cellValue(s, rp, f, b) * 255))));
                 }
             }

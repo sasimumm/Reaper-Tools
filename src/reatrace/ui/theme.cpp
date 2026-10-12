@@ -1,4 +1,5 @@
 #include "ui/theme.h"
+#include "index.h"
 
 RGB mix(RGB a, RGB b, double f) {
     RGB out = 0;
@@ -13,7 +14,8 @@ void applyTheme() {
     auto col = [](const char *key, RGB dflt) -> RGB {
         const int c = g_settings.followTheme ? GetThemeColor(key, 0) : -1;
         return c < 0 ? dflt
-                     : ((c & 255) << 16) | (c & 0xff00) | ((c >> 16) & 255); // COLORREF is 0xBBGGRR
+                     : static_cast<RGB>(((c & 255) << 16) | (c & 0xff00) |
+                                        ((c >> 16) & 255)); // COLORREF is 0xBBGGRR
     };
     t.bg = col("col_main_bg2", t.bg);
     t.panel = col("col_main_bg", t.panel);

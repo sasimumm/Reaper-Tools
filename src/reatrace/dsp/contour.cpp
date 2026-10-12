@@ -1,5 +1,6 @@
 #include "dsp/contour.h"
 
+#include "index.h"
 #include <algorithm>
 #include <cmath>
 
@@ -24,8 +25,8 @@ static double median(std::vector<double> v) {
 
 Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
     Contour out;
-    out.pitch.assign(s.frames, -1);
-    out.strength.assign(s.frames, 0);
+    out.pitch.assign(idx(s.frames), -1);
+    out.strength.assign(idx(s.frames), 0);
     const int bpo = s.p.binsPerOctave;
     const int k0 = std::max(0, static_cast<int>(ceil(s.binOfPitch(lowPitch)))),
               k1 = std::min(s.bins - 2, static_cast<int>(floor(s.binOfPitch(highPitch))));
@@ -43,16 +44,16 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
     struct Cand {
         double pitch, score;
     };
-    std::vector<std::vector<Cand>> cands(s.frames);
-    std::vector<double> level(s.frames);
-    std::vector<float> c(s.bins), score(s.bins);
+    std::vector<std::vector<Cand>> cands(idx(s.frames));
+    std::vector<double> level(idx(s.frames));
+    std::vector<float> c(idx(s.bins)), score(idx(s.bins));
     for (int f = 0; f < s.frames; f++) {
         float peak = 0;
         for (int b = 0; b < s.bins; b++) {
-            c[b] = sqrtf(s.at(f, b));
-            peak = b >= k0 ? std::max(peak, c[b]) : peak;
+            c[idx(b)] = sqrtf(s.at(f, b));
+            peak = b >= k0 ? std::max(peak, c[idx(b)]) : peak;
         }
-        level[f] = static_cast<double>(
+        level[idx(f)] = static_cast<double>(
             40 * log10(std::max(peak, 1e-6f))); // c = sqrt(mag), so 40 log10 = dB of mag
         if (peak <= 0) {
             continue;
@@ -65,18 +66,18 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
                 if (i + 1 >= s.bins) {
                     break;
                 }
-                sum += w[h] *
-                       (static_cast<double>(c[i]) + static_cast<double>(c[i + 1] - c[i]) * (b - i));
+                sum += w[h] * (static_cast<double>(c[idx(i)]) +
+                               static_cast<double>(c[idx(i + 1)] - c[idx(i)]) * (b - i));
             }
-            score[k] = static_cast<float>(sum / (wsum * static_cast<double>(peak)));
+            score[idx(k)] = static_cast<float>(sum / (wsum * static_cast<double>(peak)));
         }
-        std::vector<Cand> &cf = cands[f];
+        std::vector<Cand> &cf = cands[idx(f)];
         for (int k = k0 + 1; k < k1; k++) {
-            if (score[k] >= score[k - 1] && score[k] > score[k + 1]) {
+            if (score[idx(k)] >= score[idx(k - 1)] && score[idx(k)] > score[idx(k + 1)]) {
                 // parabolic interpolation for a fractional bin
-                const double a = static_cast<double>(score[k - 1]),
-                             b = static_cast<double>(score[k]),
-                             d = static_cast<double>(score[k + 1]), den = a - 2 * b + d;
+                const double a = static_cast<double>(score[idx(k - 1)]),
+                             b = static_cast<double>(score[idx(k)]),
+                             d = static_cast<double>(score[idx(k + 1)]), den = a - 2 * b + d;
                 const double dk = den < 0 ? 0.5 * (a - d) / den : 0;
                 cf.push_back({pitchOfBin(s, k + dk), b});
             }
@@ -91,52 +92,52 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
     std::vector<double> lv = level;
     std::nth_element(lv.begin(), lv.begin() + lv.size() * 9 / 10, lv.end());
     const double minLevel = lv[lv.size() * 9 / 10] - LEVEL_RANGE_DB;
-    std::vector<bool> voiced(s.frames);
+    std::vector<bool> voiced(idx(s.frames));
     for (int f = 0; f < s.frames; f++) {
-        voiced[f] =
-            !cands[f].empty() && cands[f][0].score >= MIN_HARMONICITY && level[f] >= minLevel;
+        voiced[idx(f)] = !cands[idx(f)].empty() && cands[idx(f)][0].score >= MIN_HARMONICITY &&
+                         level[idx(f)] >= minLevel;
     }
 
     // Viterbi over each voiced run
     for (int a = 0; a < s.frames;) {
-        if (!voiced[a]) {
+        if (!voiced[idx(a)]) {
             a++;
             continue;
         }
         int b = a;
-        while (b + 1 < s.frames && voiced[b + 1]) {
+        while (b + 1 < s.frames && voiced[idx(b + 1)]) {
             b++;
         }
-        std::vector<std::vector<double>> cost(b - a + 1);
-        std::vector<std::vector<int>> from(b - a + 1);
+        std::vector<std::vector<double>> cost(idx(b - a + 1));
+        std::vector<std::vector<int>> from(idx(b - a + 1));
         for (int f = a; f <= b; f++) {
-            const std::vector<Cand> &cf = cands[f];
-            cost[f - a].assign(cf.size(), 0), from[f - a].assign(cf.size(), -1);
+            const std::vector<Cand> &cf = cands[idx(f)];
+            cost[idx(f - a)].assign(cf.size(), 0), from[idx(f - a)].assign(cf.size(), -1);
             for (size_t j = 0; j < cf.size(); j++) {
                 const double emit = -log(cf[j].score + 1e-3);
                 if (f == a) {
                     cost[0][j] = emit;
                     continue;
                 }
-                const std::vector<Cand> &cp = cands[f - 1];
+                const std::vector<Cand> &cp = cands[idx(f - 1)];
                 double best = 1e30;
                 for (size_t i = 0; i < cp.size(); i++) {
                     const double v =
-                        cost[f - a - 1][i] + JUMP_COST * fabs(cf[j].pitch - cp[i].pitch);
+                        cost[idx(f - a - 1)][i] + JUMP_COST * fabs(cf[j].pitch - cp[i].pitch);
                     if (v < best) {
                         best = v;
-                        from[f - a][j] = static_cast<int>(i);
+                        from[idx(f - a)][j] = static_cast<int>(i);
                     }
                 }
-                cost[f - a][j] = best + emit;
+                cost[idx(f - a)][j] = best + emit;
             }
         }
         int j = static_cast<int>(std::min_element(cost.back().begin(), cost.back().end()) -
                                  cost.back().begin());
         for (int f = b; f >= a; f--) {
-            out.pitch[f] = static_cast<float>(cands[f][j].pitch);
-            out.strength[f] = static_cast<float>(cands[f][j].score);
-            j = from[f - a][j];
+            out.pitch[idx(f)] = static_cast<float>(cands[idx(f)][idx(j)].pitch);
+            out.strength[idx(f)] = static_cast<float>(cands[idx(f)][idx(j)].score);
+            j = from[idx(f - a)][idx(j)];
         }
         a = b + 1;
     }
@@ -151,14 +152,14 @@ bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
     }
     std::vector<double> all, late;
     for (int f = f0; f <= f1; f++) {
-        if (c.pitch[f] >= 0) {
-            all.push_back(static_cast<double>(c.pitch[f]));
+        if (c.pitch[idx(f)] >= 0) {
+            all.push_back(static_cast<double>(c.pitch[idx(f)]));
             if (f >= f0 + skip) {
-                late.push_back(static_cast<double>(c.pitch[f]));
+                late.push_back(static_cast<double>(c.pitch[idx(f)]));
             }
         }
     }
-    if (all.size() * 2 < static_cast<size_t>(f1) - static_cast<size_t>(f0) + 1) {
+    if (all.size() * 2 < idx(f1) - idx(f0) + 1) {
         return false; // f1 >= f0 here
     }
     *pitch = median(late.size() * 2 >= all.size() ? late : all);
@@ -171,22 +172,22 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
     const int n = static_cast<int>(c.pitch.size()),
               half = std::max(1, static_cast<int>(lround(0.075 * frameRate))); // ~150 ms window
     // vibrato-smoothed pitch: mean of voiced frames in the window, within the same voiced run
-    std::vector<double> smooth(n, -1);
+    std::vector<double> smooth(idx(n), -1);
     for (int f = 0; f < n; f++) {
-        if (c.pitch[f] < 0) {
+        if (c.pitch[idx(f)] < 0) {
             continue;
         }
         double sum = 0;
         int cnt = 0;
-        for (int g = f; g >= std::max(0, f - half) && c.pitch[g] >= 0; g--) {
-            sum += static_cast<double>(c.pitch[g]);
+        for (int g = f; g >= std::max(0, f - half) && c.pitch[idx(g)] >= 0; g--) {
+            sum += static_cast<double>(c.pitch[idx(g)]);
             cnt++;
         }
-        for (int g = f + 1; g <= std::min(n - 1, f + half) && c.pitch[g] >= 0; g++) {
-            sum += static_cast<double>(c.pitch[g]);
+        for (int g = f + 1; g <= std::min(n - 1, f + half) && c.pitch[idx(g)] >= 0; g++) {
+            sum += static_cast<double>(c.pitch[idx(g)]);
             cnt++;
         }
-        smooth[f] = sum / cnt;
+        smooth[idx(f)] = sum / cnt;
     }
 
     const int minFrames = std::max(1, static_cast<int>(lround(minDuration * frameRate))),
@@ -204,8 +205,8 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
     int start = -1;
     double sum = 0;
     for (int f = 0; f <= n; f++) {
-        const bool v = f < n && smooth[f] >= 0;
-        if (start >= 0 && (!v || fabs(smooth[f] - sum / (f - start)) > tolerance)) {
+        const bool v = f < n && smooth[idx(f)] >= 0;
+        if (start >= 0 && (!v || fabs(smooth[idx(f)] - sum / (f - start)) > tolerance)) {
             close(start, f - 1);
             start = -1;
         }
@@ -214,7 +215,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
             sum = 0;
         }
         if (v) {
-            sum += smooth[f];
+            sum += smooth[idx(f)];
         }
     }
 
@@ -235,7 +236,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         Segment &a = merged[i], &b = merged[i + 1];
         bool voicedGap = true;
         for (int f = a.f1; f <= b.f0 && voicedGap; f++) {
-            voicedGap = c.pitch[f] >= 0;
+            voicedGap = c.pitch[idx(f)] >= 0;
         }
         if (!voicedGap || b.f0 - a.f1 > static_cast<int>(lround(0.3 * frameRate))) {
             continue;
@@ -243,7 +244,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         const double mid = 0.5 * (a.pitch + b.pitch);
         int cross = b.f0;
         for (int f = a.f1; f <= b.f0; f++) {
-            if ((static_cast<double>(c.pitch[f]) - mid) * (b.pitch - a.pitch) >= 0) {
+            if ((static_cast<double>(c.pitch[idx(f)]) - mid) * (b.pitch - a.pitch) >= 0) {
                 cross = f;
                 break;
             }
@@ -273,16 +274,16 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
 }
 
 std::vector<int> detectOnsets(const Spectrogram &s) {
-    std::vector<double> flux(s.frames, 0);
-    std::vector<float> prev(s.bins), cur(s.bins);
+    std::vector<double> flux(idx(s.frames), 0);
+    std::vector<float> prev(idx(s.bins)), cur(idx(s.bins));
     for (int f = 0; f < s.frames; f++) {
         double sum = 0;
         for (int b = 0; b < s.bins; b++) {
-            cur[b] = log1pf(100.0f * s.at(f, b));
-            sum += static_cast<double>(std::max(0.0f, cur[b] - prev[b]));
+            cur[idx(b)] = log1pf(100.0f * s.at(f, b));
+            sum += static_cast<double>(std::max(0.0f, cur[idx(b)] - prev[idx(b)]));
         }
         if (f > 0) {
-            flux[f] = sum;
+            flux[idx(f)] = sum;
         }
         prev.swap(cur);
     }
@@ -297,13 +298,13 @@ std::vector<int> detectOnsets(const Spectrogram &s) {
     const int around = 3, minGap = std::max(1, static_cast<int>(lround(0.05 * s.frameRate())));
     std::vector<int> out;
     for (int f = 1; f < s.frames; f++) {
-        if (flux[f] <= thr) {
+        if (flux[idx(f)] <= thr) {
             continue;
         }
         bool peak = true;
         for (int g = std::max(0, f - around); g <= std::min(s.frames - 1, f + around) && peak;
              g++) {
-            peak = g == f || flux[g] < flux[f] || (flux[g] == flux[f] && g > f);
+            peak = g == f || flux[idx(g)] < flux[idx(f)] || (flux[idx(g)] == flux[idx(f)] && g > f);
         }
         if (peak && (out.empty() || f - out.back() >= minGap)) {
             out.push_back(f);
