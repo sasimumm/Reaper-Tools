@@ -727,17 +727,26 @@ void Window_Timer() {
         s_changedAt = -1;
         requestAnalysis(false);
     }
-    if (!g_session.ed.active() && notesStale()) {
-        loadNotes(); // edited elsewhere, undo, item moved, tempo changed, ...
+    // The takes are only looked at after a project change (edits, undo, moves, tempo changes all
+    // count), and once a second for anything that doesn't: hashing four takes and walking their
+    // tracks every tick costs more than the rest of the timer.
+    const int change = GetProjectStateChangeCount(NULL);
+    static int s_checkedChange = -1;
+    static double s_checkedAt = 0;
+    if (!g_session.ed.active() && (change != s_checkedChange || time_precise() - s_checkedAt > 1)) {
+        s_checkedChange = change, s_checkedAt = time_precise();
+        if (notesStale()) {
+            loadNotes(); // edited elsewhere, undo, item moved, tempo changed, ...
+        }
+        if (!g_session.midi &&
+            (g_session.midi = VoiceItem(g_session.audio, g_session.voice, false))) {
+            loadNotes(); // created elsewhere
+        }
+        loadOtherVoices(false);
     }
-    if (!g_session.midi && !g_session.ed.active() &&
-        (g_session.midi = VoiceItem(g_session.audio, g_session.voice, false))) {
-        loadNotes(); // created elsewhere
-    }
-    loadOtherVoices(false);
     updateIsolate();
 
-    const int state = GetPlayState(), change = GetProjectStateChangeCount(NULL);
+    const int state = GetPlayState();
     const double playPos = GetPlayPosition2(), cursor = GetCursorPosition();
     if (state != g_lastPlayState || ((state & 1) && playPos != g_lastPlayPos) ||
         cursor != g_lastCursor || change != g_lastProjChange) {

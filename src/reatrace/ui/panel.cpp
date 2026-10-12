@@ -393,8 +393,15 @@ static void applySpeed() {
 }
 
 // The voice tracks that exist, for this audio item.
+// The voice tracks of the audio item; looked up again after each project change (read every frame).
 static std::vector<MediaTrack *> voiceTracks() {
-    std::vector<MediaTrack *> out;
+    static std::vector<MediaTrack *> out;
+    static int change = -1;
+    static MediaItem *audio = NULL;
+    if (change == GetProjectStateChangeCount(NULL) && audio == g_session.audio) {
+        return out;
+    }
+    change = GetProjectStateChangeCount(NULL), audio = g_session.audio, out.clear();
     for (int v = 0; v < WINDOW_VOICES; v++) {
         if (MediaItem *it = VoiceItem(g_session.audio, v, false)) {
             out.push_back(GetMediaItem_Track(it));
