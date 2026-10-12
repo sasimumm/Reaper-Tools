@@ -1,4 +1,4 @@
-// Self-check for vocal analysis: run `build/contour_test`.
+// Self-check for vocal analysis (pitch contour, segments, onsets): run `build/contour_test`.
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -10,7 +10,8 @@
 #include "dsp/contour.h"
 #include "index.h"
 
-// A sung-like tone: 12 harmonics with a "formant" making the 3rd louder than the fundamental.
+// Adds a sung-like tone over [t0, t1) seconds at a MIDI pitch: 12 harmonics with a "formant"
+// making the 3rd louder than the fundamental, optional vibrato of +-vibratoCents at 5.5 Hz.
 static void tone(std::vector<float> &x, double sr, double t0, double t1, double pitch,
                  double vibratoCents) {
     std::array<double, 13> phase = {0};
@@ -29,6 +30,7 @@ static void tone(std::vector<float> &x, double sr, double t0, double t1, double 
 }
 
 int main() {
+    // three notes over faint noise
     const double sr = NSGTParams().sampleRate;
     std::vector<float> x(static_cast<size_t>(2.4 * sr));
     for (float &v : x) {
@@ -44,9 +46,10 @@ int main() {
     const double fr = s.frameRate();
     Contour c = trackPitch(s);
 
-    // contour follows each note (no octave errors despite the loud 3rd harmonic), silent in the rest
+    // contour follows each note (no octave errors despite the loud 3rd harmonic), silent in the
+    // rest
     struct Expected {
-        double a, b, pitch;
+        double a, b, pitch; // a stretch inside the note (seconds), and its pitch
     };
     const std::array<Expected, 3> notes = {{{0.3, 0.6, 57}, {0.8, 1.2, 60}, {1.7, 2.1, 64.3}}};
     for (auto &n : notes) {
@@ -55,6 +58,7 @@ int main() {
         printf("note %.2f-%.2f s: median %.2f (expected %.2f)\n", n.a, n.b, p, n.pitch);
         assert(fabs(p - n.pitch) < 0.2);
     }
+
     // the contour doesn't depend on the bins-per-semitone setting
     for (int bps : {1, 2, 10}) {
         NSGTParams np;
@@ -71,6 +75,8 @@ int main() {
             assert(fabs(p - n.pitch) < 0.3);
         }
     }
+
+    // nothing voiced in the rest between 1.3 and 1.6 s (away from the fades)
     int voicedInRest = 0;
     for (int f = static_cast<int>(1.38 * fr); f < static_cast<int>(1.52 * fr); f++) {
         voicedInRest += c.pitch[idx(f)] >= 0;
@@ -95,6 +101,7 @@ int main() {
     for (int f : on) {
         printf("onset %.3f s\n", f / fr);
     }
+    // an onset within 30 ms of t seconds
     auto near = [&](double t) {
         for (int f : on) {
             if (fabs(f / fr - t) < 0.03) {
@@ -104,5 +111,6 @@ int main() {
         return false;
     };
     assert(near(0.2) && near(1.6));
+
     printf("ok\n");
 }

@@ -6,10 +6,11 @@
 #include <exception>
 #include <new>
 
-// Shows "ReaTrace: <where> failed: <what>" in REAPER's console, once per distinct message
-// (implemented in main.cpp; main thread only).
+// Shows "<extension>: <where> failed: <what>" in REAPER's console, once per distinct message
+// (implemented in each extension's main.cpp; main thread only).
 void ReportFailure(const char *where, const char *what);
 
+// Runs f() and returns its result; if it throws, reports the exception and returns fallback.
 template <class R, class F> R guarded(const char *where, R fallback, F &&f) noexcept {
     try {
         return f();
@@ -23,6 +24,7 @@ template <class R, class F> R guarded(const char *where, R fallback, F &&f) noex
     return fallback;
 }
 
+// guarded() for work with no result.
 template <class F> void guarded(const char *where, F &&f) noexcept {
     guarded(where, 0, [&] {
         f();

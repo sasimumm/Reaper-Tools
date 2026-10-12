@@ -1,23 +1,28 @@
 // Self-check for the note estimator and basic-pitch: run `build/estimate_test`.
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <stdexcept>
+#include <string>
+#include <thread>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 #include "dsp/estimate.h"
 #include "dsp/parallel.h"
-
 #include "index.h"
-#include <atomic>
-#include <stdexcept>
 
-static const double SR = 22050;
+static const double SR = 22050; // the estimator's sample rate
 
-// Voice-like tones (from transcribe's mf0.synth): partials 1..8 at h^-0.6, slight vibrato.
+// Adds a voice-like tone (from transcribe's mf0.synth) over [a, b) seconds: partials 1..8 at
+// h^-0.6 with random (but repeatable: srand(1)) phases, vibrato of `depth` (fraction of f0) at
+// `rate` Hz, even partials scaled by evenGain, 20 ms fades.
 static void tone(std::vector<float> &x, double a, double b, double midi, float amp = 0.1f,
                  double rate = 5.5, double depth = 0.004, double evenGain = 1,
                  double vibPhase = 0) {
@@ -27,11 +32,12 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
     for (int h = 1; h <= 8; h++) {
         phase[idx(h)] = rand() / static_cast<double>(RAND_MAX) * 6.3;
     }
+
     double ph = 0;
     for (long long i = static_cast<long long>(a * SR);
          i < static_cast<long long>(b * SR) && i < static_cast<long long>(x.size()); i++) {
-        const double t = static_cast<double>(i) / SR,
-                     env = std::min(1.0, std::min(t - a, b - t) / 0.02);
+        const double t = static_cast<double>(i) / SR;
+        const double env = std::min(1.0, std::min(t - a, b - t) / 0.02);
         ph += 2 * M_PI * f0 * (1 + depth * sin(2 * M_PI * rate * t + vibPhase)) / SR;
         double v = 0;
         for (int h = 1; h <= 8; h++) {
@@ -41,12 +47,14 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
     }
 }
 
+// The estimator's NSGT of x.
 static Spectrogram analyze(const std::vector<float> &x) {
     return computeNSGT(estimateNSGTParams(), static_cast<long long>(x.size()),
                        [&](long long st, std::span<float> out) { readPadded(x, st, out); });
 }
 
-// The k strongest local maxima of a roll's mean over frames f0..f1, as MIDI pitches.
+// The k strongest local maxima of a roll's mean over frames [f0, f1), as MIDI pitches in
+// ascending order. The roll is frames x n semitones, row-major, its first semitone MIDI pitch lo.
 static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int f0, int f1,
                               int k) {
     std::vector<double> m(idx(n), 0);
@@ -55,6 +63,7 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
             m[idx(p)] += static_cast<double>(roll[idx(f, n, p)]);
         }
     }
+
     std::vector<int> peaks;
     for (int p = 1; p + 1 < n; p++) {
         if (m[idx(p)] >= m[idx(p - 1)] && m[idx(p)] > m[idx(p + 1)]) {
@@ -62,6 +71,7 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
         }
     }
     std::sort(peaks.begin(), peaks.end(), [&](int a, int b) { return m[idx(a)] > m[idx(b)]; });
+
     peaks.resize(idx(std::min(static_cast<int>(peaks.size()), k)));
     for (int &p : peaks) {
         p += lo;
@@ -99,6 +109,8 @@ int main() {
             caught = std::string(e.what()) == "out of something";
         }
         assert(caught && stopped == 3);
+
+        // and without failures every worker runs, and stop is left alone
         std::atomic<bool> fine{false};
         std::atomic<int> done{0};
         parallel(8, fine, [&](int) { done++; });
@@ -106,9 +118,11 @@ int main() {
         printf("parallel: failures reach the caller, the other workers stop\n");
     }
 
+    // the MIDI pitch range of the rolls
     const int lo = 40, hi = 86, n = hi - lo + 1;
 
-    // Voices: a held top line over a moving lower one stay in their strands; the lead is the busier strand
+    // Voices: a held top line over a moving lower one stay in their strands; the lead is the
+    // busier strand
     {
         const double fr = 10;
         const std::vector<NoteEstimate> v1 = {{0, 40, 69, 1},  {0, 20, 64, 1},  {20, 40, 62, 1},
@@ -118,6 +132,7 @@ int main() {
         assert(a[0] == a[3] && a[1] == a[2] && a[2] == a[4] && a[4] == a[5] && a[0] != a[1] &&
                a[0] >= 0 && a[1] >= 0);
         assert(a[1] == 0); // the lower strand sings 70 frames, the upper 60
+
         // a stepwise solo line after a two-note chord stays in one strand
         std::vector<NoteEstimate> v2 = {{0, 10, 72, 1}, {0, 10, 65, 1}};
         for (int k = 0; k < 4; k++) {
@@ -125,6 +140,7 @@ int main() {
         }
         const std::vector<int> b = assignVoices(v2, fr, 4);
         assert(b[2] == b[3] && b[3] == b[4] && b[4] == b[5] && b[2] == 0);
+
         // more notes than voices: the weakest is crowded out; one voice only for a solo line
         const std::vector<int> c =
             assignVoices({{0, 10, 60, 1}, {0, 10, 64, 0.5f}, {0, 10, 67, 0.9f}}, fr, 2);
@@ -134,7 +150,8 @@ int main() {
         assert(d[0] == 0 && d[1] == 0 && d[2] == 0);
     }
 
-    // NMF finds chord notes without a phantom subharmonic (transcribe's mf0 voicings, incl. the E voicing)
+    // NMF finds chord notes without a phantom subharmonic (transcribe's mf0 voicings, incl. the E
+    // voicing)
     for (std::vector<int> v :
          {std::vector<int>{66, 71, 75}, {66, 70, 73}, {64, 68, 71}, {59, 64, 68}}) {
         std::vector<float> x(static_cast<size_t>(1.0 * SR));
@@ -152,7 +169,7 @@ int main() {
     {
         std::vector<float> x(static_cast<size_t>(1.0 * SR));
         tone(x, 0, 1, 57);
-        const int frames = static_cast<int>(x.size() / 256) + 1;
+        const int frames = static_cast<int>(x.size() / 256) + 1; // 256-sample hop
         const std::vector<float> r = sacfRoll(x, frames, lo, hi);
         const std::vector<int> got = peaks(r, lo, n, 20, frames - 20, 1);
         double at = 0, sub = 0;
@@ -164,8 +181,8 @@ int main() {
         assert(got[0] == 57 && sub < 0.3 * at);
     }
 
-    // vote front ends: a sine reads A/2 * sqrt(window length) on the CQT (librosa's scale), at its bin;
-    // CFP peaks at a tone's pitch and not at its octaves
+    // vote front ends: a sine reads A/2 * sqrt(window length) on the CQT (librosa's scale), at its
+    // bin; CFP peaks at a tone's pitch and not at its octaves
     {
         std::vector<float> x(static_cast<size_t>(3 * SR));
         for (size_t i = 0; i < x.size(); i++) {
@@ -175,10 +192,14 @@ int main() {
             for (int bpo : {36, 60}) {
                 const Spectrogram c = computeCQT(x, bpo, scale);
                 const int b = static_cast<int>(lround(c.binOfPitch(57)));
-                const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1),
-                             L = scale * SR / (alpha * 220);
-                const double got = static_cast<double>(c.at(c.frames / 2, b)),
-                             want = 0.25 * sqrt(L);
+
+                // the window length at 220 Hz, in samples, as librosa computes it
+                const double r = pow(2.0, 1.0 / bpo);
+                const double alpha = (r * r - 1) / (r * r + 1);
+                const double L = scale * SR / (alpha * 220);
+                const double got = static_cast<double>(c.at(c.frames / 2, b));
+                const double want = 0.25 * sqrt(L);
+
                 int best = 0;
                 for (int k = 0; k < c.bins; k++) {
                     best = c.at(c.frames / 2, k) > c.at(c.frames / 2, best) ? k : best;
@@ -188,14 +209,18 @@ int main() {
                 assert(fabs(got / want - 1) < 0.05 && best == b);
             }
         }
+
         std::vector<float> y(static_cast<size_t>(2 * SR));
         tone(y, 0, 2, 57);
         const Spectrogram c = computeCFP(y);
         const int f = c.frames / 2;
-        const double at = static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(57))))),
-                     up = static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(69))))),
-                     down =
-                         static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(45)))));
+        // CFP's value at the middle frame, at the bin of a MIDI pitch
+        const auto level = [&](double pitch) {
+            return static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(pitch)))));
+        };
+        const double at = level(57);
+        const double up = level(69);
+        const double down = level(45);
         printf("cfp A3: octave above %.2f, below %.2f of it\n", up / at, down / at);
         assert(up < 0.5 * at && down < 0.5 * at);
     }
@@ -205,7 +230,11 @@ int main() {
     for (float &v : x) {
         v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
     }
-    tone(x, 1.0, 2.0, 60), tone(x, 1.5, 2.5, 64), tone(x, 4.5, 5.5, 67), tone(x, 6.0, 6.8, 55);
+    tone(x, 1.0, 2.0, 60);
+    tone(x, 1.5, 2.5, 64);
+    tone(x, 4.5, 5.5, 67);
+    tone(x, 6.0, 6.8, 55);
+
     const Spectrogram s = analyze(x);
     BasicPitch bp;
     std::string err;
@@ -215,6 +244,8 @@ int main() {
         "basic-pitch: %s %.0f ms for 8 s\n", ok ? "ok" : err.c_str(),
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
     assert(ok && bp.frames == s.frames);
+
+    // each tone's onset posterior peaks within 2 frames of its start; (time, pitch)
     const double fr = s.frameRate();
     for (auto c :
          {std::make_pair(1.0, 60), std::make_pair(1.5, 64), std::make_pair(4.5, 67),
@@ -243,6 +274,7 @@ int main() {
         printf("  %d %.2f-%.2f s strength %.2f\n", e.pitch, e.f0 / fr, e.f1 / fr,
                static_cast<double>(e.strength));
     }
+    // (start, end, pitch)
     for (auto c :
          {std::make_tuple(1.0, 2.0, 60), std::make_tuple(1.5, 2.5, 64),
           std::make_tuple(4.5, 5.5, 67), std::make_tuple(6.0, 6.8, 55)}) {
@@ -257,14 +289,16 @@ int main() {
     }
     assert(est.size() <= 6); // at most a stray short note or two
 
-    // octave doublings: a second singer an octave up (own vibrato) is added; one voice with strong even
-    // partials (a formant) is not, since its "octave" moves with its own partials
+    // octave doublings: a second singer an octave up (own vibrato) is added; one voice with strong
+    // even partials (a formant) is not, since its "octave" moves with its own partials
     {
         std::vector<float> y(static_cast<size_t>(3 * SR));
         for (float &v : y) {
             v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
         }
-        tone(y, 0.5, 2.5, 62, 0.1f, 5.5, 0.006), tone(y, 0.5, 2.5, 74, 0.06f, 4.3, 0.006, 1, 2.0);
+        tone(y, 0.5, 2.5, 62, 0.1f, 5.5, 0.006);
+        tone(y, 0.5, 2.5, 74, 0.06f, 4.3, 0.006, 1, 2.0);
+
         const Spectrogram sy = analyze(y);
         BasicPitch by;
         assert(runBasicPitch(BASIC_PITCH_MODEL, y, sy.frames, by));
@@ -284,6 +318,7 @@ int main() {
                has(e, 74) ? "yes" : "no");
         assert(has(e, 62) && has(e, 74));
 
+        // one voice, even partials 3x as strong
         std::vector<float> z(static_cast<size_t>(3 * SR));
         for (float &v : z) {
             v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
@@ -303,9 +338,12 @@ int main() {
     {
         std::vector<float> y(static_cast<size_t>(180 * SR));
         for (int k = 0; k < 90; k++) {
-            tone(y, 2 * k, 2 * k + 1.5, 55 + (k * 7) % 20),
-                tone(y, 2 * k + 0.5, 2 * k + 1.8, 62 + (k * 5) % 12);
+            tone(y, 2 * k, 2 * k + 1.5, 55 + (k * 7) % 20);
+            tone(y, 2 * k + 0.5, 2 * k + 1.8, 62 + (k * 5) % 12);
         }
+
+        // timed one after another: ta..tb basic-pitch, ..tc NMF, ..td SACF, ..te the estimator,
+        // ..tf voices
         const Spectrogram sy = analyze(y);
         BasicPitch by;
         auto ta = std::chrono::steady_clock::now();
@@ -320,6 +358,7 @@ int main() {
         };
         printf("180 s: basic-pitch %.0f ms, adapted NMF %.0f ms, SACF %.0f ms\n", ms(ta, tb),
                ms(tb, tc), ms(tc, td));
+
         const std::vector<NoteEstimate> all = estimateNotes(sy, y, &by);
         auto te = std::chrono::steady_clock::now();
         const std::vector<int> voices = assignVoices(all, sy.frameRate(), 4);
@@ -327,5 +366,6 @@ int main() {
         printf("180 s: whole estimator %.0f ms (%zu notes), voices %.0f ms\n", ms(td, te),
                all.size(), ms(te, tf));
     }
+
     printf("ok\n");
 }

@@ -10,6 +10,7 @@
 #include "dsp/nsgt.h"
 #include "index.h"
 
+// The default NSGT of x.
 static Spectrogram analyze(const std::vector<float> &x) {
     return computeNSGT(NSGTParams(), static_cast<long long>(x.size()),
                        [&](long long start, std::span<float> out) { readPadded(x, start, out); });
@@ -18,15 +19,17 @@ static Spectrogram analyze(const std::vector<float> &x) {
 int main() {
     const double sr = NSGTParams().sampleRate;
 
-    // A4 sine at -6 dBFS: the A4 bin reads 0.5 everywhere away from the edges, and is the loudest bin.
+    // A4 sine at -6 dBFS: the A4 bin reads 0.5 everywhere away from the edges, and is the loudest
+    // bin.
     {
         std::vector<float> x(static_cast<size_t>(10 * sr));
         for (size_t i = 0; i < x.size(); i++) {
             x[i] = 0.5f * static_cast<float>(sin(2 * M_PI * 440 * static_cast<double>(i) / sr));
         }
+
         Spectrogram s = analyze(x);
         const int a4 = static_cast<int>(lround(s.binOfPitch(69)));
-        double lo = 1e9, hi = 0;
+        double lo = 1e9, hi = 0; // the A4 bin's range, 20 frames in from either end
         for (int f = 20; f < s.frames - 20; f++) {
             lo = fmin(lo, s.at(f, a4));
             hi = fmax(hi, s.at(f, a4));
@@ -42,15 +45,16 @@ int main() {
     // Clicks, including ones near block boundaries: a high bin peaks at the click's frame.
     {
         std::vector<float> x(static_cast<size_t>(6 * sr));
-        const long long clicks[] = {12345, 25000, 28160, 28300, 56320, 77777, 100000};
+        const long long clicks[] = {12345, 25000, 28160, 28300, 56320, 77777, 100000}; // samples
         for (long long c : clicks) {
             x[idx(c)] = 1;
         }
         Spectrogram s = analyze(x);
         const int b = static_cast<int>(lround(s.binOfPitch(96))); // C7, ~2 kHz: short kernel
+
         for (long long c : clicks) {
-            int expect = static_cast<int>(lround(static_cast<double>(c) / s.p.hop)),
-                best = expect - 8;
+            const int expect = static_cast<int>(lround(static_cast<double>(c) / s.p.hop));
+            int best = expect - 8;
             for (int f = expect - 8; f <= expect + 8; f++) {
                 if (s.at(f, b) > s.at(best, b)) {
                     best = f;
@@ -91,6 +95,8 @@ int main() {
         printf("180 s of audio: %.0f ms, %.1f MB\n", ms,
                static_cast<double>(s.mag.size()) * 4 / 1e6);
 
+        // modes: plain, peaks only, peaks with the noise floor subtracted
+
         RenderParams rp;
         autoCalibrate(s, rp);
         std::vector<unsigned char> val;
@@ -101,6 +107,8 @@ int main() {
             renderValues(s, rp, val);
             ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)
                      .count();
+
+            // every 7th frame against cellValue(), as 0..255
             int worst = 0;
             for (int f = 0; f < s.frames; f += 7) {
                 for (int b = 0; b < s.bins; b++) {
@@ -114,5 +122,6 @@ int main() {
             assert(worst <= 1);
         }
     }
+
     printf("ok\n");
 }

@@ -50,6 +50,7 @@
 #include "chords.h"
 #include "shared/guard.h"
 
+// See shared/guard.h.
 void ReportFailure(const char *where, const char *what) {
     static std::set<std::string> reported; // a failure in the timer would otherwise repeat
     // At most 511 characters, as the fixed buffer this was formatted into allowed.
@@ -60,12 +61,14 @@ void ReportFailure(const char *where, const char *what) {
     }
 }
 
+// The ReaChords_GetChord API function (see the top of this file). Any output pointer may be NULL.
 static int getChord(int index, double *start, double *end, char *name, int nameSize) {
     return guarded("reading chords", 0, [&] {
         const std::vector<ChordSpan> &spans = Chords_Spans();
         if (index < 0 || index >= static_cast<int>(spans.size())) {
             return 0;
         }
+
         const ChordSpan &c = spans[static_cast<size_t>(index)];
         if (start) {
             *start = c.start;
@@ -83,6 +86,8 @@ static int getChord(int index, double *start, double *end, char *name, int nameS
     });
 }
 
+// REAPER's entry points (hookcommand2, accelerator, timer), each run under guarded().
+
 static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
     return guarded("action", false, [&] { return Chords_OnAction(command); });
 }
@@ -94,8 +99,10 @@ static int translateAccel(MSG *msg, accelerator_register_t *) {
 static void timer() {
     guarded("timer", [] { Chords_Timer(); });
 }
+
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
+// Called with rec on load and with NULL on unload; returns 1 if loaded.
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
                                                                  reaper_plugin_info_t *rec);
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
@@ -106,6 +113,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     if (rec->caller_version != REAPER_PLUGIN_VERSION || REAPERAPI_LoadAPI(rec->GetFunc) != 0) {
         return 0;
     }
+
     Chords_Register(rec);
     rec->Register("API_ReaChords_GetChord", reinterpret_cast<void *>(getChord));
     rec->Register("hookcommand2", reinterpret_cast<void *>(onAction));

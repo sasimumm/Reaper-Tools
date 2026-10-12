@@ -9,6 +9,7 @@
 #include "index.h"
 #include "notes/editor.h"
 
+// Equal but for rounding.
 static bool near(double a, double b) { return fabs(a - b) < 1e-9; }
 
 int main() {
@@ -43,7 +44,8 @@ int main() {
     ed.mouseUp(v, v.x(2.13), v.y(62), MOD_ALT);
     assert(near(ed.notes[0].start, 1.63));
 
-    // Shift locks a move to the axis it mostly went along, once past 10 px; releasing shift unlocks.
+    // Shift locks a move to the axis it mostly went along, once past 10 px; releasing shift
+    // unlocks.
     ed.notes = {{1.0, 2.0, 60, true, -1}};
     ed.snap = [](double t) { return t; };
     ed.mouseDown(v, v.x(1.5), v.y(60), 0);
@@ -95,6 +97,7 @@ int main() {
     ed.notes = {{1, 1.05, 60, false, 0}};
     int i = 0;
     assert(ed.hitTest(v, v.x(1.0), v.y(60), &i) == NoteEditor::BODY);
+
     // Pasted lyrics: one syllable per note, hyphens stay with their syllable.
     std::vector<std::string> syl = splitSyllables("Hel-lo  dar-k-ness\nmy _ old\tfriend- -");
     const std::array<const char *, 9> want = {"Hel-", "lo", "dar-", "k-",     "ness",
@@ -104,7 +107,8 @@ int main() {
         assert(syl[idx(k)] == want[idx(k)]);
     }
 
-    // Copy/paste at a time, duplicate after the selection, split, join (lyrics joined without hyphens).
+    // Copy/paste at a time, duplicate after the selection, split, join (lyrics joined without
+    // hyphens).
     {
         NoteEditor e;
         e.notes = {{1, 2, 60, true, 0, "hel-", 3}, {2, 3, 62, true, 1, "lo"}, {5, 6, 64, false, 2}};
@@ -129,6 +133,7 @@ int main() {
         e.selectAll(false);
         assert(!e.nudgeSelected(later, 0));
 
+        // split: the given note, or selected notes spanning t; not too close to an edge
         e.notes = {{1, 2, 60, false, 0, "la"}};
         assert(!e.splitAt(1.5)); // nothing selected
         assert(e.splitAt(1.5, 0) && e.notes.size() == 2 && near(e.notes[0].end, 1.5) &&
@@ -136,6 +141,7 @@ int main() {
         assert(e.notes[0].lyric == "la" && e.notes[1].lyric.empty() && e.notes[1].pitch == 60);
         assert(!e.splitAt(1.52, 1)); // too close to the edge
 
+        // join: one note from the first start to the last end, at the first note's pitch
         e.notes = {{2, 3, 62, true, 4, "lo"}, {1, 2, 60, true, 3, "hel-"}, {4, 5, 60, false, 5}};
         e.deleted.clear();
         assert(e.joinSelected() && e.notes.size() == 2);

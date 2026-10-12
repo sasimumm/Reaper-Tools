@@ -114,17 +114,14 @@ static std::string voiceTrackName(int voice, const std::string &prefix = "ReaTra
     return voice == 0 ? prefix + " notes" : prefix + " voice " + std::to_string(voice + 1);
 }
 
-// -1 if the track isn't a ReaTrace voice track
+// The voice the track holds, or -1 if it isn't a ReaTrace voice track.
 static int voiceOfTrack(MediaTrack *tr) {
     char name[256] = "";
     if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) {
         return -1;
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (name == voiceTrackName(v)) {
-            return v;
-        }
-        if (name == voiceTrackName(v, "Reascribe")) {
+        if (name == voiceTrackName(v) || name == voiceTrackName(v, "Reascribe")) {
             return v;
         }
     }
@@ -142,8 +139,8 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
         if (p >= pos + len) {
             break; // a track's items are in position order
         }
-        const double overlap =
-            (std::min)(p + GetMediaItemInfo_Value(it, "D_LENGTH"), pos + len) - (std::max)(p, pos);
+        const double end = p + GetMediaItemInfo_Value(it, "D_LENGTH");
+        const double overlap = (std::min)(end, pos + len) - (std::max)(p, pos);
         MediaItem_Take *tk = GetActiveTake(it);
         if (overlap > bestOverlap && tk && TakeIsMIDI(tk) == midi) {
             best = it;
@@ -156,9 +153,9 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
 // The voice's track among the ReaTrace tracks directly below the audio track, created (after the
 // last existing voice track) if asked.
 static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
-    const int first = static_cast<int>(
-        GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER")); // = index below
-    int idx = first;
+    // IP_TRACKNUMBER is 1-based, so it is the index of the track below
+    MediaTrack *audioTrack = GetMediaItem_Track(audio);
+    int idx = static_cast<int>(GetMediaTrackInfo_Value(audioTrack, "IP_TRACKNUMBER"));
     for (MediaTrack *tr = NULL; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++) {
         if (voiceOfTrack(tr) == voice) {
             return tr;
@@ -167,6 +164,7 @@ static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
     if (!create) {
         return NULL;
     }
+
     InsertTrackAtIndex(idx, true);
     MediaTrack *tr = GetTrack(NULL, idx);
     std::string name = voiceTrackName(voice);
@@ -175,23 +173,25 @@ static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
     return tr;
 }
 
+// The voice's MIDI item over the audio item (see ui/window.h).
 MediaItem *VoiceItem(MediaItem *audio, int voice, bool create) {
-    const double pos = GetMediaItemInfo_Value(audio, "D_POSITION"),
-                 len = GetMediaItemInfo_Value(audio, "D_LENGTH");
+    const double pos = GetMediaItemInfo_Value(audio, "D_POSITION");
+    const double len = GetMediaItemInfo_Value(audio, "D_LENGTH");
     MediaTrack *tr = voiceTrack(audio, voice, false);
     MediaItem *midi = tr ? overlappingItem(tr, pos, len, true) : NULL;
     if (midi || !create) {
         return midi;
     }
+
     Undo_BeginBlock2(NULL);
     if (!tr) {
         tr = voiceTrack(audio, voice, true);
     }
-    const bool qn = false;
+    const bool qn = false; // pos and len are in seconds
     midi = CreateNewMIDIItemInProj(tr, pos, pos + len, &qn);
     if (midi) {
-        SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE",
-                               0); // timebase time: tempo edits don't move the item
+        // timebase time: tempo edits don't move the item
+        SetMediaItemInfo_Value(midi, "C_BEATATTACHMODE", 0);
     }
     Undo_EndBlock2(NULL, "ReaTrace: create notes item", -1);
     UpdateArrange();
@@ -204,24 +204,34 @@ static MediaItem *audioForMidi(MediaItem *midi) {
     if (voiceOfTrack(tr) < 0) {
         return NULL;
     }
+    // IP_TRACKNUMBER is 1-based: - 2 is the index of the track above
     int idx = static_cast<int>(GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 2;
     while (idx >= 0 && voiceOfTrack(GetTrack(NULL, idx)) >= 0) {
         idx--;
     }
-    const double pos = GetMediaItemInfo_Value(midi, "D_POSITION"),
-                 len = GetMediaItemInfo_Value(midi, "D_LENGTH");
+
+    const double pos = GetMediaItemInfo_Value(midi, "D_POSITION");
+    const double len = GetMediaItemInfo_Value(midi, "D_LENGTH");
     return idx >= 0 ? overlappingItem(GetTrack(NULL, idx), pos, len, false) : NULL;
 }
 
+// "ReaTrace: Open spectrogram editor for selected item": on the selected audio item, or on the
+// audio item above a selected MIDI item of a voice track (opening that voice).
 static void openSelected() {
     MediaItem *item = GetSelectedMediaItem(NULL, 0);
     MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
-    MediaItem *audio = take && !TakeIsMIDI(take) ? item : take ? audioForMidi(item) : NULL;
+    MediaItem *audio = NULL;
+    if (take && !TakeIsMIDI(take)) {
+        audio = item;
+    } else if (take) {
+        audio = audioForMidi(item);
+    }
     if (!audio) {
         ShowMessageBox("Select an audio item (or a MIDI item on a \"ReaTrace notes\" track) first.",
                        "ReaTrace", 0);
         return;
     }
+
     const int voice = take && TakeIsMIDI(take) ? voiceOfTrack(GetMediaItem_Track(item)) : 0;
     if (voice == 0) {
         VoiceItem(audio, 0, true); // the lead's track and item, so there is somewhere to listen
@@ -229,9 +239,10 @@ static void openSelected() {
     Window_Open(audio, voice);
 }
 
+// See shared/guard.h.
 void ReportFailure(const char *where, const char *what) {
-    static std::set<std::string>
-        reported; // a failure in the timer would otherwise repeat 30x a second
+    // a failure in the timer would otherwise repeat 30x a second
+    static std::set<std::string> reported;
     // At most 511 characters, as the fixed buffer this was formatted into allowed.
     const std::string msg =
         (std::string("ReaTrace: ") + where + " failed: " + what + "\n").substr(0, 511);
@@ -240,7 +251,9 @@ void ReportFailure(const char *where, const char *what) {
     }
 }
 
-static int g_cmdOpen;
+static int g_cmdOpen; // command id of the open action
+
+// REAPER's entry points (hookcommand2, accelerator, timer), each run under guarded().
 
 static bool onAction(KbdSectionInfo *, int command, int, int, int, HWND) {
     return guarded("action", false, [&] {
@@ -259,8 +272,10 @@ static int translateAccel(MSG *msg, accelerator_register_t *) {
 static void timer() {
     guarded("timer", [] { Window_Timer(); });
 }
+
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
+// Called with rec on load and with NULL on unload; returns 1 if loaded.
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
                                                                  reaper_plugin_info_t *rec);
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,

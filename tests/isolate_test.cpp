@@ -18,21 +18,25 @@
 extern "C" void NSEEL_HOSTSTUB_EnterMutex() {}
 extern "C" void NSEEL_HOSTSTUB_LeaveMutex() {}
 
-static const double SR = 48000;
-static const int BLOCK = 512;
+static const double SR = 48000; // sample rate, Hz
+static const int BLOCK = 512;   // samples per @block call
 
+// The isolate JSFX compiled into an EEL2 VM, with the variables REAPER would set.
 struct Fx {
     NSEEL_VMCTX vm = NSEEL_VM_alloc();
-    std::vector<EEL_F *> sliders; // slider1.. as sliders[0]..
-    EEL_F *spl0, *spl1, *srate, *samplesblock, *playPos;
+    std::vector<EEL_F *> sliders;                        // slider1.. as sliders[0]..
+    EEL_F *spl0, *spl1, *srate, *samplesblock, *playPos; // owned by vm
     NSEEL_CODEHANDLE init = nullptr, slider = nullptr, block = nullptr, sample = nullptr;
 
+    // The JSFX's slider(i) function: slider i's value, 0 past the last.
     static EEL_F NSEEL_CGEN_CALL sliderByIndex(void *self, EEL_F *i) {
         const std::vector<EEL_F *> &s = static_cast<Fx *>(self)->sliders;
         const int k = static_cast<int>(*i) - 1;
         return k >= 0 && k < static_cast<int>(s.size()) ? *s[idx(k)] : 0;
     }
 
+    // Registers REAPER's variables, reads the sliders' defaults and compiles the sections, then
+    // runs @init.
     Fx() {
         NSEEL_VM_SetCustomFuncThis(vm, this);
         spl0 = NSEEL_VM_regvar(vm, "spl0");
@@ -42,6 +46,7 @@ struct Fx {
         playPos = NSEEL_VM_regvar(vm, "play_position");
         *srate = SR;
         *samplesblock = BLOCK;
+
         const std::string src = isolateJSFX();
         // the header: "sliderN:default<...", then "@section" lines start the code sections
         std::array<std::string, 4> sections;
@@ -50,6 +55,8 @@ struct Fx {
             const size_t e = src.find('\n', p);
             const std::string l = src.substr(p, e - p);
             p = e == std::string::npos ? src.size() : e + 1;
+
+            // in the header, "sliderN:default..." declares slider N
             if (l.rfind("slider", 0) == 0 && l.find(':') != std::string::npos && cur < 0) {
                 const int n = std::stoi(l.substr(6));
                 const std::string name = "slider" + std::to_string(n);
@@ -58,6 +65,7 @@ struct Fx {
                 sliders.resize(std::max(sliders.size(), idx(n)));
                 sliders[idx(n) - 1] = v;
             }
+
             static const std::array<const char *, 4> NAMES = {
                 "@init", "@slider", "@block", "@sample"
             };
@@ -72,6 +80,7 @@ struct Fx {
                 sections[idx(cur)] += l + "\n";
             }
         }
+
         const std::array<NSEEL_CODEHANDLE *, 4> out = {&init, &slider, &block, &sample};
         for (int s = 0; s < 4; s++) {
             *out[idx(s)] = NSEEL_code_compile_ex(vm, sections[idx(s)].c_str(), 0, 0);
@@ -83,6 +92,7 @@ struct Fx {
         }
         NSEEL_code_execute(init);
     }
+
     ~Fx() {
         for (NSEEL_CODEHANDLE c : {init, slider, block, sample}) {
             NSEEL_code_free(c);
@@ -90,8 +100,11 @@ struct Fx {
         NSEEL_VM_free(vm);
     }
 
-    // parameters as ReaTrace sends them: width, background, then each voice's (time, pitch) changes
+    // A voice's pitch changes: (seconds, MIDI pitch).
     using Changes = std::vector<std::pair<double, int>>;
+
+    // Sets the parameters as ReaTrace sends them: width (cents), background (dB), then each
+    // voice's changes, and runs @slider.
     void set(double width, double bgDb, const std::vector<Changes> &voices) {
         *sliders[0] = width;
         *sliders[1] = bgDb;
@@ -107,6 +120,7 @@ struct Fx {
         NSEEL_code_execute(slider);
     }
 
+    // Runs x through the effect, block by block as REAPER would, the same signal on both channels.
     std::vector<float> run(const std::vector<float> &x) {
         std::vector<float> y(x.size());
         for (size_t b = 0; b < x.size(); b += BLOCK) {
@@ -123,6 +137,7 @@ struct Fx {
     }
 };
 
+// The frequency of a MIDI pitch.
 static double hz(double pitch) { return 440 * pow(2, (pitch - 69) / 12); }
 
 // a sung-ish tone: 1/k harmonics, optional ±cents vibrato at 5.5 Hz
@@ -130,11 +145,12 @@ static std::vector<float> tone(double pitch, double seconds, double vibratoCents
     std::vector<float> x(static_cast<size_t>(seconds * SR));
     double ph = 0;
     for (size_t i = 0; i < x.size(); i++) {
-        const double f = hz(pitch) * pow(2, vibratoCents / 1200 *
-                                                sin(2 * M_PI * 5.5 * static_cast<double>(i) / SR));
+        const double vibrato = sin(2 * M_PI * 5.5 * static_cast<double>(i) / SR);
+        const double f = hz(pitch) * pow(2, vibratoCents / 1200 * vibrato);
         ph += 2 * M_PI * f / SR;
+
         double s = 0;
-        for (int k = 1; k * hz(pitch) < 16000; k++) {
+        for (int k = 1; k * hz(pitch) < 16000; k++) { // harmonics below 16 kHz
             s += sin(k * ph) / k;
         }
         x[i] = static_cast<float>(0.2 * s);
@@ -161,45 +177,58 @@ int main() {
     {
         Fx fx;
         fx.set(100, -24, {});
-        const std::vector<float> x = tone(57, 0.5), y = fx.run(x);
+        const std::vector<float> x = tone(57, 0.5);
+        const std::vector<float> y = fx.run(x);
         assert(x == y);
     }
+
     // following A3: A3 (with vibrato) is kept, a note a semitone or a minor third away is not
     {
         Fx fx;
         fx.set(100, -60, {{{0, 57}}});
-        const std::vector<float> a = tone(57, 1.5, 40), b = tone(58, 1.5), c = tone(60, 1.5);
+        const std::vector<float> a = tone(57, 1.5, 40);
+        const std::vector<float> b = tone(58, 1.5);
+        const std::vector<float> c = tone(60, 1.5);
         const double ka = gainDb(a, fx.run(a), 0.5, 1.5);
+
+        // a fresh effect for each, so no state carries over
         Fx fb, fc;
-        fb.set(100, -60, {{{0, 57}}}), fc.set(100, -60, {{{0, 57}}});
-        const double kb = gainDb(b, fb.run(b), 0.5, 1.5), kc = gainDb(c, fc.run(c), 0.5, 1.5);
+        fb.set(100, -60, {{{0, 57}}});
+        fc.set(100, -60, {{{0, 57}}});
+        const double kb = gainDb(b, fb.run(b), 0.5, 1.5);
+        const double kc = gainDb(c, fc.run(c), 0.5, 1.5);
         printf("isolate A3: A3 with vibrato %.1f dB, A#3 %.1f dB, C4 %.1f dB\n", ka, kb, kc);
         assert(ka > -2 && kb < -10 && kc < -10);
     }
+
     // a pitch change at 1 s: before it C4 is filtered out, after it (and the glide) C4 passes
     {
         Fx fx;
         fx.set(100, -60, {{{0, 57}, {1, 60}}});
-        const std::vector<float> c = tone(60, 2), y = fx.run(c);
-        const double before = gainDb(c, y, 0.3, 0.95), after = gainDb(c, y, 1.1, 2);
+        const std::vector<float> c = tone(60, 2);
+        const std::vector<float> y = fx.run(c);
+        const double before = gainDb(c, y, 0.3, 0.95);
+        const double after = gainDb(c, y, 1.1, 2);
         printf("isolate change at 1 s: C4 %.1f dB before, %.1f dB after\n", before, after);
         assert(before < -10 && after > -2);
     }
+
     // the background level: a tone between the bands comes through at about that level
     {
         Fx fx;
         fx.set(100, -24, {{{0, 57}}});
         std::vector<float> x(static_cast<size_t>(SR));
-        for (size_t i = 0; i < x.size(); i++) {
-            x[i] = static_cast<float>(
-                0.3 * sin(2 * M_PI * hz(63) * static_cast<double>(i) / SR)); // a tritone above A3
+        for (size_t i = 0; i < x.size(); i++) { // a sine a tritone above A3
+            x[i] = static_cast<float>(0.3 * sin(2 * M_PI * hz(63) * static_cast<double>(i) / SR));
         }
         const double g = gainDb(x, fx.run(x), 0.3, 1);
         printf("isolate background: %.1f dB\n", g);
         assert(fabs(g + 24) < 3);
     }
+
     // several voices: each one's note passes, another note doesn't, and a unison isn't louder
     {
+        // the level of a tone at pitch through the effect following voices, dB
         auto kept = [](const std::vector<Fx::Changes> &voices, double pitch) {
             Fx fx;
             fx.set(100, -60, voices);
@@ -207,13 +236,16 @@ int main() {
             return gainDb(x, fx.run(x), 0.5, 1.5);
         };
         const std::vector<Fx::Changes> harmony = {{{0, 57}}, {}, {{0, 64}}}; // voices 1 and 3
-        const double a = kept(harmony, 57), e = kept(harmony, 64), d = kept(harmony, 62),
-                     unison = kept({{{0, 57}}, {{0, 57}}}, 57),
-                     octave = kept({{{0, 57}}, {{0, 45}}}, 57);
+        const double a = kept(harmony, 57);
+        const double e = kept(harmony, 64);
+        const double d = kept(harmony, 62);
+        const double unison = kept({{{0, 57}}, {{0, 57}}}, 57);
+        const double octave = kept({{{0, 57}}, {{0, 45}}}, 57);
         printf(
             "isolate A3 + E4: A3 %.1f dB, E4 %.1f dB, D4 %.1f dB; unison %.1f dB, octave %.1f dB\n",
             a, e, d, unison, octave);
         assert(a > -2 && e > -2 && d < -8 && fabs(unison) < 1.5 && fabs(octave) < 1.5);
     }
+
     printf("ok\n");
 }
