@@ -5,6 +5,17 @@
 
 using Colour = unsigned int; // 0xRRGGBB
 
+// A backbuffer pixel: 0xAARRGGBB, always opaque.
+inline unsigned int opaque(Colour c) { return 0xff000000 | c; }
+
+// col over the pixel d with alpha a (0..256). Red and blue are blended together, green apart:
+// two multiplies per channel pair.
+inline unsigned int blend(unsigned int d, Colour col, int a) {
+    const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
+    return opaque(((((d & 0xff00ff) * ia + (col & 0xff00ff) * ua) >> 8) & 0xff00ff) |
+                  ((((d & 0xff00) * ia + (col & 0xff00) * ua) >> 8) & 0xff00));
+}
+
 // Every colour the window draws with. The defaults are the built-in dark palette; applyTheme
 // replaces the ones marked "theme" with REAPER's theme colours (by their reaper.ini keys).
 struct Theme {
@@ -33,6 +44,7 @@ struct Theme {
     Colour grid = 0xffffff;       // pitch rows and the tempo grid
     Colour highlight = 0xffffff;  // marquee, time selection, lyrics, the overview's view frame
     Colour shadow = 0x000000;     // outlines, backdrops, darkened notes and black-key rows
+    int blackRowShade = 40;       // how much shadow covers the black-key rows (of 256)
     Colour warn = 0xffa040;       // octave check flags, estimator notes, onsets
     Colour editCursor = 0xff6b5b; // the edit cursor
     Colour playCursor = 0xffffff; // the play cursor
@@ -46,6 +58,9 @@ struct Theme {
     Colour keyBlack = 0x303030;
     Colour keyEdge = 0x888888; // the line between keys
     Colour keyText = 0x202020; // octave names
+
+    // A note area pixel in a black key's row.
+    unsigned int shadeBlack(unsigned int px) const { return blend(px, shadow, blackRowShade); }
 };
 inline Theme g_theme;
 

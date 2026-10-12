@@ -28,9 +28,6 @@ static LayerKey g_layerKey;
 
 static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
-// Black-key rows shaded as Canvas::fill(.., g_theme.shadow, 40) would, baked into the layer.
-static unsigned int shadeBlack(unsigned int c) { return blend(c, g_theme.shadow, 40); }
-
 // Renders the note area at device resolution: g_scale pixels per point, in column stripes on
 // several threads. Black-key rows are shaded; with Explain, energy on drawn notes and their
 // overtones is dimmed (marked once per note and overtone, not tested per pixel).
@@ -44,7 +41,7 @@ static void renderLayer(const Rect &n) {
     g_layer.resize((size_t)w * h);
     for (int y = 0; y < h; y++) {
         std::fill_n(&g_layer[(size_t)y * w], w,
-                    black[y] ? shadeBlack(g_theme.area) : opaque(g_theme.area));
+                    black[y] ? g_theme.shadeBlack(g_theme.area) : opaque(g_theme.area));
     }
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
@@ -124,7 +121,7 @@ static void renderLayer(const Rect &n) {
                     m = (unsigned char)(m * EXPLAIN_DIM);
                 }
                 const unsigned int c = opaque(g_analysis.lut[m]);
-                g_layer[at] = black[y] ? shadeBlack(c) : c;
+                g_layer[at] = black[y] ? g_theme.shadeBlack(c) : c;
             }
         }
     });
