@@ -270,8 +270,8 @@ int main() {
         off.octaveDoublings = false;
         const std::vector<NoteEstimate> e0 = estimateNotes(sy, y, &by, off);
         auto has = [](const std::vector<NoteEstimate> &v, int p) {
-            for (const NoteEstimate &n : v) {
-                if (n.pitch == p) {
+            for (const NoteEstimate &ne : v) {
+                if (ne.pitch == p) {
                     return true;
                 }
             }

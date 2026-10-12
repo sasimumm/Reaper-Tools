@@ -9,8 +9,11 @@ add_compile_definitions(_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST)
 set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
 
 # Warnings on our own sources only (vendor code and SDK headers are left alone: they are SYSTEM includes).
+# -Wno-format-nonliteral: the panel's slider formats come from its table.
 option(REATRACE_WERROR "Treat warnings in ReaTrace's own sources as errors" ON)
-set(REATRACE_WARNINGS -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Wimplicit-fallthrough -Wcomma)
+set(REATRACE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow-all -Wconversion -Wno-sign-conversion
+  -Wimplicit-fallthrough -Wcomma -Wformat=2 -Wno-format-nonliteral -Wundef -Wcast-qual -Wextra-semi -Wnon-virtual-dtor
+  -Wmissing-prototypes -Wzero-as-null-pointer-constant -Wnewline-eof -Wunreachable-code-aggressive)
 if(REATRACE_WERROR)
   list(APPEND REATRACE_WARNINGS -Werror)
 endif()

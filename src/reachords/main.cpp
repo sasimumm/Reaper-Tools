@@ -93,6 +93,8 @@ static void timer() {
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
 extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
+                                                                 reaper_plugin_info_t *rec);
+extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_HINSTANCE,
                                                                  reaper_plugin_info_t *rec) {
     if (!rec) {
         return 0;

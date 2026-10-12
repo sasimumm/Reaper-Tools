@@ -550,9 +550,9 @@ struct Partials {
     std::vector<float> win, dwin;
     std::vector<WDL_FFT_REAL> a, b;
 
-    Partials(const std::vector<float> &y, int frames)
-        : y(y), frames(frames), F(frames), M(frames), win(RA_NFFT), dwin(RA_NFFT), a(RA_NFFT),
-          b(RA_NFFT) {
+    Partials(const std::vector<float> &signal, int frameCount)
+        : y(signal), frames(frameCount), F(frameCount), M(frameCount), win(RA_NFFT), dwin(RA_NFFT),
+          a(RA_NFFT), b(RA_NFFT) {
         for (int i = 0; i < RA_NFFT; i++) {
             win[i] = (float)(0.5 - 0.5 * cos(2 * M_PI * i / RA_NFFT));
         }
@@ -1169,11 +1169,11 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         }
         return dip < REATTACK_DIP * after;
     };
-    auto runs = [&](Activity &act) {
-        std::vector<NoteEstimate> out;
+    auto runs = [&](Activity &a) {
+        std::vector<NoteEstimate> notes;
         for (int p = 0; p < n; p++) {
             for (int f = 0; f < F;) {
-                if (!act.on[(size_t)f * n + p]) {
+                if (!a.on[(size_t)f * n + p]) {
                     f++;
                     continue;
                 }
@@ -1181,7 +1181,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                 int last = f, g = f + 1;
                 bool split = false;
                 for (; g < F && g - last <= bridge + 1; g++) {
-                    if (!act.hold[(size_t)g * n + p]) {
+                    if (!a.hold[(size_t)g * n + p]) {
                         continue;
                     }
                     if (g - start >= minLen && reattack(g, lo + p)) {
@@ -1194,17 +1194,17 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                 if (end - start >= minLen) {
                     double sum = 0;
                     for (int h = start; h < end; h++) {
-                        sum += act.S[(size_t)h * n + p];
+                        sum += a.S[(size_t)h * n + p];
                     }
-                    out.push_back({start, end, lo + p, (float)(sum / (end - start))});
+                    notes.push_back({start, end, lo + p, (float)(sum / (end - start))});
                 }
                 f = end;
                 if (split) {
-                    act.on[(size_t)end * n + p] = 1; // the re-attack starts the next note
+                    a.on[(size_t)end * n + p] = 1; // the re-attack starts the next note
                 }
             }
         }
-        return out;
+        return notes;
     };
     out = runs(act);
 

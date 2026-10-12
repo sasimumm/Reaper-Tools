@@ -30,4 +30,4 @@ Checks: >
   misc-misplaced-const,
   readability-misleading-indentation
 HeaderFilterRegex: '.*/(src|tests)/.*'
-WarningsAsErrors: ''
+WarningsAsErrors: '*'
