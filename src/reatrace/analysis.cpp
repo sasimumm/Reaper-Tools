@@ -368,7 +368,13 @@ void pollJob() {
 // Progress of the running analysis in permille, -1 if none.
 int analysisProgress() { return g_job ? g_job->permille.load() : -1; }
 
-void clearAnalysis() { g_analysis = AnalysisResult(); }
+// The version keeps counting: caches keyed on it (the spectrogram layer, the overview) must not
+// mistake the next recording's values for the last one's.
+void clearAnalysis() {
+    const int version = g_analysis.valVersion;
+    g_analysis = AnalysisResult();
+    g_analysis.valVersion = version + 1;
+}
 
 std::string audioIdentity(MediaItem_Take *take) {
     if (!take) {
