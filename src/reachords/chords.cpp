@@ -1,12 +1,14 @@
 #include "chords.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <map>
 #include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 #include "reaper_plugin_functions.h"
@@ -32,6 +34,16 @@ static const LICE_pixel C_CHORD_TEXT = rgba(240, 240, 240); // chord names
 
 static void beginEditAtClick(MediaItem *item, double clickTime,
                              const REAPER_inline_positioninfo *pi);
+
+// strtod on s: the number and how many characters it took (0 if none).
+static std::pair<double, size_t> parseNumber(const std::string &s) {
+    char *end = NULL;
+    // strtod only takes a C string and hands back a pointer into it.
+#pragma clang unsafe_buffer_usage begin
+    const double v = strtod(s.c_str(), &end);
+    return {v, static_cast<size_t>(end - s.c_str())};
+#pragma clang unsafe_buffer_usage end
+}
 
 struct Chord {
     double qn; // quarter notes from the source start
@@ -68,9 +80,9 @@ class ChordSource : public PCM_source {
 
     void GetSamples(PCM_source_transfer_t *block) override {
         if (block->samples && block->length > 0) {
-            memset(block->samples, 0,
-                   sizeof(ReaSample) * static_cast<size_t>(block->length) *
-                       static_cast<size_t>(block->nch));
+            std::fill_n(block->samples,
+                        static_cast<size_t>(block->length) * static_cast<size_t>(block->nch),
+                        ReaSample(0));
         }
         block->samples_out = block->length;
     }
@@ -96,20 +108,18 @@ class ChordSource : public PCM_source {
         chords.clear();
         char line[4096];
         while (ctx->GetLine(line, sizeof(line)) == 0) {
-            const char *s = line;
-            while (*s == ' ' || *s == '\t') {
-                s++;
-            }
-            if (*s == '>') {
+            std::string_view s(line);
+            s.remove_prefix(std::min(s.find_first_not_of(" \t"), s.size()));
+            if (s.starts_with('>')) {
                 break;
             }
-            char *end = NULL;
-            if (!strncmp(s, "LENGTH ", 7)) {
-                length = strtod(s + 7, NULL);
-            } else if (!strncmp(s, "BEAT ", 5)) {
-                const double qn = strtod(s + 5, &end);
-                if (end && *end == ' ') {
-                    chords.push_back({qn, end + 1});
+            if (s.starts_with("LENGTH ")) {
+                length = parseNumber(std::string(s.substr(7))).first;
+            } else if (s.starts_with("BEAT ")) {
+                const std::string rest(s.substr(5));
+                const auto [qn, used] = parseNumber(rest);
+                if (used < rest.size() && rest[used] == ' ') {
+                    chords.push_back({qn, rest.substr(used + 1)});
                 }
             }
         }
@@ -351,7 +361,8 @@ static ChordSource *sourceOf(MediaItem *item) {
     }
     MediaItem_Take *tk = GetActiveTake(item);
     PCM_source *src = tk ? GetMediaItemTake_Source(tk) : NULL;
-    return src && !strcmp(src->GetType(), SOURCE_TYPE) ? static_cast<ChordSource *>(src) : NULL;
+    return src && std::string_view(src->GetType()) == SOURCE_TYPE ? static_cast<ChordSource *>(src)
+                                                                  : NULL;
 }
 
 // --- typing a chord in the arrange view -------------------------------------------
@@ -529,9 +540,9 @@ const std::vector<ChordSpan> &Chords_Spans() {
 
 static PCM_source *createFromType(const char *type, int) {
     return guarded("creating a chord item", static_cast<PCM_source *>(nullptr), [&] {
-        return !strcmp(type, SOURCE_TYPE) || !strcmp(type, OLD_SOURCE_TYPE)
-                   ? static_cast<PCM_source *>(new ChordSource)
-                   : nullptr;
+        const std::string_view t(type);
+        return t == SOURCE_TYPE || t == OLD_SOURCE_TYPE ? static_cast<PCM_source *>(new ChordSource)
+                                                        : nullptr;
     });
 }
 static PCM_source *createFromFile(const char *, int) { return NULL; }
@@ -571,10 +582,10 @@ static void insertItem() {
     SetMediaItemInfo_Value(it, "C_BEATATTACHMODE", 1);
     MediaItem_Take *tk = AddTakeToMediaItem(it);
     auto *src = new ChordSource;
-    const char *demo[] = {"C", "G", "Am", "F"};
+    const std::array<const char *, 4> demo = {"C", "G", "Am", "F"};
     const double qb = TimeMap2_timeToQN(NULL, b);
     for (int i = 0; i < 4 && qa + i * bar < qb - 1e-6; i++) {
-        src->chords.push_back({i * bar, demo[i]});
+        src->chords.push_back({i * bar, demo[static_cast<size_t>(i)]});
     }
     SetMediaItemTake_Source(tk, src);
     char name[] = "Chords";

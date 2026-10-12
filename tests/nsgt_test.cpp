@@ -11,13 +11,8 @@
 #include "index.h"
 
 static Spectrogram analyze(const std::vector<float> &x) {
-    return computeNSGT(
-        NSGTParams(), static_cast<long long>(x.size()), [&](long long start, int n, float *out) {
-            for (int i = 0; i < n; i++) {
-                long long j = start + i;
-                out[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
-            }
-        });
+    return computeNSGT(NSGTParams(), static_cast<long long>(x.size()),
+                       [&](long long start, std::span<float> out) { readPadded(x, start, out); });
 }
 
 int main() {
@@ -77,11 +72,8 @@ int main() {
         bad.sampleRate = 1;
         std::vector<float> x(50000, 0.1f);
         Spectrogram s =
-            computeNSGT(bad, static_cast<long long>(x.size()), [&](long long, int n, float *out) {
-                for (int i = 0; i < n; i++) {
-                    out[i] = 0.1f;
-                }
-            });
+            computeNSGT(bad, static_cast<long long>(x.size()),
+                        [](long long, std::span<float> out) { std::ranges::fill(out, 0.1f); });
         assert(s.bins > 0 && s.frames > 0 && s.mag.size() == idx(s.bins) * idx(s.frames));
         printf("bad params: bins=%d frames=%d hop=%d\n", s.bins, s.frames, s.p.hop);
     }

@@ -14,7 +14,7 @@ option(REATRACE_WERROR "Treat warnings in ReaTrace's own sources as errors" ON)
 set(REATRACE_WARNINGS -Wall -Wextra -Wpedantic -Wshadow-all -Wconversion -Wsign-conversion
   -Wimplicit-fallthrough -Wcomma -Wformat=2 -Wno-format-nonliteral -Wundef -Wcast-qual -Wextra-semi -Wnon-virtual-dtor
   -Wmissing-prototypes -Wzero-as-null-pointer-constant -Wnewline-eof -Wunreachable-code-aggressive -Wswitch-enum -Wdeprecated
-  -Wdouble-promotion -Wold-style-cast)
+  -Wdouble-promotion -Wold-style-cast -Wunsafe-buffer-usage)
 if(REATRACE_WERROR)
   list(APPEND REATRACE_WARNINGS -Werror)
 endif()

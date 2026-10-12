@@ -5,6 +5,7 @@
 #include "index.h"
 #include <algorithm>
 #include <cmath>
+#include <span>
 
 // basic-pitch's windowing (basic_pitch/inference.py): 2 s windows of 43844 samples, 30 frames of
 // overlap, the audio padded with half the overlap in front, and 15 frames dropped at each window edge.
@@ -88,10 +89,17 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
                     setError(error, "unexpected basic-pitch output", e);
                     return false;
                 }
-                const float *np = static_cast<const float *>(note.dataPointer),
-                            *op = static_cast<const float *>(onset.dataPointer);
                 const long ns1 = note.strides[1].longValue, ns2 = note.strides[2].longValue;
                 const long os1 = onset.strides[1].longValue, os2 = onset.strides[2].longValue;
+                // CoreML hands out bare pointers; the spans cover the first batch's elements.
+#pragma clang unsafe_buffer_usage begin
+                const std::span<const float> np(
+                    static_cast<const float *>(note.dataPointer),
+                    idx((OUT_FRAMES - 1) * ns1 + (BasicPitch::PITCHES - 1) * ns2 + 1));
+                const std::span<const float> op(
+                    static_cast<const float *>(onset.dataPointer),
+                    idx((OUT_FRAMES - 1) * os1 + (BasicPitch::PITCHES - 1) * os2 + 1));
+#pragma clang unsafe_buffer_usage end
                 for (; f < out.frames &&
                        static_cast<long long>(f) * HOP < static_cast<long long>(w + 1) * WINDOW_HOP;
                      f++) {
@@ -101,8 +109,10 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
                                                                 static_cast<double>(start)) /
                                                                HOP))));
                     for (int p = 0; p < BasicPitch::PITCHES; p++) {
-                        out.note[idx(f) * BasicPitch::PITCHES + idx(p)] = np[j * ns1 + p * ns2];
-                        out.onset[idx(f) * BasicPitch::PITCHES + idx(p)] = op[j * os1 + p * os2];
+                        out.note[idx(f) * BasicPitch::PITCHES + idx(p)] =
+                            np[idx(j * ns1 + p * ns2)];
+                        out.onset[idx(f) * BasicPitch::PITCHES + idx(p)] =
+                            op[idx(j * os1 + p * os2)];
                     }
                 }
                 if (progress && !progress(static_cast<double>(w + 1) / windows)) {

@@ -5,6 +5,8 @@
 #include "notes/lyrics.h"
 #include "notes/takesync.h"
 #include "playback/preview.h"
+#include <array>
+#include <span>
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
 const std::vector<Segment> &suggestions() {
@@ -93,18 +95,18 @@ bool covered(size_t i) {
         suggestFrom = g_settings.suggestFrom;
         count = sug.size();
         audioPos = g_session.audioPos;
-        std::vector<const Note *> byPitch[128];
+        std::array<std::vector<const Note *>, 128> byPitch;
         auto add = [&](const std::vector<Note> &notes) {
             for (const Note &n : notes) {
                 if (n.pitch >= 0 && n.pitch < 128) {
-                    byPitch[n.pitch].push_back(&n);
+                    byPitch[idx(n.pitch)].push_back(&n);
                 }
             }
         };
         add(g_session.ed.notes);
         for (int v = 0; v < WINDOW_VOICES; v++) {
             if (v != g_session.voice) {
-                add(g_session.others[v].notes);
+                add(g_session.others[idx(v)].notes);
             }
         }
         flags.assign(sug.size(), 0);
@@ -113,7 +115,7 @@ bool covered(size_t i) {
             const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
             for (int q = std::max(0, static_cast<int>(ceil(sg.pitch - 1)));
                  q <= std::min(127, static_cast<int>(floor(sg.pitch + 1))) && !flags[k]; q++) {
-                for (const Note *n : byPitch[q]) {
+                for (const Note *n : byPitch[idx(q)]) {
                     if (coversSuggestion(*n, a, b, sg.pitch)) {
                         flags[k] = 1;
                         break;
@@ -202,7 +204,7 @@ void acceptSuggestion(int i) {
 // A: every suggestion in view into its voice, as one undo point. Crowded-out ones (grey) are left.
 void acceptVisibleSuggestions() {
     const Rect n = noteArea();
-    std::vector<Note> byVoice[WINDOW_VOICES];
+    std::array<std::vector<Note>, WINDOW_VOICES> byVoice;
     const std::vector<Segment> &sug = suggestions();
     for (size_t i = 0; i < sug.size(); i++) {
         const Segment &sg = sug[i];
@@ -212,23 +214,23 @@ void acceptVisibleSuggestions() {
             covered(i)) {
             continue;
         }
-        byVoice[v].push_back({a, b, static_cast<int>(lround(sg.pitch)), false, -1});
+        byVoice[idx(v)].push_back({a, b, static_cast<int>(lround(sg.pitch)), false, -1});
     }
     bool others = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        others |= v != g_session.voice && !byVoice[v].empty();
+        others |= v != g_session.voice && !byVoice[idx(v)].empty();
     }
     if (others) {
         Undo_BeginBlock2(NULL);
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (v != g_session.voice && !byVoice[v].empty()) {
-            insertIntoVoice(v, byVoice[v]);
+        if (v != g_session.voice && !byVoice[idx(v)].empty()) {
+            insertIntoVoice(v, byVoice[idx(v)]);
         }
     }
-    if (!byVoice[g_session.voice].empty()) {
-        g_session.ed.notes.insert(g_session.ed.notes.end(), byVoice[g_session.voice].begin(),
-                                  byVoice[g_session.voice].end());
+    const std::vector<Note> &own = byVoice[idx(g_session.voice)];
+    if (!own.empty()) {
+        g_session.ed.notes.insert(g_session.ed.notes.end(), own.begin(), own.end());
         commitNotes();
     }
     if (others) {

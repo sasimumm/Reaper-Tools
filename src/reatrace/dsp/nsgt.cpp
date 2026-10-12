@@ -1,11 +1,12 @@
 #include "dsp/nsgt.h"
 
 #include <algorithm>
+#include <array>
+#include <bit>
 #include <climits>
 #include <cmath>
-#include <cstring>
 
-#include "fft.h"
+#include "dsp/wdlfft.h"
 #include "index.h"
 
 // WDL's FFT tops out at 32768 points, so the signal is processed in overlapping blocks
@@ -41,8 +42,14 @@ static NSGTParams sanitize(NSGTParams p) {
     return p;
 }
 
-static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
-                              const std::function<void(long long, int, float *)> &read,
+void readPadded(std::span<const float> x, long long start, std::span<float> out) {
+    for (size_t i = 0; i < out.size(); i++) {
+        const long long j = start + static_cast<long long>(i);
+        out[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
+    }
+}
+
+static Spectrogram computeOne(const NSGTParams &p, long long numSamples, const SampleReader &read,
                               const std::function<bool(double)> &progress) {
     numSamples = std::max(
         0LL, std::min(numSamples, static_cast<long long>(INT_MAX) * 64)); // frames fit in an int
@@ -96,25 +103,29 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
         maxM = std::max(maxM, bn.M);
     }
     std::vector<WDL_FFT_COMPLEX> small(idx(maxM));
-    const int *permN = WDL_fft_permute_tab(N / 2);
+    const std::span<const int> permN = permuteTab(N / 2);
     // Y = 2*X*w for the analytic signal and |ifft|/N; WDL's real FFT output is already 2x a plain DFT, so 2/N -> 1/N.
     const float scale = 1.0f / N;
 
     for (int first = 0; first < s.frames; first += framesPerBlock) {
         const long long start = static_cast<long long>(first) * hop - margin;
-        read(start, N, block.data());
+        read(start, block);
         WDL_real_fft(block.data(), N, 0);
-        const WDL_FFT_COMPLEX *X = reinterpret_cast<const WDL_FFT_COMPLEX *>(block.data());
+        // WDL's real FFT leaves N/2 complex values in place of the N reals.
+#pragma clang unsafe_buffer_usage begin
+        const std::span<const WDL_FFT_COMPLEX> X(
+            reinterpret_cast<const WDL_FFT_COMPLEX *>(block.data()), idx(N / 2));
+#pragma clang unsafe_buffer_usage end
         const int nf = std::min(framesPerBlock, s.frames - first);
 
         for (int b = 0; b < s.bins; b++) {
             const Bin &bn = bins[idx(b)];
-            const int *permM = WDL_fft_permute_tab(bn.M);
-            memset(small.data(), 0, static_cast<unsigned long>(bn.M) * sizeof(WDL_FFT_COMPLEX));
+            const std::span<const int> permM = permuteTab(bn.M);
+            std::fill_n(small.begin(), bn.M, WDL_FFT_COMPLEX{});
             // Shifting the band down to bin 0 only changes phase, not magnitude.
             for (int k = bn.k0; k <= bn.k1; k++) {
-                const WDL_FFT_COMPLEX &x = X[permN[k]];
-                WDL_FFT_COMPLEX &y = small[idx(permM[k - bn.k0])];
+                const WDL_FFT_COMPLEX &x = X[idx(permN[idx(k)])];
+                WDL_FFT_COMPLEX &y = small[idx(permM[idx(k - bn.k0)])];
                 float w = bn.w[idx(k - bn.k0)] * scale;
                 y.re = x.re * w;
                 y.im = x.im * w;
@@ -133,8 +144,7 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
     return s;
 }
 
-Spectrogram computeNSGT(const NSGTParams &params, long long numSamples,
-                        const std::function<void(long long, int, float *)> &read,
+Spectrogram computeNSGT(const NSGTParams &params, long long numSamples, const SampleReader &read,
                         const std::function<bool(double)> &progress) {
     const NSGTParams p = sanitize(params);
     Spectrogram s = computeOne(p, numSamples, read, progress);
@@ -219,16 +229,14 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
     for (size_t i = 0; i < lut.size(); i++) {
         unsigned int bits =
             static_cast<unsigned int>(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
-        float m = 0;
-        memcpy(&m, &bits, 4);
+        const float m = std::bit_cast<float>(bits);
         const double db =
             std::max(20.0 * static_cast<double>(log10(std::max(m, 1e-10f))), rp.dbFloor);
         double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
         lut[i] = static_cast<unsigned char>(lround(std::max(0.0, std::min(1.0, v)) * 255));
     }
     auto value = [&](float m) {
-        unsigned int bits = 0;
-        memcpy(&bits, &m, 4);
+        const unsigned int bits = std::bit_cast<unsigned int>(m);
         return lut[(bits & 0x7fffffff) >> LUT_SHIFT];
     };
 
@@ -237,40 +245,54 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
     const float alpha = static_cast<float>(rp.noiseAlpha);
     const int dim = static_cast<int>(lround(std::max(0.0, std::min(1.0, rp.peakDim)) * 256));
     for (int f = 0; f < s.frames; f++) {
-        const float *m = &s.mag[idx(f) * idx(s.bins)];
+        const std::span<const float> m =
+            std::span(s.mag).subspan(idx(f) * idx(s.bins), idx(s.bins));
         if (rp.subtractNoise) {
             for (int b = 0; b < s.bins; b++) {
-                row[idx(b)] = std::max(0.0f, m[b] - alpha * s.noise[idx(b)]);
+                row[idx(b)] = std::max(0.0f, m[idx(b)] - alpha * s.noise[idx(b)]);
             }
         } else {
-            memcpy(row.data(), m, static_cast<unsigned long>(s.bins) * sizeof(float));
+            std::copy(m.begin(), m.end(), row.begin());
         }
-        unsigned char *o = &out[idx(f) * idx(s.bins)];
+        const std::span<unsigned char> o =
+            std::span(out).subspan(idx(f) * idx(s.bins), idx(s.bins));
         for (int b = 0; b < s.bins; b++) {
             int v = value(row[idx(b)]);
             if (rp.peaksOnly && b > 0 && b + 1 < s.bins &&
                 !(row[idx(b)] > row[idx(b - 1)] && row[idx(b)] > row[idx(b + 1)])) {
                 v = (v * dim) >> 8;
             }
-            o[b] = static_cast<unsigned char>(v);
+            o[idx(b)] = static_cast<unsigned char>(v);
         }
     }
 }
 
 // Graphite (default): a neutral grey ramp with a slight blue bias, so the voices' colours stay
 // readable over it. Magma: the perceptual colormap, brighter but orange and yellow at the top.
-void makeColormap(double bias, unsigned int lut[256], int colormap) {
-    static const float graphite[9][3] = {
-        {0.055f, 0.059f, 0.078f}, {0.098f, 0.106f, 0.141f}, {0.150f, 0.163f, 0.216f},
-        {0.230f, 0.248f, 0.318f}, {0.352f, 0.375f, 0.460f}, {0.500f, 0.528f, 0.620f},
-        {0.651f, 0.678f, 0.771f}, {0.790f, 0.812f, 0.885f}, {0.933f, 0.941f, 0.973f},
-    };
-    static const float magma[9][3] = {
-        {0.001f, 0.000f, 0.014f}, {0.090f, 0.048f, 0.228f}, {0.232f, 0.060f, 0.438f},
-        {0.390f, 0.100f, 0.502f}, {0.550f, 0.161f, 0.506f}, {0.716f, 0.214f, 0.475f},
-        {0.868f, 0.340f, 0.443f}, {0.967f, 0.534f, 0.498f}, {0.987f, 0.991f, 0.750f},
-    };
-    const float (*ramp)[3] = colormap == COLORMAP_MAGMA ? magma : graphite;
+void makeColormap(double bias, std::span<unsigned int, 256> lut, int colormap) {
+    static const std::array<std::array<float, 3>, 9> graphite = {{
+        {0.055f, 0.059f, 0.078f},
+        {0.098f, 0.106f, 0.141f},
+        {0.150f, 0.163f, 0.216f},
+        {0.230f, 0.248f, 0.318f},
+        {0.352f, 0.375f, 0.460f},
+        {0.500f, 0.528f, 0.620f},
+        {0.651f, 0.678f, 0.771f},
+        {0.790f, 0.812f, 0.885f},
+        {0.933f, 0.941f, 0.973f},
+    }};
+    static const std::array<std::array<float, 3>, 9> magma = {{
+        {0.001f, 0.000f, 0.014f},
+        {0.090f, 0.048f, 0.228f},
+        {0.232f, 0.060f, 0.438f},
+        {0.390f, 0.100f, 0.502f},
+        {0.550f, 0.161f, 0.506f},
+        {0.716f, 0.214f, 0.475f},
+        {0.868f, 0.340f, 0.443f},
+        {0.967f, 0.534f, 0.498f},
+        {0.987f, 0.991f, 0.750f},
+    }};
+    const auto &ramp = colormap == COLORMAP_MAGMA ? magma : graphite;
     const double exponent = pow(2.0, -bias);
     for (int i = 0; i < 256; i++) {
         const double t = pow(i / 255.0, exponent) * 8;
@@ -278,10 +300,10 @@ void makeColormap(double bias, unsigned int lut[256], int colormap) {
         const double fr = t - k;
         unsigned int c = 0;
         for (int ch = 0; ch < 3; ch++) {
-            double v = static_cast<double>(ramp[k][ch]) +
-                       static_cast<double>(ramp[k + 1][ch] - ramp[k][ch]) * fr;
+            double v = static_cast<double>(ramp[idx(k)][idx(ch)]) +
+                       static_cast<double>(ramp[idx(k + 1)][idx(ch)] - ramp[idx(k)][idx(ch)]) * fr;
             c = (c << 8) | static_cast<unsigned int>(std::max(0.0, std::min(255.0, v * 255)));
         }
-        lut[i] = c;
+        lut[idx(i)] = c;
     }
 }

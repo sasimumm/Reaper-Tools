@@ -1,5 +1,6 @@
 // Self-check for the isolate JSFX (PLAY-9): run `build/isolate_test`. Compiles the JSFX's sections
 // with EEL2 (as REAPER does) and runs them on test tones the way REAPER calls them.
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -43,37 +44,40 @@ struct Fx {
         *samplesblock = BLOCK;
         const std::string src = isolateJSFX();
         // the header: "sliderN:default<...", then "@section" lines start the code sections
-        std::string sections[4];
+        std::array<std::string, 4> sections;
         int cur = -1;
         for (size_t p = 0; p < src.size();) {
             const size_t e = src.find('\n', p);
             const std::string l = src.substr(p, e - p);
             p = e == std::string::npos ? src.size() : e + 1;
             if (l.rfind("slider", 0) == 0 && l.find(':') != std::string::npos && cur < 0) {
-                const int n = static_cast<int>(strtol(l.c_str() + 6, nullptr, 10));
+                const int n = std::stoi(l.substr(6));
                 const std::string name = "slider" + std::to_string(n);
                 EEL_F *v = NSEEL_VM_regvar(vm, name.c_str());
-                *v = strtod(l.c_str() + l.find(':') + 1, nullptr);
+                *v = std::stod(l.substr(l.find(':') + 1));
                 sliders.resize(std::max(sliders.size(), idx(n)));
                 sliders[idx(n) - 1] = v;
             }
-            static const char *const NAMES[] = {"@init", "@slider", "@block", "@sample"};
+            static const std::array<const char *, 4> NAMES = {
+                "@init", "@slider", "@block", "@sample"
+            };
             bool header = false;
             for (int s = 0; s < 4; s++) {
-                if (l == NAMES[s]) {
+                if (l == NAMES[idx(s)]) {
                     cur = s;
                     header = true;
                 }
             }
             if (!header && cur >= 0) {
-                sections[cur] += l + "\n";
+                sections[idx(cur)] += l + "\n";
             }
         }
-        NSEEL_CODEHANDLE *out[] = {&init, &slider, &block, &sample};
+        const std::array<NSEEL_CODEHANDLE *, 4> out = {&init, &slider, &block, &sample};
         for (int s = 0; s < 4; s++) {
-            *out[s] = NSEEL_code_compile_ex(vm, sections[s].c_str(), 0, 0);
-            if (!*out[s]) {
-                printf("section %d: %s\n", s, NSEEL_code_getcodeerror(vm));
+            *out[idx(s)] = NSEEL_code_compile_ex(vm, sections[idx(s)].c_str(), 0, 0);
+            if (!*out[idx(s)]) {
+                const char *err = NSEEL_code_getcodeerror(vm);
+                printf("section %d: %s\n", s, std::string(err ? err : "(null)").c_str());
                 assert(false);
             }
         }

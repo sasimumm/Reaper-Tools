@@ -3,6 +3,7 @@
 
 #include "index.h"
 #include <functional>
+#include <span>
 #include <vector>
 
 struct NSGTParams {
@@ -25,10 +26,14 @@ struct Spectrogram {
     double binOfPitch(double midiPitch) const; // continuous bin index for a (fractional) MIDI pitch
 };
 
-// read(start, n, out) fills out[0..n) with mono samples from sample `start`; out-of-range samples are 0.
+// Fills out with the mono samples from sample `start` on; out-of-range samples are 0.
+using SampleReader = std::function<void(long long start, std::span<float> out)>;
+
+// A SampleReader over a whole signal in memory: out gets x from `start` on, 0 outside x.
+void readPadded(std::span<const float> x, long long start, std::span<float> out);
+
 // progress(fraction) is called after each block; returning false stops early (result incomplete).
-Spectrogram computeNSGT(const NSGTParams &p, long long numSamples,
-                        const std::function<void(long long start, int n, float *out)> &read,
+Spectrogram computeNSGT(const NSGTParams &p, long long numSamples, const SampleReader &read,
                         const std::function<bool(double)> &progress = nullptr);
 
 // Noise floor for spectral subtraction: mean spectrum of the quietest `fraction` of frames.
@@ -57,4 +62,4 @@ double cellValue(const Spectrogram &s, const RenderParams &rp, int frame, int bi
 void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsigned char> &out);
 
 // 256-entry magma colormap with the bias curve applied, as 0x00RRGGBB.
-void makeColormap(double bias, unsigned int lut[256], int colormap = COLORMAP_GRAPHITE);
+void makeColormap(double bias, std::span<unsigned int, 256> lut, int colormap = COLORMAP_GRAPHITE);

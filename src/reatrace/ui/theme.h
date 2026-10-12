@@ -3,6 +3,8 @@
 
 #include "state.h"
 
+#include <array>
+
 using RGB = unsigned int;  // 0xRRGGBB
 using ARGB = unsigned int; // 0xAARRGGBB: a backbuffer or layer pixel, always opaque
 
@@ -37,7 +39,7 @@ struct Theme {
     // Note area
     RGB area = 0x1b1b1b; // under the spectrogram, dark whatever the theme
     // Voices in the Okabe-Ito palette (colour-blind safe), readable over the graphite spectrogram.
-    RGB voices[WINDOW_VOICES] = {0xe69f00, 0x56b4e9, 0xcc79a7, 0x009e73};
+    std::array<RGB, WINDOW_VOICES> voices = {0xe69f00, 0x56b4e9, 0xcc79a7, 0x009e73};
     RGB outline = 0xf4f6ff;    // selected notes
     RGB crowded = 0x8b91a3;    // suggestions with no voice left
     RGB contour = 0xf0e442;    // the sung pitch; yellow, never white like the play cursor

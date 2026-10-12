@@ -2,6 +2,7 @@
 
 #include "index.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 static const int HARMONICS = 8;
@@ -34,11 +35,12 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
         return out;
     }
 
-    double off[HARMONICS + 1], w[HARMONICS + 1], wsum = 0;
+    std::array<double, HARMONICS + 1> off{}, w{};
+    double wsum = 0;
     for (int h = 1; h <= HARMONICS; h++) {
-        off[h] = bpo * log2(static_cast<double>(h));
-        w[h] = pow(HARMONIC_DECAY, h - 1);
-        wsum += w[h];
+        off[idx(h)] = bpo * log2(static_cast<double>(h));
+        w[idx(h)] = pow(HARMONIC_DECAY, h - 1);
+        wsum += w[idx(h)];
     }
 
     struct Cand {
@@ -61,13 +63,13 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
         for (int k = k0; k <= k1; k++) {
             double sum = 0;
             for (int h = 1; h <= HARMONICS; h++) {
-                const double b = k + off[h];
+                const double b = k + off[idx(h)];
                 const int i = static_cast<int>(b);
                 if (i + 1 >= s.bins) {
                     break;
                 }
-                sum += w[h] * (static_cast<double>(c[idx(i)]) +
-                               static_cast<double>(c[idx(i + 1)] - c[idx(i)]) * (b - i));
+                sum += w[idx(h)] * (static_cast<double>(c[idx(i)]) +
+                                    static_cast<double>(c[idx(i + 1)] - c[idx(i)]) * (b - i));
             }
             score[idx(k)] = static_cast<float>(sum / (wsum * static_cast<double>(peak)));
         }

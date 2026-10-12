@@ -1,10 +1,14 @@
 #include "playback/isolate.h"
 
+#include <array>
 #include <fstream>
+#include <span>
 #include <sstream>
+#include <string_view>
 #include <tuple>
 
 #include "analysis.h"
+#include "index.h"
 #include "notes/commands.h"
 #include "shared/guard.h"
 #include "state.h"
@@ -36,7 +40,7 @@ static int findFX(MediaTrack *tr) {
     for (int i = 0; tr && i < TrackFX_GetCount(tr); i++) {
         char name[256] = "";
         TrackFX_GetFXName(tr, i, name, sizeof(name));
-        if (strstr(name, ISOLATE_DESC)) {
+        if (std::string_view(name).find(ISOLATE_DESC) != std::string_view::npos) {
             return i;
         }
     }
@@ -95,7 +99,7 @@ void updateIsolate() {
     // what is followed: each voice's notes, and its suggestions where nothing covers them, over
     // the next seconds (ISOLATE_CHANGES changes are sent; refreshed every tick)
     const double horizon = now + 10;
-    std::vector<Note> spans[WINDOW_VOICES];
+    std::array<std::vector<Note>, WINDOW_VOICES> spans;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
         const bool followed = voice == g_session.voice ||
                               (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1));
@@ -103,9 +107,9 @@ void updateIsolate() {
             continue;
         }
         for (const Note &n :
-             voice == g_session.voice ? g_session.ed.notes : g_session.others[voice].notes) {
+             voice == g_session.voice ? g_session.ed.notes : g_session.others[idx(voice)].notes) {
             if (n.end > now - 1 && n.start < horizon) {
-                spans[voice].push_back(n);
+                spans[idx(voice)].push_back(n);
             }
         }
     }
@@ -117,14 +121,14 @@ void updateIsolate() {
             (voice == g_session.voice ||
              (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1))) &&
             !covered(i)) {
-            spans[voice].push_back({a, b, static_cast<int>(lround(sug[i].pitch)), false, -1});
+            spans[idx(voice)].push_back({a, b, static_cast<int>(lround(sug[i].pitch)), false, -1});
         }
     }
     std::vector<double> v(static_cast<size_t>(isolateParam(WINDOW_VOICES)));
     v[0] = g_settings.isolateWidth;
     v[1] = g_settings.isolateBackground;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
-        const auto sched = pitchSchedule(spans[voice], now - 1, ISOLATE_CHANGES);
+        const auto sched = pitchSchedule(spans[idx(voice)], now - 1, ISOLATE_CHANGES);
         size_t at = static_cast<size_t>(isolateParam(voice));
         v[at++] = static_cast<double>(sched.size());
         for (const auto &[t, p] : sched) {

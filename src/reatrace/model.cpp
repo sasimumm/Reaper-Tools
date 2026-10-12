@@ -5,7 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
+#include <string_view>
 
 struct Setting {
     const char *name = nullptr;
@@ -53,34 +53,44 @@ static std::vector<Setting> fields(Settings &s) {
     };
 }
 
+// strtod on s, for the libc number syntax (0 if there is no number).
+static double toNumber(const std::string &s) {
+    // strtod only takes a C string.
+#pragma clang unsafe_buffer_usage begin
+    return strtod(s.c_str(), NULL);
+#pragma clang unsafe_buffer_usage end
+}
+
 std::string encodeSettings(const Settings &settings) {
     Settings copy = settings;
     std::string out;
     char buf[64];
     for (const Setting &st : fields(copy)) {
+        std::string value;
         if (st.d) {
-            snprintf(buf, sizeof(buf), "%s=%.6g;", st.name, *st.d);
+            snprintf(buf, sizeof(buf), "%.6g", *st.d);
+            value = buf;
         } else if (st.b) {
-            snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.b ? 1 : 0);
+            value = *st.b ? "1" : "0";
         } else if (st.i) {
-            snprintf(buf, sizeof(buf), "%s=%d;", st.name, *st.i);
+            value = std::to_string(*st.i);
         } else {
             continue;
         }
-        out += buf;
+        out += std::string(st.name) + "=" + value + ";";
     }
     return out;
 }
 
 void decodeSettings(const char *str, Settings &settings) {
     const std::vector<Setting> fs = fields(settings);
-    for (const char *p = str; p && *p;) {
-        const char *eq = strchr(p, '='), *end = strchr(p, ';');
-        if (!eq || !end || eq > end) {
+    for (std::string_view p = str ? str : ""; !p.empty();) {
+        const size_t eq = p.find('='), end = p.find(';');
+        if (eq == p.npos || end == p.npos || eq > end) {
             break;
         }
-        const std::string name(p, idx(eq - p));
-        const double v = strtod(eq + 1, NULL);
+        const std::string name(p.substr(0, eq));
+        const double v = toNumber(std::string(p.substr(eq + 1, end - eq - 1)));
         for (const Setting &st : fs) {
             if (name == st.name) {
                 const double c = v >= st.lo ? std::min(v, st.hi) : st.lo; // NaN -> lo
@@ -93,7 +103,7 @@ void decodeSettings(const char *str, Settings &settings) {
                 }
             }
         }
-        p = end + 1;
+        p.remove_prefix(end + 1);
     }
 }
 

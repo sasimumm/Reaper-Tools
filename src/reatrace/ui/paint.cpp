@@ -76,7 +76,7 @@ static void renderLayer(const Rect &n) {
                 const int yb =
                     std::min(h, static_cast<int>(ceil((g_ui.view.y(ep - 0.5) - n.t) * S - 0.5)));
                 for (int y = ya; y < yb; y++) {
-                    memset(&dim[idx(y, w, xa)], 1, idx(xb - xa));
+                    std::ranges::fill(std::span(dim).subspan(idx(y, w, xa), idx(xb - xa)), 1);
                 }
             }
         };
@@ -85,7 +85,7 @@ static void renderLayer(const Rect &n) {
         }
         for (int v = 0; v < WINDOW_VOICES; v++) {
             if (v != g_session.voice) {
-                for (const Note &nt : g_session.others[v].notes) {
+                for (const Note &nt : g_session.others[idx(v)].notes) {
                     add(nt);
                 }
             }
@@ -93,6 +93,8 @@ static void renderLayer(const Rect &n) {
     }
     const int stripes =
         std::max(1, std::min(8, static_cast<int>(std::thread::hardware_concurrency())));
+    const std::span<const unsigned char> val = g_analysis.val;
+    const std::span<const unsigned int> lut = g_analysis.lut;
     std::atomic<bool> stop{false};
     parallel(stripes, stop, [&](int stripe) {
         std::vector<unsigned char> col(idx(s.bins));
@@ -108,11 +110,12 @@ static void renderLayer(const Rect &n) {
             if (f0 > f1) {
                 continue;
             }
-            memcpy(col.data(), &g_analysis.val[idx(f0) * idx(s.bins)], idx(s.bins));
+            std::ranges::copy(val.subspan(idx(f0) * idx(s.bins), idx(s.bins)), col.begin());
             for (int f = f0 + 1; f <= f1; f++) {
-                const unsigned char *v = &g_analysis.val[idx(f) * idx(s.bins)];
+                const std::span<const unsigned char> v =
+                    val.subspan(idx(f) * idx(s.bins), idx(s.bins));
                 for (int b = 0; b < s.bins; b++) {
-                    col[idx(b)] = std::max(col[idx(b)], v[b]);
+                    col[idx(b)] = std::max(col[idx(b)], v[idx(b)]);
                 }
             }
             for (int y = 0; y < h; y++) {
@@ -127,7 +130,7 @@ static void renderLayer(const Rect &n) {
                 if (!dim.empty() && dim[at]) {
                     m = static_cast<unsigned char>(m * EXPLAIN_DIM);
                 }
-                const ARGB c = opaque(g_analysis.lut[m]);
+                const ARGB c = opaque(lut[m]);
                 g_layer[at] = black[idx(y)] ? g_theme.shadeBlack(c) : c;
             }
         }
@@ -163,6 +166,8 @@ static void renderOverview(int w, int h) {
         return;
     }
     const double lo = s.binOfPitch(OV_LOW - 0.5), hi = s.binOfPitch(OV_HIGH + 0.5);
+    const std::span<const unsigned char> val = g_analysis.val;
+    const std::span<const unsigned int> lut = g_analysis.lut;
     std::vector<unsigned char> col(idx(s.bins));
     for (int x = 0; x < w; x++) {
         const int f0 = std::max(0, static_cast<int>(static_cast<double>(x) * s.frames / w)),
@@ -171,9 +176,9 @@ static void renderOverview(int w, int h) {
                                                                   s.frames / w)));
         std::fill(col.begin(), col.end(), 0);
         for (int f = f0; f < f1; f++) {
-            const unsigned char *v = &g_analysis.val[idx(f) * idx(s.bins)];
+            const std::span<const unsigned char> v = val.subspan(idx(f) * idx(s.bins), idx(s.bins));
             for (int b = 0; b < s.bins; b++) {
-                col[idx(b)] = std::max(col[idx(b)], v[b]);
+                col[idx(b)] = std::max(col[idx(b)], v[idx(b)]);
             }
         }
         for (int y = 0; y < h; y++) {
@@ -183,7 +188,7 @@ static void renderOverview(int w, int h) {
             for (int b = b0; b <= b1; b++) {
                 m = std::max(m, col[idx(b)]);
             }
-            g_ovLayer[idx(y, w, x)] = opaque(g_analysis.lut[m]);
+            g_ovLayer[idx(y, w, x)] = opaque(lut[m]);
         }
     }
 }
@@ -228,9 +233,10 @@ void text(HDC dc, const char *s, int l, int t, int r, int b, unsigned int col, i
     DrawText(dc, s, -1, &rc, flags | DT_SINGLELINE | DT_NOPREFIX | DT_VCENTER);
 }
 
-static void pitchName(int p, char *buf, int sz) {
-    static const char *names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
-    snprintf(buf, idx(sz), "%s%d", names[((p % 12) + 12) % 12], p / 12 - 1);
+static std::string pitchName(int p) {
+    static const std::array<const char *, 12> NAMES = {"C",  "C#", "D",  "D#", "E",  "F",
+                                                       "F#", "G",  "G#", "A",  "A#", "B"};
+    return NAMES[idx(((p % 12) + 12) % 12)] + std::to_string(p / 12 - 1);
 }
 
 // --- overtone guides ------------------------------------------------------------------
@@ -275,7 +281,7 @@ static void drawGhosts(Canvas &cv) {
                          hh = std::max(1.0, g_ui.view.rowH * 0.3);
             const int y0 = static_cast<int>(lround(y - hh)),
                       y1 = static_cast<int>(lround(y + hh)) + 1;
-            cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[g_session.voice], 1,
+            cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(g_session.voice)], 1,
                             a / (h - 1) + a / 2);
         }
     }
@@ -315,7 +321,7 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
             continue;
         }
         const int t = GUIDE_THICKNESS + (h == 1 ? 1 : 0);
-        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, g_theme.voices[g_session.voice],
+        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, g_theme.voices[idx(g_session.voice)],
                 h == 1 ? 256 : a);
         snprintf(buf, sizeof(buf), "%d", h);
         text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, g_theme.text, DT_LEFT);
@@ -337,9 +343,9 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
             cv.fill(x, y - GUIDE_THICKNESS / 2, x + 4, y - GUIDE_THICKNESS / 2 + GUIDE_THICKNESS,
                     strong ? g_theme.warn : g_theme.tick, strong ? 256 : a);
         }
-        snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
-        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? g_theme.warn : g_theme.tick,
-             DT_LEFT);
+        snprintf(buf, sizeof(buf), " %+.0f dB", rel);
+        text(dc, (c.label + std::string(buf)).c_str(), xB + 3, y - 8, xB + 120, y + 8,
+             strong ? g_theme.warn : g_theme.tick, DT_LEFT);
     }
 }
 
@@ -358,7 +364,7 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         const int v = suggestionVoice(i);
         // dashed in the colour of the voice A puts it in (not a note yet), on a dark outline and
         // a tint so it stands out from bright energy
-        const unsigned int col = v >= 0 ? g_theme.voices[v] : g_theme.crowded;
+        const unsigned int col = v >= 0 ? g_theme.voices[idx(v)] : g_theme.crowded;
         const int a = v >= 0 ? 256 : 180, t = y1 - y0 >= 8 ? 2 : 1; // dash thickness
         cv.rounded(x0, y0, x1, y1, col, v >= 0 ? 60 : 30);
         cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.shadow, 1, 170);
@@ -466,9 +472,10 @@ static void monoText(HDC dc, const char *s, int l, int t, int r, int b, unsigned
 // What a click or drag does where the mouse is.
 static std::string hoverHint(const Layout &L) {
     const int x = g_ui.mouseX, y = g_ui.mouseY;
-    static const char *const VOICE_NAMES[WINDOW_VOICES] = {"Lead", "voice 2", "voice 3", "voice 4"};
-    const char *voice = VOICE_NAMES[g_session.voice];
-    char buf[200];
+    static const std::array<const char *, WINDOW_VOICES> VOICE_NAMES = {
+        "Lead", "voice 2", "voice 3", "voice 4"
+    };
+    const std::string voice = VOICE_NAMES[idx(g_session.voice)];
     if (L.notes.in(x, y)) {
         int hit = -1;
         const NoteEditor::Hit h = g_session.ed.hitTest(g_ui.view, x, y, &hit);
@@ -482,17 +489,12 @@ static std::string hoverHint(const Layout &L) {
         if (const int i = suggestionAt(x, y); i >= 0) {
             const int v = suggestionVoice(idx(i));
             if (v < 0) {
-                snprintf(buf, sizeof(buf),
-                         "Crowded out (more notes than voices)  ·  Click: add it to %s", voice);
-            } else {
-                snprintf(buf, sizeof(buf), "Click: accept into %s  ·  A: accept all in view",
-                         VOICE_NAMES[v]);
+                return "Crowded out (more notes than voices)  ·  Click: add it to " + voice;
             }
-            return buf;
+            return std::string("Click: accept into ") + VOICE_NAMES[idx(v)] +
+                   "  ·  A: accept all in view";
         }
-        snprintf(buf, sizeof(buf),
-                 "Drag: draw a note in %s  ·  Shift+drag: select  ·  Alt: no snap", voice);
-        return buf;
+        return "Drag: draw a note in " + voice + "  ·  Shift+drag: select  ·  Alt: no snap";
     }
     if (const unsigned lane = laneLabelAt(x, y, L)) {
         return g_ui.foldedLanes & lane ? "Click: show this lane"
@@ -522,7 +524,7 @@ static std::string hoverHint(const Layout &L) {
 // A small rounded label on the status line; returns its left edge.
 static int chip(Canvas &cv, HDC dc, int right, int t, int b, const char *label, unsigned int bg,
                 unsigned int fg) {
-    const int w = 12 + 7 * static_cast<int>(strlen(label)), l = right - w;
+    const int w = 12 + 7 * static_cast<int>(std::string_view(label).size()), l = right - w;
     cv.rounded(l, t + 3, right, b - 3, bg);
     text(dc, label, l, t, right, b, fg, DT_CENTER);
     return l;
@@ -538,13 +540,13 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     cv.fill(s.l, s.t, s.r, s.b, g_theme.ruler);
     cv.fill(s.l, s.t, s.r, s.t + 1, g_theme.separator);
     char buf[160];
-    static const int COLS[] = {44, 84, 112, 64, 92, 76, 100}; // widths, points
-    std::string col[7];
+    static const std::array COLS = {44, 84, 112, 64, 92, 76, 100}; // widths, points
+    std::array<std::string, COLS.size()> col;
     const bool over = n.in(g_ui.mouseX, g_ui.mouseY);
     if (over) {
         const double t = g_ui.view.t(g_ui.mouseX), p = g_ui.view.p(g_ui.mouseY);
         const int ip = static_cast<int>(floor(p + 0.5));
-        pitchName(ip, buf, sizeof(buf)), col[0] = buf;
+        col[0] = pitchName(ip);
         snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12));
         col[1] = buf;
         const Spectrogram &sp = *g_analysis.spec;
@@ -563,9 +565,8 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
                     69 + 12 * log2(sp.p.fmin *
                                    pow(2.0, static_cast<double>(best) / sp.p.binsPerOctave) / 440);
                 const int pp = static_cast<int>(floor(peak + 0.5));
-                char name[16];
-                pitchName(pp, name, sizeof(name));
-                snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100);
+                snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", pitchName(pp).c_str(),
+                         (peak - pp) * 100);
                 col[2] = buf;
                 const int bin =
                     std::max(0, std::min(sp.bins - 1, static_cast<int>(lround(sp.binOfPitch(p)))));
@@ -592,7 +593,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         }
     }
     int x = 6;
-    for (int i = 0; i < 7; i++) {
+    for (size_t i = 0; i < col.size(); i++) {
         monoText(dc, col[i].empty() ? (i < 2 && !over ? "—" : "") : col[i].c_str(), x, s.t,
                  x + COLS[i] - 6, s.b, i == 6 ? g_theme.dim : g_theme.text, DT_LEFT);
         x += COLS[i];
@@ -600,8 +601,10 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     }
 
     // modes, right to left: progress or the analysis note, voice, snap
-    static const char *const SNAP_NAMES[] = {"snap: off", "snap: onsets", "snap: grid"};
-    static const char *const VOICE_NAMES[WINDOW_VOICES] = {"Lead", "Voice 2", "Voice 3", "Voice 4"};
+    static const std::array SNAP_NAMES = {"snap: off", "snap: onsets", "snap: grid"};
+    static const std::array<const char *, WINDOW_VOICES> VOICE_NAMES = {
+        "Lead", "Voice 2", "Voice 3", "Voice 4"
+    };
     int right = c.r - 8;
     if (const int pm = analysisProgress(); pm >= 0) {
         cv.fill(right - 60, s.t + 10, right, s.b - 10, g_theme.button);
@@ -618,10 +621,10 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
             right -= 8 + 6 * static_cast<int>(note.size());
         }
     }
-    right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[g_session.voice],
-                 g_theme.voices[g_session.voice], g_theme.onText) -
+    right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[idx(g_session.voice)],
+                 g_theme.voices[idx(g_session.voice)], g_theme.onText) -
             6;
-    right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[std::clamp(g_settings.snapMode, 0, 2)],
+    right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[idx(std::clamp(g_settings.snapMode, 0, 2))],
                  g_theme.button, g_theme.dim) -
             10;
     if (right > x + 40) {
@@ -635,7 +638,7 @@ static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
     cv.clip = n;
     const int cx = (n.l + n.r) / 2, cy = (n.t + n.b) / 2;
     auto banner = [&](const char *msg, int y) {
-        const int w = 24 + 7 * static_cast<int>(strlen(msg));
+        const int w = 24 + 7 * static_cast<int>(std::string_view(msg).size());
         cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.shadow, 150);
         text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
     };
@@ -704,12 +707,14 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
     const int cols = 3, colW = std::min(300, (c.r - 80) / cols), x0 = (c.r - colW * cols) / 2;
     text(dc, "Shortcuts   (? or Esc to close)", x0, n.t + 14, x0 + colW * cols, n.t + 34,
          g_theme.text, DT_LEFT);
-    for (int g = 0; g < 6; g++) {
+    int g = 0;
+    for (const Group &group : GROUPS) {
         const int gx = x0 + (g % cols) * colW;
         int y = n.t + 46 + (g / cols) * 170;
-        text(dc, GROUPS[g].title, gx, y, gx + colW, y + 18, g_theme.accent, DT_LEFT);
+        g++;
+        text(dc, group.title, gx, y, gx + colW, y + 18, g_theme.accent, DT_LEFT);
         y += 20;
-        for (const Row &r : GROUPS[g].rows) {
+        for (const Row &r : group.rows) {
             text(dc, r.what, gx, y, gx + colW - 10, y + 16, g_theme.text, DT_LEFT);
             monoText(dc, r.keys, gx, y, gx + colW - 14, y + 16, g_theme.dim, DT_RIGHT);
             y += 17;
@@ -825,15 +830,16 @@ void paint(HDC hdc) {
             SelectObject(g_memdc, g_font);
         }
     }
-    unsigned int *fb =
-        g_memdc ? static_cast<unsigned int *>(SWELL_GetCtxFrameBuffer(g_memdc)) : NULL;
-    if (!fb) {
+    ARGB *bits = g_memdc ? static_cast<ARGB *>(SWELL_GetCtxFrameBuffer(g_memdc)) : NULL;
+    if (!bits) {
         return;
     }
+    // SWELL hands out the w by h backbuffer as a bare pointer.
+#pragma clang unsafe_buffer_usage begin
+    const std::span<ARGB> fb(bits, idx(w) * idx(h));
+#pragma clang unsafe_buffer_usage end
     if (L.tooSmall) {
-        for (size_t i = 0; i < idx(w) * idx(h); i++) {
-            fb[i] = opaque(g_theme.bg);
-        }
+        std::ranges::fill(fb, opaque(g_theme.bg));
         StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S, SRCCOPY);
         return;
     }
@@ -868,8 +874,8 @@ void paint(HDC hdc) {
     }
     const int lw = (n.r - n.l) * S;
     for (int y = n.t * S; y < n.b * S; y++) {
-        memcpy(fb + idx(y) * idx(w) + idx(n.l) * idx(S), &g_layer[idx(y - n.t * S) * idx(lw)],
-               idx(lw) * 4);
+        std::ranges::copy(std::span(g_layer).subspan(idx(y - n.t * S) * idx(lw), idx(lw)),
+                          fb.subspan(idx(y) * idx(w) + idx(n.l) * idx(S), idx(lw)).begin());
     }
 
     // pitch rows, then the time grid
@@ -896,21 +902,21 @@ void paint(HDC hdc) {
             if (g_ui.hiddenVoices >> v & 1) {
                 continue;
             }
-            for (const Note &nt : g_session.others[v].notes) {
+            for (const Note &nt : g_session.others[idx(v)].notes) {
                 const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
                           x1 = std::max(x0 + 2, static_cast<int>(lround(g_ui.view.x(nt.end))));
                 const int y0 = static_cast<int>(lround(g_ui.view.y(nt.pitch + 0.5))),
                           y1 = std::max(y0 + 3,
                                         static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5))));
-                cv.rounded(x0, y0, x1, y1, g_theme.voices[v], 70);
-                cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[v]);
+                cv.rounded(x0, y0, x1, y1, g_theme.voices[idx(v)], 70);
+                cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(v)]);
             }
         }
     }
 
     // notes
     const int drawing = g_session.ed.drawing();
-    const unsigned int noteColour = g_theme.voices[g_session.voice];
+    const unsigned int noteColour = g_theme.voices[idx(g_session.voice)];
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &nt = g_session.ed.notes[i];
         const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
@@ -946,12 +952,11 @@ void paint(HDC hdc) {
         }
     }
 
-    double mr[4];
-    if (g_session.ed.marquee(mr)) {
-        cv.fill(static_cast<int>(mr[0]), static_cast<int>(mr[1]), static_cast<int>(mr[2]),
-                static_cast<int>(mr[3]), g_theme.highlight, 30);
-        cv.frame(static_cast<int>(mr[0]), static_cast<int>(mr[1]), static_cast<int>(mr[2]),
-                 static_cast<int>(mr[3]), g_theme.highlight);
+    if (const auto m = g_session.ed.marquee()) {
+        const int x0 = static_cast<int>(m->x0), y0 = static_cast<int>(m->y0),
+                  x1 = static_cast<int>(m->x1), y1 = static_cast<int>(m->y1);
+        cv.fill(x0, y0, x1, y1, g_theme.highlight, 30);
+        cv.frame(x0, y0, x1, y1, g_theme.highlight);
     }
 
     // keyboard
@@ -969,8 +974,7 @@ void paint(HDC hdc) {
                                 : g_theme.keyWhite);
         cv.fill(0, y1 - 1, n.l, y1, g_theme.keyEdge);
         if (p % 12 == 0 && y1 - y0 >= 8) {
-            pitchName(p, buf, sizeof(buf));
-            text(dc, buf, 2, y0, n.l - 4, y1, g_theme.keyText, DT_RIGHT);
+            text(dc, pitchName(p).c_str(), 2, y0, n.l - 4, y1, g_theme.keyText, DT_RIGHT);
         }
     }
     cv.fill(n.l - 1, n.t, n.l, n.b, g_theme.separator);
@@ -1083,8 +1087,9 @@ void paint(HDC hdc) {
             renderOverview(ow, oh);
         }
         for (int y = 0; y < oh; y++) {
-            memcpy(fb + idx(o.t * S + y) * idx(w) + idx(o.l) * idx(S), &g_ovLayer[idx(y) * idx(ow)],
-                   idx(ow) * 4);
+            std::ranges::copy(
+                std::span(g_ovLayer).subspan(idx(y) * idx(ow), idx(ow)),
+                fb.subspan(idx(o.t * S + y) * idx(w) + idx(o.l) * idx(S), idx(ow)).begin());
         }
         cv.clip = o;
         for (const Note &nt : g_session.ed.notes) {

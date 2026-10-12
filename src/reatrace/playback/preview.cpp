@@ -2,6 +2,7 @@
 
 #include "index.h"
 #include <fcntl.h>
+#include <string>
 #include <unistd.h>
 
 // --- note preview ----------------------------------------------------------------------
@@ -61,9 +62,11 @@ void previewPitch(int pitch) {
     // Written fresh every time into REAPER's per-user resource folder, never following a symlink.
     // One file per pitch, in case REAPER caches MIDI file sources by path; files of playing
     // previews are only rewritten with identical bytes.
-    char path[2048];
-    snprintf(path, sizeof(path), "%s/Data/reatrace-preview-%d.mid", GetResourcePath(), pitch);
-    const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
+    // At most 2047 characters, as the fixed buffer this was formatted into allowed.
+    const std::string path = (std::string(GetResourcePath()) + "/Data/reatrace-preview-" +
+                              std::to_string(pitch) + ".mid")
+                                 .substr(0, 2047);
+    const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW, 0600);
     if (fd < 0) {
         return;
     }
@@ -86,7 +89,7 @@ void previewPitch(int pitch) {
         pthread_mutex_init(&slot->reg.mutex, NULL);
         slot->init = true;
     }
-    slot->reg.src = PCM_Source_CreateFromFile(path);
+    slot->reg.src = PCM_Source_CreateFromFile(path.c_str());
     if (!slot->reg.src) {
         return;
     }

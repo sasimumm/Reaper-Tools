@@ -1,6 +1,9 @@
 #include "notes/takesync.h"
 
+#include "index.h"
 #include "notes/notesync.h"
+#include <array>
+#include <span>
 
 static std::vector<Note> g_loaded; // notes as read from the take, by take index
 
@@ -60,13 +63,14 @@ class ReaperTake : public Take {
         return texts;
     }
     bool text(int i, TextEvent *out) override {
-        char msg[1024];
-        int size = sizeof(msg) - 1;
-        if (!MIDI_GetTextSysexEvt(m_take, i, NULL, NULL, &out->ppq, &out->type, msg, &size)) {
+        std::array<char, 1024> msg{};
+        int size = static_cast<int>(msg.size()) - 1;
+        if (!MIDI_GetTextSysexEvt(m_take, i, NULL, NULL, &out->ppq, &out->type, msg.data(),
+                                  &size)) {
             return false;
         }
-        msg[std::max(0, std::min(size, static_cast<int>(sizeof(msg)) - 1))] = 0;
-        out->text = msg;
+        msg[idx(std::max(0, std::min(size, static_cast<int>(msg.size()) - 1)))] = 0;
+        out->text = msg.data();
         return true;
     }
     void setNote(int i, const NoteEvent &n) override {
@@ -136,7 +140,7 @@ void loadNotes() {
 // Reads the other voices' notes (display only), when their items changed.
 void loadOtherVoices(bool force) {
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        OtherVoice &o = g_session.others[v];
+        OtherVoice &o = g_session.others[idx(v)];
         if (v == g_session.voice) {
             o = OtherVoice();
             continue;

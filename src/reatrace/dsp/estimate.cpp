@@ -4,13 +4,16 @@
 #include <Accelerate/Accelerate.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
 #include <complex>
+#include <ranges>
+#include <span>
 #include <thread>
 
 #include "dsp/parallel.h"
-#include "fft.h"
+#include "dsp/wdlfft.h"
 #include "index.h"
 
 static const int SR = 22050, HOP = 256;
@@ -132,9 +135,10 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             double sum = 0;
             for (int b = 0; b < B; b++) {
                 double v = 0;
-                const float *pp = &part[(idx(b) * idx(P) + idx(p)) * NH];
+                const std::span<const float> pp =
+                    std::span(part).subspan((idx(b) * idx(P) + idx(p)) * NH, NH);
                 for (int h = 0; h < NH; h++) {
-                    v += static_cast<double>(pp[h]) * A[idx(reg(p), NH, h)];
+                    v += static_cast<double>(pp[idx(h)]) * A[idx(reg(p), NH, h)];
                 }
                 W[idx(b, K, p)] = static_cast<float>(v);
                 sum += v;
@@ -171,10 +175,12 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans, fc, K, B, 1.0f, WH.data(), B,
                             W.data(), K, 0.0f, NUM.data(), K);
                 for (int f = 0; f < fc; f++) {
-                    float *h = &H[idx(c0 + f) * idx(K)];
-                    const float *num = &NUM[idx(f) * idx(K)], d = 1 + pen[idx(c0 + f)];
+                    const std::span<float> h = std::span(H).subspan(idx(c0 + f) * idx(K), idx(K));
+                    const std::span<const float> num =
+                        std::span(NUM).subspan(idx(f) * idx(K), idx(K));
+                    const float d = 1 + pen[idx(c0 + f)];
                     for (int k = 0; k < K; k++) {
-                        h[k] *= num[k] / d;
+                        h[idx(k)] *= num[idx(k)] / d;
                     }
                 }
             }
@@ -192,18 +198,18 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             const int fc = std::min(CHUNK, F - c0);
             ratio(c0, fc);
             for (int f = 0; f < fc; f++) {
-                const float *h = &H[idx(c0 + f) * idx(K)];
+                const std::span<const float> h = std::span(H).subspan(idx(c0 + f) * idx(K), idx(K));
                 double sum = 0, best = 0;
                 for (int p = 0; p < P; p++) {
-                    sum += static_cast<double>(h[p]);
-                    best = std::max(best, static_cast<double>(p > 0 ? h[p - 1] : 0) +
-                                              static_cast<double>(h[p]) +
-                                              (p + 1 < P ? static_cast<double>(h[p + 1]) : 0));
+                    sum += static_cast<double>(h[idx(p)]);
+                    best = std::max(best, static_cast<double>(p > 0 ? h[idx(p - 1)] : 0) +
+                                              static_cast<double>(h[idx(p)]) +
+                                              (p + 1 < P ? static_cast<double>(h[idx(p + 1)]) : 0));
                 }
                 const bool solo = best / (sum + static_cast<double>(eps)) >= SOLO;
                 for (int p = 0; p < P; p++) {
-                    Hm[idx(f, P, p)] = solo ? h[p] : 0;
-                    hsum[idx(p)] += solo ? static_cast<double>(h[p]) : 0;
+                    Hm[idx(f, P, p)] = solo ? h[idx(p)] : 0;
+                    hsum[idx(p)] += solo ? static_cast<double>(h[idx(p)]) : 0;
                 }
             }
             cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, B, P, fc, 1.0f, WH.data(), B,
@@ -212,12 +218,13 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         std::vector<double> nr(idx(regions) * NH, 0), dr(idx(regions) * NH, 0);
         for (int p = 0; p < P; p++) {
             for (int b = 0; b < B; b++) {
-                const float *pp = &part[(idx(b) * idx(P) + idx(p)) * NH];
+                const std::span<const float> pp =
+                    std::span(part).subspan((idx(b) * idx(P) + idx(p)) * NH, NH);
                 const double rh = static_cast<double>(RH[idx(b, P, p)] / norm[idx(p)]),
                              hn = hsum[idx(p)] / static_cast<double>(norm[idx(p)]);
                 for (int h = 0; h < NH; h++) {
-                    nr[idx(reg(p), NH, h)] += static_cast<double>(pp[h]) * rh;
-                    dr[idx(reg(p), NH, h)] += static_cast<double>(pp[h]) * hn;
+                    nr[idx(reg(p), NH, h)] += static_cast<double>(pp[idx(h)]) * rh;
+                    dr[idx(reg(p), NH, h)] += static_cast<double>(pp[idx(h)]) * hn;
                 }
             }
         }
@@ -293,14 +300,14 @@ struct Biquad {
 
 // scipy.signal.butter(2, [lo, hi], 'band'): the analog prototype moved to the band and through the
 // bilinear transform, as two second-order sections.
-static void butterBandpass(double lo, double hi, Biquad out[2]) {
+static std::array<Biquad, 2> butterBandpass(double lo, double hi) {
     typedef std::complex<double> C;
     const double fs = 2, w1 = 2 * fs * tan(M_PI * (lo / (SR / 2.0)) / fs),
                  w2 = 2 * fs * tan(M_PI * (hi / (SR / 2.0)) / fs);
     const double bw = w2 - w1, wo = sqrt(w1 * w2), fs2 = 2 * fs;
-    const C proto[2] = {-std::exp(C(0, -M_PI / 4)), -std::exp(C(0, M_PI / 4))};
-    C poles[4];
-    for (int i = 0; i < 2; i++) {
+    const std::array<C, 2> proto = {-std::exp(C(0, -M_PI / 4)), -std::exp(C(0, M_PI / 4))};
+    std::array<C, 4> poles;
+    for (size_t i = 0; i < 2; i++) {
         const C pl = proto[i] * (bw / 2), r = std::sqrt(pl * pl - wo * wo);
         poles[i] = pl + r;
         poles[2 + i] = pl - r;
@@ -312,17 +319,19 @@ static void butterBandpass(double lo, double hi, Biquad out[2]) {
     }
     const double k =
         bw * bw * std::real(C(fs2 * fs2) / den); // zeros: two at s=0 (z=1), two at infinity (z=-1)
+    std::array<Biquad, 2> out{};
     for (size_t s = 0; s < 2; s++) {
         const C a = poles[2 * s], b = poles[2 * s + 1];
         const double g = s == 0 ? k : 1;
         out[s] = {g, 0, -g, -std::real(a + b), std::real(a * b)};
     }
+    return out;
 }
 
-static void biquadRun(const Biquad &q, float *x, int n, int step) {
+// x: the samples in the order they are filtered (reversed for the backward pass).
+static void biquadRun(const Biquad &q, auto &&x) {
     double z1 = 0, z2 = 0;
-    for (int i = 0; i < n; i++) {
-        float &v = x[static_cast<ptrdiff_t>(i) * step]; // signed: the backward pass steps by -1
+    for (float &v : x) {
         const double in = static_cast<double>(v), y = q.b0 * in + z1;
         z1 = q.b1 * in - q.a1 * y + z2;
         z2 = q.b2 * in - q.a2 * y;
@@ -331,16 +340,15 @@ static void biquadRun(const Biquad &q, float *x, int n, int step) {
 }
 
 // zero-phase: forward, then backward
-static void filtfilt(const Biquad sos[2], std::vector<float> &x) {
-    const int n = static_cast<int>(x.size());
-    if (!n) {
+static void filtfilt(const std::array<Biquad, 2> &sos, std::vector<float> &x) {
+    if (x.empty()) {
         return;
     }
-    for (int s = 0; s < 2; s++) {
-        biquadRun(sos[s], x.data(), n, 1);
+    for (const Biquad &q : sos) {
+        biquadRun(q, x);
     }
-    for (int s = 0; s < 2; s++) {
-        biquadRun(sos[s], x.data() + n - 1, n, -1);
+    for (const Biquad &q : sos) {
+        biquadRun(q, std::views::reverse(x));
     }
 }
 
@@ -354,12 +362,11 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
 
-    Biquad bands[SACF_BANDS][2];
+    std::array<std::array<Biquad, 2>, SACF_BANDS> bands{};
     for (int i = 0; i < SACF_BANDS; i++) {
-        butterBandpass(SACF_LOW * pow(SACF_HIGH / SACF_LOW, static_cast<double>(i) / SACF_BANDS),
-                       SACF_LOW *
-                           pow(SACF_HIGH / SACF_LOW, static_cast<double>(i + 1) / SACF_BANDS),
-                       bands[i]);
+        bands[idx(i)] = butterBandpass(
+            SACF_LOW * pow(SACF_HIGH / SACF_LOW, static_cast<double>(i) / SACF_BANDS),
+            SACF_LOW * pow(SACF_HIGH / SACF_LOW, static_cast<double>(i + 1) / SACF_BANDS));
     }
     const int maxlag = static_cast<int>(SR / 70.0 * SACF_UP), NI = SACF_NFFT * SACF_UP;
     // lags of each semitone: within +-50 cents, else the nearest lag
@@ -394,7 +401,7 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
     auto worker = [&] {
         std::vector<float> x, acc(idx(chunk) * maxlag), st(maxlag);
         std::vector<WDL_FFT_REAL> buf(SACF_NFFT), ibuf(NI);
-        const int *perm = WDL_fft_permute_tab(SACF_NFFT / 2), *iperm = WDL_fft_permute_tab(NI / 2);
+        const std::span<const int> perm = permuteTab(SACF_NFFT / 2), iperm = permuteTab(NI / 2);
         std::vector<float> pw(SACF_NFFT / 2 + 1), expo(pw.size(), static_cast<float>(SACF_K / 2));
         int bins = static_cast<int>(pw.size());
         // the bands' compressed spectra, summed per frame: the inverse FFT is linear, so one per
@@ -413,20 +420,22 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                         x[idx(i)] = mono[idx(j)];
                     }
                 }
-                filtfilt(bands[band], x);
+                filtfilt(bands[idx(band)], x);
                 for (int f = 0; f < fc; f++) {
-                    const float *seg = &x[idx(f, HOP, SACF_MARGIN)]; // frame centred on (c0+f)*HOP
+                    // frame centred on (c0+f)*HOP
+                    const std::span<const float> seg =
+                        std::span(x).subspan(idx(f, HOP, SACF_MARGIN), SACF_NFFT);
                     for (int i = 0; i < SACF_NFFT; i++) {
-                        buf[idx(i)] = seg[i] * hann[idx(i)];
+                        buf[idx(i)] = seg[idx(i)] * hann[idx(i)];
                     }
+                    // buf now holds interleaved complex bins: re at 2k, im at 2k+1
                     WDL_real_fft(buf.data(), SACF_NFFT, 0);
-                    const WDL_FFT_COMPLEX *X =
-                        reinterpret_cast<const WDL_FFT_COMPLEX *>(buf.data());
                     // |X|^K = (|X|^2)^(K/2), vectorised
-                    pw[0] = X[0].re * X[0].re;
-                    pw[SACF_NFFT / 2] = X[0].im * X[0].im; // Nyquist is packed into bin 0
+                    pw[0] = buf[0] * buf[0];
+                    pw[SACF_NFFT / 2] = buf[1] * buf[1]; // Nyquist is packed into bin 0
                     for (int k = 1; k < SACF_NFFT / 2; k++) {
-                        pw[idx(k)] = X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im;
+                        const size_t pk = 2 * idx(perm[idx(k)]);
+                        pw[idx(k)] = buf[pk] * buf[pk] + buf[pk + 1] * buf[pk + 1];
                     }
                     vvpowf(pw.data(), expo.data(), pw.data(), &bins);
                     float *ps = &psum[idx(f) * pw.size()];
@@ -434,40 +443,43 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                 }
             }
             for (int f = 0; f < fc; f++) {
-                const float *ps = &psum[idx(f) * pw.size()];
+                const std::span<const float> ps =
+                    std::span(psum).subspan(idx(f) * pw.size(), pw.size());
                 std::fill(ibuf.begin(), ibuf.end(), 0);
-                WDL_FFT_COMPLEX *Y = reinterpret_cast<WDL_FFT_COMPLEX *>(ibuf.data());
+                // ibuf holds interleaved complex bins: the real part of bin k is at 2k
                 for (int k = 0; k <= SACF_NFFT / 2; k++) {
-                    Y[iperm[k]].re = ps[k];
+                    ibuf[2 * idx(iperm[idx(k)])] = ps[idx(k)];
                 }
                 WDL_real_fft(ibuf.data(), NI, 1);
-                float *a = &acc[idx(f) * maxlag];
+                const std::span<float> a =
+                    std::span(acc).subspan(idx(f) * idx(maxlag), idx(maxlag));
                 for (int l = 0; l < maxlag; l++) {
-                    a[l] = static_cast<float>(ibuf[idx(l)]);
+                    a[idx(l)] = static_cast<float>(ibuf[idx(l)]);
                 }
             }
             for (int f = 0; f < fc; f++) {
-                float *S = &acc[idx(f) * maxlag];
+                const std::span<float> S =
+                    std::span(acc).subspan(idx(f) * idx(maxlag), idx(maxlag));
                 for (int l = 0; l < maxlag; l++) {
-                    S[l] = std::max(0.0f, S[l]);
+                    S[idx(l)] = std::max(0.0f, S[idx(l)]);
                 }
                 // "enhanced": remove the peaks at multiples of each period (sub-octaves)
                 for (int fct = 2; fct <= 3; fct++) {
                     for (int l = 0; l < maxlag; l++) {
                         const double pos = static_cast<double>(l) / fct;
                         const int i = static_cast<int>(pos);
-                        st[idx(l)] =
-                            S[i] +
-                            (i + 1 < maxlag ? (S[i + 1] - S[i]) * static_cast<float>(pos - i) : 0);
+                        st[idx(l)] = S[idx(i)] + (i + 1 < maxlag ? (S[idx(i + 1)] - S[idx(i)]) *
+                                                                       static_cast<float>(pos - i)
+                                                                 : 0);
                     }
                     for (int l = 0; l < maxlag; l++) {
-                        S[l] = std::max(0.0f, S[l] - st[idx(l)]);
+                        S[idx(l)] = std::max(0.0f, S[idx(l)] - st[idx(l)]);
                     }
                 }
                 for (int k = 0; k < n; k++) {
                     float m = 0;
                     for (int l = la[idx(k)]; l <= lb[idx(k)]; l++) {
-                        m = std::max(m, S[l]);
+                        m = std::max(m, S[idx(l)]);
                     }
                     roll[idx(c0 + f, n, k)] = m;
                 }
@@ -511,32 +523,34 @@ static Activity activity(const std::vector<float> &roll, int F, int n,
     Activity a;
     a.S.assign(roll.size(), 0), a.on.assign(roll.size(), 0), a.hold.assign(roll.size(), 0);
     auto refl = [F](int i) { return i < 0 ? -i - 1 : i >= F ? 2 * F - i - 1 : i; };
-    float w[5];
+    std::array<float, 5> w{};
     for (int f = 0; f < F; f++) {
         for (int p = 0; p < n; p++) {
             for (int d = -2; d <= 2; d++) {
-                w[d + 2] =
+                w[idx(d + 2)] =
                     roll[idx(refl(std::max(-F, std::min(2 * F - 1, f + d)))) * idx(n) + idx(p)];
             }
-            std::nth_element(w, w + 2, w + 5);
+            std::nth_element(w.begin(), std::next(w.begin(), 2), w.end());
             a.S[idx(f, n, p)] = gate && !(*gate)[idx(f, n, p)] ? 0 : w[2];
         }
     }
     for (int f = 0; f < F; f++) {
-        const float *S = &a.S[idx(f) * idx(n)];
-        const float mx = *std::max_element(S, S + n);
+        const std::span<const float> S = std::span(a.S).subspan(idx(f) * idx(n), idx(n));
+        const float mx = *std::max_element(S.begin(), S.end());
         for (int level = 0; level < 2; level++) {
             const double k = level ? 0.5 : 1;
-            unsigned char *act = level ? &a.hold[idx(f) * idx(n)] : &a.on[idx(f) * idx(n)];
+            const std::span<unsigned char> act =
+                std::span(level ? a.hold : a.on).subspan(idx(f) * idx(n), idx(n));
             for (int p = 0; p < n; p++) {
-                const bool peak = (p == 0 || S[p] >= S[p - 1]) && (p + 1 == n || S[p] >= S[p + 1]);
-                act[p] = peak && static_cast<double>(S[p]) > absT * k &&
-                         static_cast<double>(S[p]) > rel * k * static_cast<double>(mx);
+                const bool peak = (p == 0 || S[idx(p)] >= S[idx(p - 1)]) &&
+                                  (p + 1 == n || S[idx(p)] >= S[idx(p + 1)]);
+                act[idx(p)] = peak && static_cast<double>(S[idx(p)]) > absT * k &&
+                              static_cast<double>(S[idx(p)]) > rel * k * static_cast<double>(mx);
             }
             for (int p = n - 1; p >= 12; p--) {
-                if (act[p] && act[p - 12] &&
-                    static_cast<double>(S[p]) < oct * static_cast<double>(S[p - 12])) {
-                    act[p] = 0; // the lower note's 2nd partial
+                if (act[idx(p)] && act[idx(p - 12)] &&
+                    static_cast<double>(S[idx(p)]) < oct * static_cast<double>(S[idx(p - 12)])) {
+                    act[idx(p)] = 0; // the lower note's 2nd partial
                 }
             }
         }
@@ -590,16 +604,15 @@ struct Partials {
         }
         WDL_real_fft(a.data(), RA_NFFT, 0);
         WDL_real_fft(b.data(), RA_NFFT, 0);
-        const WDL_FFT_COMPLEX *X = reinterpret_cast<const WDL_FFT_COMPLEX *>(a.data()),
-                              *D = reinterpret_cast<const WDL_FFT_COMPLEX *>(b.data());
-        const int *perm = WDL_fft_permute_tab(RA_NFFT / 2);
+        // a and b now hold interleaved complex bins: re at 2k, im at 2k+1
+        const std::span<const int> perm = permuteTab(RA_NFFT / 2);
         F[idx(f)].assign(RA_BINS, 0), M[idx(f)].assign(RA_BINS, 0);
         for (int k = 1; k < RA_BINS; k++) {
+            const size_t pk = 2 * idx(perm[idx(k)]);
             // WDL's real FFT is twice numpy's; halve so the power threshold means the same
-            const std::complex<double> h(0.5 * static_cast<double>(X[perm[k]].re),
-                                         0.5 * static_cast<double>(X[perm[k]].im)),
-                d(0.5 * static_cast<double>(D[perm[k]].re),
-                  0.5 * static_cast<double>(D[perm[k]].im));
+            const std::complex<double> h(0.5 * static_cast<double>(a[pk]),
+                                         0.5 * static_cast<double>(a[pk + 1])),
+                d(0.5 * static_cast<double>(b[pk]), 0.5 * static_cast<double>(b[pk + 1]));
             const double mag = std::abs(h);
             M[idx(f)][idx(k)] = static_cast<float>(mag);
             if (mag * mag < 1e-6) {
@@ -696,35 +709,38 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
         }
     }
     // least-squares quadratic, centred for conditioning
-    double S[5] = {}, T[3] = {};
+    std::array<double, 5> S = {};
+    std::array<double, 3> T = {};
     const double c = (n - 1) / 2.0;
     for (int i = 0; i < n; i++) {
         const double u = i - c;
         double p = 1;
-        for (int k = 0; k < 5; k++) {
-            S[k] += p;
+        for (double &e : S) {
+            e += p;
             p *= u;
         }
         T[0] += v[idx(i)];
         T[1] += v[idx(i)] * u;
         T[2] += v[idx(i)] * u * u;
     }
-    double A[3][4] = {{S[0], S[1], S[2], T[0]}, {S[1], S[2], S[3], T[1]}, {S[2], S[3], S[4], T[2]}};
-    for (int i = 0; i < 3; i++) {
-        for (int r = i + 1; r < 3; r++) {
+    std::array<std::array<double, 4>, 3> A = {
+        {{S[0], S[1], S[2], T[0]}, {S[1], S[2], S[3], T[1]}, {S[2], S[3], S[4], T[2]}}
+    };
+    for (size_t i = 0; i < 3; i++) {
+        for (size_t r = i + 1; r < 3; r++) {
             const double q = A[r][i] / A[i][i];
-            for (int k = i; k < 4; k++) {
+            for (size_t k = i; k < 4; k++) {
                 A[r][k] -= q * A[i][k];
             }
         }
     }
-    double coef[3];
+    std::array<double, 3> coef{};
     for (int i = 2; i >= 0; i--) {
-        double sum = A[i][3];
+        double sum = A[idx(i)][3];
         for (int k = i + 1; k < 3; k++) {
-            sum -= A[i][k] * coef[k];
+            sum -= A[idx(i)][idx(k)] * coef[idx(k)];
         }
-        coef[i] = sum / A[i][i];
+        coef[idx(i)] = sum / A[idx(i)][idx(i)];
     }
     std::vector<double> d(idx(n));
     for (int i = 0; i < n; i++) {
@@ -936,7 +952,11 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
             const long long j = start + i;
             block[idx(i)] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
         }
-        vDSP_ctoz(reinterpret_cast<const DSPComplex *>(block.data()), 2, &X, 1, N / 2);
+        // the even samples as real parts, the odd as imaginary (as vDSP_ctoz)
+        for (int i = 0; i < N / 2; i++) {
+            re[idx(i)] = block[idx(2 * i)];
+            im[idx(i)] = block[idx(2 * i + 1)];
+        }
         vDSP_fft_zrip(setup, &X, 1, LOG2N, kFFTDirection_Forward); // twice the DFT, as WDL's
         const int nf = std::min(framesPerBlock, frames - first);
         for (int b = 0; b < s.bins; b++) {
@@ -980,7 +1000,7 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
     for (double &v : specPos) {
         v = v * NF / SR;
     }
-    const int *perm = WDL_fft_permute_tab(NF / 2);
+    const std::span<const int> perm = permuteTab(NF / 2);
     std::vector<WDL_FFT_REAL> buf(NF), ceps(NF);
     std::vector<float> Z(NF / 2 + 1), C(NF / 2);
     const std::vector<float> gs(Z.size(), static_cast<float>(G_SPEC / 2)),
@@ -996,27 +1016,27 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
                 (j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0) * hann[idx(i)];
         }
         WDL_real_fft(buf.data(), NF, 0);
-        const WDL_FFT_COMPLEX *X = reinterpret_cast<const WDL_FFT_COMPLEX *>(buf.data());
+        // buf now holds interleaved complex bins: re at 2k, im at 2k+1
         // (|X|/2)^g: numpy's |stft| is half of WDL's; as power^(g/2), vectorised
-        Z[0] = 0.25f * X[0].re * X[0].re;
-        Z[NF / 2] = 0.25f * X[0].im * X[0].im;
+        Z[0] = 0.25f * buf[0] * buf[0];
+        Z[NF / 2] = 0.25f * buf[1] * buf[1];
         for (int k = 1; k < NF / 2; k++) {
-            Z[idx(k)] = 0.25f * (X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im);
+            const size_t pk = 2 * idx(perm[idx(k)]);
+            Z[idx(k)] = 0.25f * (buf[pk] * buf[pk] + buf[pk + 1] * buf[pk + 1]);
         }
         vvpowf(Z.data(), gs.data(), Z.data(), &nz);
         std::fill(ceps.begin(), ceps.end(), 0);
-        WDL_FFT_COMPLEX *Y = reinterpret_cast<WDL_FFT_COMPLEX *>(ceps.data());
-        Y[0].re = Z[0];
-        Y[0].im = Z[NF / 2];
+        ceps[0] = Z[0];
+        ceps[1] = Z[NF / 2];
         for (int k = 1; k < NF / 2; k++) {
-            Y[perm[k]].re = Z[idx(k)];
+            ceps[2 * idx(perm[idx(k)])] = Z[idx(k)];
         }
         WDL_real_fft(ceps.data(), NF, 1); // N x numpy's irfft
         for (int q = 0; q < NF / 2; q++) {
             C[idx(q)] = std::max(0.0f, static_cast<float>(ceps[idx(q)] / NF));
         }
         vvpowf(C.data(), gc.data(), C.data(), &nc);
-        float *out = &s.mag[idx(f) * idx(s.bins)];
+        const std::span<float> out = std::span(s.mag).subspan(idx(f) * idx(s.bins), idx(s.bins));
         for (int b = 0; b < s.bins; b++) {
             const double pos = specPos[idx(b)];
             const int k = std::min(NF / 2 - 1, static_cast<int>(pos));
@@ -1032,7 +1052,7 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
                                             static_cast<double>(C[idx(qi)] - C[idx(qi + 1)]) *
                                                 (fq - fa) / (fb - fa)
                                       : static_cast<double>(C[idx(qi)]);
-            out[b] = static_cast<float>(spec * cv);
+            out[idx(b)] = static_cast<float>(spec * cv);
         }
     }
     return s;
@@ -1246,8 +1266,8 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
             bool cfp;
             double abs;
         };
-        static const Voter VOTERS[] = {
-            {60, 1.0, false, 0.06}, {36, 1.5, false, 0.06}, {36, 1.0, true, 0.15}
+        static const std::array<Voter, 3> VOTERS = {
+            {{60, 1.0, false, 0.06}, {36, 1.5, false, 0.06}, {36, 1.0, true, 0.15}}
         };
         // in parallel: each is about as costly as the main NMF; progress counts finished iterations
         std::vector<std::vector<NoteEstimate>> voters(3);
@@ -1268,7 +1288,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
             return !cancelled;
         };
         parallel(3, cancelled, [&](int i) {
-            const Voter &v = VOTERS[i];
+            const Voter &v = VOTERS[idx(i)];
             const Spectrogram fe = v.cfp ? computeCFP(mono, v.bpo, frontEndCancel)
                                          : computeCQT(mono, v.bpo, v.scale, frontEndCancel);
             if (cancelled) {

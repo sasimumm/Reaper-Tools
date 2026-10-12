@@ -1,5 +1,6 @@
 // Self-check for the note estimator and basic-pitch: run `build/estimate_test`.
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -22,9 +23,9 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
                  double vibPhase = 0) {
     srand(1);
     const double f0 = 440 * pow(2, (midi - 69) / 12);
-    double phase[9] = {};
+    std::array<double, 9> phase = {};
     for (int h = 1; h <= 8; h++) {
-        phase[h] = rand() / static_cast<double>(RAND_MAX) * 6.3;
+        phase[idx(h)] = rand() / static_cast<double>(RAND_MAX) * 6.3;
     }
     double ph = 0;
     for (long long i = static_cast<long long>(a * SR);
@@ -34,20 +35,15 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
         ph += 2 * M_PI * f0 * (1 + depth * sin(2 * M_PI * rate * t + vibPhase)) / SR;
         double v = 0;
         for (int h = 1; h <= 8; h++) {
-            v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
+            v += sin(h * ph + phase[idx(h)]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
         }
         x[idx(i)] += static_cast<float>(static_cast<double>(amp) * env * v);
     }
 }
 
 static Spectrogram analyze(const std::vector<float> &x) {
-    return computeNSGT(
-        estimateNSGTParams(), static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
-            for (int i = 0; i < n; i++) {
-                o[i] =
-                    st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[idx(st + i)] : 0;
-            }
-        });
+    return computeNSGT(estimateNSGTParams(), static_cast<long long>(x.size()),
+                       [&](long long st, std::span<float> out) { readPadded(x, st, out); });
 }
 
 // The k strongest local maxima of a roll's mean over frames f0..f1, as MIDI pitches.

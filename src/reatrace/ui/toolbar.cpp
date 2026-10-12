@@ -32,9 +32,10 @@ struct Item {
     bool first, last; // ends of a segmented group
 };
 
-const char *const VOICE_LABELS[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
+const std::array<const char *, WINDOW_VOICES> VOICE_LABELS = {"Lead", "2", "3", "4"};
 
-int textWidth(const char *s) { return 7 * static_cast<int>(strlen(s)); } // 12 px Helvetica, roughly
+// 12 px Helvetica, roughly
+int textWidth(const char *s) { return 7 * static_cast<int>(std::string_view(s).size()); }
 
 // The items left to right (the help and panel buttons on the right); what doesn't fit is left out.
 std::vector<Item> items(const Layout &L) {
@@ -52,12 +53,15 @@ std::vector<Item> items(const Layout &L) {
         x += w + (last ? 6 : 0);
     };
     auto gap = [&] { x += 10; };
-    auto segment = [&](Kind k, const char *const *labels, const char *const *tips, int n) {
+    auto segment = [&](Kind k, std::span<const char *const> labels,
+                       std::span<const char *const> tips) {
+        const int n = static_cast<int>(labels.size());
         for (int i = 0; i < n; i++) {
-            add(k, i, labels[i], tips[i], textWidth(labels[i]) + 16, i == 0, i == n - 1);
+            add(k, i, labels[idx(i)], tips[idx(i)], textWidth(labels[idx(i)]) + 16, i == 0,
+                i == n - 1);
         }
     };
-    static const char *const VOICE_TIPS[WINDOW_VOICES] = {
+    static const std::array<const char *, WINDOW_VOICES> VOICE_TIPS = {
         "Edit the lead (1)  ·  Shift-click: hide or show a voice",
         "Edit voice 2 (2)  ·  Shift-click: hide or show",
         "Edit voice 3 (3)  ·  Shift-click: hide or show",
@@ -65,7 +69,8 @@ std::vector<Item> items(const Layout &L) {
     };
     add(LABEL, 0, "VOICE", "", 40);
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        add(VOICE, v, VOICE_LABELS[v], VOICE_TIPS[v], textWidth(VOICE_LABELS[v]) + 30);
+        add(VOICE, v, VOICE_LABELS[idx(v)], VOICE_TIPS[idx(v)],
+            textWidth(VOICE_LABELS[idx(v)]) + 30);
     }
     gap();
     static const char *const SNAPS[] = {"Off", "Onsets", "Grid"};
@@ -74,7 +79,7 @@ std::vector<Item> items(const Layout &L) {
         "Snap to the tempo grid (G)"
     };
     add(LABEL, 0, "SNAP", "", 36);
-    segment(SNAP, SNAPS, SNAP_TIPS, 3);
+    segment(SNAP, SNAPS, SNAP_TIPS);
     gap();
     add(SUGGEST, 0, "Suggestions", "Show suggested notes (N)  ·  A: accept all in view",
         textWidth("Suggestions") + 16);
@@ -83,7 +88,7 @@ std::vector<Item> items(const Layout &L) {
         "Suggestions from the note estimator, in voices",
         "Suggestions from the lead's pitch contour"
     };
-    segment(SUGGEST_FROM, FROM, FROM_TIPS, 2);
+    segment(SUGGEST_FROM, FROM, FROM_TIPS);
     gap();
     add(CONTOUR, 0, "Contour", "The sung pitch as a line (P)", textWidth("Contour") + 16);
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
@@ -96,7 +101,7 @@ std::vector<Item> items(const Layout &L) {
         "Hear only the notes (B swaps)"
     };
     add(LABEL, 0, "HEAR", "", 38);
-    segment(LISTEN, HEAR, HEAR_TIPS, 3);
+    segment(LISTEN, HEAR, HEAR_TIPS);
     const char *isolate = g_settings.isolateAll ? "Isolate all" : "Isolate";
     add(ISOLATE, 0, isolate,
         "Hear only the edited voice's pitch and overtones (I)  ·  shift+I: all shown voices",
@@ -105,7 +110,7 @@ std::vector<Item> items(const Layout &L) {
     static const char *const SPEED_TIPS[] = {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"
     };
-    segment(SPEED, SPEEDS, SPEED_TIPS, 3);
+    segment(SPEED, SPEEDS, SPEED_TIPS);
     gap();
     add(FOLLOW, 0, "Follow", "Page the view along with playback (T)", textWidth("Follow") + 16);
     // right-aligned
@@ -159,7 +164,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         switch (it.kind) {
         case LABEL: text(dc, it.label, r.l, r.t, r.r, r.b, g_theme.dim, DT_LEFT); break;
         case VOICE: {
-            const unsigned int col = g_theme.voices[it.arg];
+            const unsigned int col = g_theme.voices[idx(it.arg)];
             const bool hidden = g_ui.hiddenVoices >> it.arg & 1;
             cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
             if (on) {

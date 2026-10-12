@@ -52,10 +52,11 @@
 
 void ReportFailure(const char *where, const char *what) {
     static std::set<std::string> reported; // a failure in the timer would otherwise repeat
-    char msg[512];
-    snprintf(msg, sizeof(msg), "ReaChords: %s failed: %s\n", where, what);
+    // At most 511 characters, as the fixed buffer this was formatted into allowed.
+    const std::string msg =
+        (std::string("ReaChords: ") + where + " failed: " + what + "\n").substr(0, 511);
     if (reported.insert(msg).second) {
-        ShowConsoleMsg(msg);
+        ShowConsoleMsg(msg.c_str());
     }
 }
 
@@ -73,7 +74,10 @@ static int getChord(int index, double *start, double *end, char *name, int nameS
             *end = c.end;
         }
         if (name && nameSize > 0) {
+            // REAPER's caller hands over the name buffer as a pointer and size.
+#pragma clang unsafe_buffer_usage begin
             snprintf(name, static_cast<size_t>(nameSize), "%s", c.name.c_str());
+#pragma clang unsafe_buffer_usage end
         }
         return 1;
     });

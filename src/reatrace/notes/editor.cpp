@@ -123,13 +123,11 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
                 }
             }
         }
-    } else if (mode == MARQUEE) {
-        double r[4];
-        marquee(r);
+    } else if (const std::optional<Box> r = marquee()) {
         for (size_t i = 0; i < notes.size(); i++) {
             const Note &n = notes[i];
-            const bool in = v.x(n.end) >= r[0] && v.x(n.start) <= r[2] &&
-                            v.y(n.pitch - 0.5) >= r[1] && v.y(n.pitch + 0.5) <= r[3];
+            const bool in = v.x(n.end) >= r->x0 && v.x(n.start) <= r->x1 &&
+                            v.y(n.pitch - 0.5) >= r->y0 && v.y(n.pitch + 0.5) <= r->y1;
             notes[i].sel = in || (cmdMarquee && orig[i].sel);
         }
     }
@@ -327,15 +325,13 @@ bool NoteEditor::joinSelected() {
     return true;
 }
 
-bool NoteEditor::marquee(double r[4]) const {
+std::optional<NoteEditor::Box> NoteEditor::marquee() const {
     if (mode != MARQUEE) {
-        return false;
+        return std::nullopt;
     }
-    r[0] = std::min(downX, curX);
-    r[1] = std::min(downY, curY);
-    r[2] = std::max(downX, curX);
-    r[3] = std::max(downY, curY);
-    return true;
+    return Box{
+        std::min(downX, curX), std::min(downY, curY), std::max(downX, curX), std::max(downY, curY)
+    };
 }
 
 std::vector<std::string> splitSyllables(const std::string &text) {

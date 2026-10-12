@@ -1,7 +1,9 @@
 #include "analysis.h"
 
+#include <array>
 #include <atomic>
 #include <memory>
+#include <span>
 #include <thread>
 
 #include "dsp/estimate.h"
@@ -84,7 +86,7 @@ struct ChannelCache {
     bool vocalValid = false;
     Vocal vocal;
 };
-static ChannelCache g_cache[5];
+static std::array<ChannelCache, 5> g_cache;
 
 // The last note estimate (one: it is small, but slow to recompute).
 static struct {
@@ -101,7 +103,7 @@ void clearCache() {
 }
 
 static bool cached(int ch, const SpecKey &key) {
-    return g_cache[ch].valid && g_cache[ch].key == key;
+    return g_cache[idx(ch)].valid && g_cache[idx(ch)].key == key;
 }
 
 // The audio, read on the main thread (accessors must be), resampled to the analysis rate.
@@ -139,10 +141,11 @@ struct Job {
     EstimateKey estKey;
     int channel = CH_MIX;
     std::vector<float> left, right;
-    bool needSpec = false;               // the display spectrogram and contour
-    bool need[4] = {};                   // raw channels (CH_MIX..CH_SIDE) to compute for it
-    std::shared_ptr<Spectrogram> raw[4]; // computed, or the cache's when only needed for the centre
-    std::shared_ptr<Spectrogram> spec;   // the requested channel
+    bool needSpec = false;         // the display spectrogram and contour
+    std::array<bool, 4> need = {}; // raw channels (CH_MIX..CH_SIDE) to compute for it
+    // computed, or the cache's when only needed for the centre
+    std::array<std::shared_ptr<Spectrogram>, 4> raw;
+    std::shared_ptr<Spectrogram> spec; // the requested channel
     Vocal vocal;
     bool needEstimate = false;
     Estimate est;
@@ -172,13 +175,7 @@ struct Job {
         if (!same) {
             own = computeNSGT(
                 ep, static_cast<long long>(mono.size()),
-                [&](long long start, int n, float *out) {
-                    for (int i = 0; i < n; i++) {
-                        out[i] = start + i >= 0 && start + i < static_cast<long long>(mono.size())
-                                     ? mono[idx(start + i)]
-                                     : 0;
-                    }
-                },
+                [&](long long start, std::span<float> out) { readPadded(mono, start, out); },
                 part(0, 0.2));
         }
         const Spectrogram &es = same ? *spec : own;
@@ -260,15 +257,15 @@ struct Job {
 
     void computeSpec(int &stage, int stages) {
         for (int ch = 0; ch < 4; ch++) {
-            if (!need[ch]) {
+            if (!need[idx(ch)]) {
                 continue;
             }
             const std::vector<float> &l = left, &r = right;
-            raw[ch] = std::make_shared<Spectrogram>(computeNSGT(
+            raw[idx(ch)] = std::make_shared<Spectrogram>(computeNSGT(
                 key.p, static_cast<long long>(l.size()),
-                [&](long long start, int n, float *out) {
-                    for (int i = 0; i < n; i++) {
-                        const long long j = start + i;
+                [&](long long start, std::span<float> out) {
+                    for (size_t i = 0; i < out.size(); i++) {
+                        const long long j = start + static_cast<long long>(i);
                         const float a = j >= 0 && j < static_cast<long long>(l.size()) ? l[idx(j)]
                                                                                        : 0,
                                     b = j >= 0 && j < static_cast<long long>(r.size()) ? r[idx(j)]
@@ -303,7 +300,7 @@ struct Job {
                 }
             }
         } else { // a plain channel, or a cached centre missing only its contour
-            spec = raw[channel == CH_CENTRE ? CH_MIX : channel];
+            spec = raw[idx(channel == CH_CENTRE ? CH_MIX : channel)];
         }
         vocal = analyzeVocal(*spec);
     }
@@ -373,10 +370,10 @@ void requestAnalysis(bool autoCalibrateAfter) {
     const int ch = g_settings.channel;
     const SpecKey key = {audio, g_settings.np};
     const EstimateKey estKey = {audio, ch, g_settings.estimateVote};
-    const bool haveSpec = cached(ch, key) && g_cache[ch].vocalValid,
+    const bool haveSpec = cached(ch, key) && g_cache[idx(ch)].vocalValid,
                haveEstimate = g_estimate.valid && g_estimate.key == estKey;
     if (haveSpec && haveEstimate) {
-        install(g_cache[ch], g_estimate.est);
+        install(g_cache[idx(ch)], g_estimate.est);
         return;
     }
 
@@ -394,9 +391,9 @@ void requestAnalysis(bool autoCalibrateAfter) {
                 continue;
             }
             if (cached(r, key)) {
-                job->raw[r] = g_cache[r].spec;
+                job->raw[idx(r)] = g_cache[idx(r)].spec;
             } else {
-                job->need[r] = true;
+                job->need[idx(r)] = true;
             }
         }
         if (ch == CH_CENTRE && cached(CH_CENTRE, key)) { // only the vocal analysis is missing
@@ -434,15 +431,15 @@ void pollJob() {
     }
     if (j.needSpec) {
         for (int r = 0; r < 4; r++) {
-            if (j.need[r] && r != j.channel) {
-                ChannelCache &c = g_cache[r];
+            if (j.need[idx(r)] && r != j.channel) {
+                ChannelCache &c = g_cache[idx(r)];
                 c = ChannelCache();
                 c.valid = true;
                 c.key = j.key;
-                c.spec = std::move(j.raw[r]);
+                c.spec = std::move(j.raw[idx(r)]);
             }
         }
-        ChannelCache &c = g_cache[j.channel];
+        ChannelCache &c = g_cache[idx(j.channel)];
         c.valid = true;
         c.key = j.key;
         c.spec = std::move(j.spec);
@@ -456,7 +453,7 @@ void pollJob() {
     }
     const int ch = j.channel;
     g_job.reset();
-    install(g_cache[ch], g_estimate.est);
+    install(g_cache[idx(ch)], g_estimate.est);
 }
 
 // Progress of the running analysis in permille, -1 if none.

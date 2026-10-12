@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <cstdio>
-#include <cstring>
 #include <set>
 #include <string>
 
@@ -111,27 +110,21 @@
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
 // "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")
 // are still recognised.
-static void voiceTrackName(int voice, char *buf, int sz, const char *prefix = "ReaTrace") {
-    if (voice == 0) {
-        snprintf(buf, idx(sz), "%s notes", prefix);
-    } else {
-        snprintf(buf, idx(sz), "%s voice %d", prefix, voice + 1);
-    }
+static std::string voiceTrackName(int voice, const std::string &prefix = "ReaTrace") {
+    return voice == 0 ? prefix + " notes" : prefix + " voice " + std::to_string(voice + 1);
 }
 
 // -1 if the track isn't a ReaTrace voice track
 static int voiceOfTrack(MediaTrack *tr) {
-    char name[256] = "", want[64];
+    char name[256] = "";
     if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) {
         return -1;
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        voiceTrackName(v, want, sizeof(want));
-        if (!strcmp(name, want)) {
+        if (name == voiceTrackName(v)) {
             return v;
         }
-        voiceTrackName(v, want, sizeof(want), "Reascribe");
-        if (!strcmp(name, want)) {
+        if (name == voiceTrackName(v, "Reascribe")) {
             return v;
         }
     }
@@ -176,9 +169,8 @@ static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
     }
     InsertTrackAtIndex(idx, true);
     MediaTrack *tr = GetTrack(NULL, idx);
-    char name[64];
-    voiceTrackName(voice, name, sizeof(name));
-    GetSetMediaTrackInfo_String(tr, "P_NAME", name, true);
+    std::string name = voiceTrackName(voice);
+    GetSetMediaTrackInfo_String(tr, "P_NAME", name.data(), true);
     TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
     return tr;
 }
@@ -240,10 +232,11 @@ static void openSelected() {
 void ReportFailure(const char *where, const char *what) {
     static std::set<std::string>
         reported; // a failure in the timer would otherwise repeat 30x a second
-    char msg[512];
-    snprintf(msg, sizeof(msg), "ReaTrace: %s failed: %s\n", where, what);
+    // At most 511 characters, as the fixed buffer this was formatted into allowed.
+    const std::string msg =
+        (std::string("ReaTrace: ") + where + " failed: " + what + "\n").substr(0, 511);
     if (reported.insert(msg).second) {
-        ShowConsoleMsg(msg);
+        ShowConsoleMsg(msg.c_str());
     }
 }
 

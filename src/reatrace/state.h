@@ -5,6 +5,7 @@
 #include "ui/window.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -36,7 +37,7 @@ inline Settings g_settings;
 struct Session {
     MediaItem *audio = NULL, *midi = NULL; // midi: the active voice's notes item
     int voice = 0;                         // active voice, 0 = lead
-    OtherVoice others[WINDOW_VOICES];
+    std::array<OtherVoice, WINDOW_VOICES> others;
     double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1; // as analysed
     std::string audioIdentity; // which recording: see audioIdentity()
     NoteEditor ed;
@@ -49,8 +50,8 @@ inline Session g_session;
 struct AnalysisResult {
     // shared with the analysis cache (no copy of ~150 MB per 15 minutes); never null
     std::shared_ptr<Spectrogram> spec = std::make_shared<Spectrogram>();
-    std::vector<unsigned char> val; // renderValues() output, one byte per cell
-    unsigned int lut[256] = {};
+    std::vector<unsigned char> val;         // renderValues() output, one byte per cell
+    std::array<unsigned int, 256> lut = {}; // value byte -> colour
     int valVersion = 0;
     Contour contour;
     std::vector<Segment>

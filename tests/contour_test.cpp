@@ -1,4 +1,6 @@
 // Self-check for vocal analysis: run `build/contour_test`.
+#include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
@@ -11,7 +13,7 @@
 // A sung-like tone: 12 harmonics with a "formant" making the 3rd louder than the fundamental.
 static void tone(std::vector<float> &x, double sr, double t0, double t1, double pitch,
                  double vibratoCents) {
-    double phase[13] = {0};
+    std::array<double, 13> phase = {0};
     for (long long i = static_cast<long long>(t0 * sr); i < static_cast<long long>(t1 * sr); i++) {
         const double t = static_cast<double>(i) / sr;
         const double p = pitch + vibratoCents / 100 * sin(2 * M_PI * 5.5 * t);
@@ -19,8 +21,8 @@ static void tone(std::vector<float> &x, double sr, double t0, double t1, double 
         const double env = std::min(1.0, std::min(t - t0, t1 - t) / 0.01); // 10 ms fades
         double v = 0;
         for (int h = 1; h <= 12; h++) {
-            phase[h] += 2 * M_PI * f0 * h / sr;
-            v += (h == 3 ? 2.0 : 1.0 / h) * sin(phase[h]);
+            phase[idx(h)] += 2 * M_PI * f0 * h / sr;
+            v += (h == 3 ? 2.0 : 1.0 / h) * sin(phase[idx(h)]);
         }
         x[idx(i)] += static_cast<float>(0.1 * env * v);
     }
@@ -36,20 +38,17 @@ int main() {
     tone(x, sr, 0.7, 1.3, 60, 40);  // C4 with +-40 cent vibrato, legato from A3
     tone(x, sr, 1.6, 2.2, 64.3, 0); // E4, 30 cents sharp, after a rest
 
-    Spectrogram s = computeNSGT(
-        NSGTParams(), static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
-            for (int i = 0; i < n; i++) {
-                const long long j = st + i;
-                o[i] = j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
-            }
-        });
+    Spectrogram s =
+        computeNSGT(NSGTParams(), static_cast<long long>(x.size()),
+                    [&](long long st, std::span<float> out) { readPadded(x, st, out); });
     const double fr = s.frameRate();
     Contour c = trackPitch(s);
 
     // contour follows each note (no octave errors despite the loud 3rd harmonic), silent in the rest
-    struct {
+    struct Expected {
         double a, b, pitch;
-    } notes[] = {{0.3, 0.6, 57}, {0.8, 1.2, 60}, {1.7, 2.1, 64.3}};
+    };
+    const std::array<Expected, 3> notes = {{{0.3, 0.6, 57}, {0.8, 1.2, 60}, {1.7, 2.1, 64.3}}};
     for (auto &n : notes) {
         double p = 0;
         assert(contourMedian(c, static_cast<int>(n.a * fr), static_cast<int>(n.b * fr), 0, &p));
@@ -61,12 +60,8 @@ int main() {
         NSGTParams np;
         np.binsPerOctave = 12 * bps;
         const Spectrogram sb =
-            computeNSGT(np, static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
-                for (int i = 0; i < n; i++) {
-                    o[i] = st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[idx(st + i)]
-                                                                                    : 0;
-                }
-            });
+            computeNSGT(np, static_cast<long long>(x.size()),
+                        [&](long long st, std::span<float> out) { readPadded(x, st, out); });
         const Contour cb = trackPitch(sb);
         for (auto &n : notes) {
             double p = 0;

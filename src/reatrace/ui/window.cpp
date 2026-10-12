@@ -400,8 +400,7 @@ int Window_TranslateAccel(MSG *msg) {
             {
                 char buf[1024] = "";
                 GetWindowText(g_ui.edit, buf, sizeof(buf) - 1);
-                strlcat(buf, "-", sizeof(buf));
-                SetWindowText(g_ui.edit, buf);
+                SetWindowText(g_ui.edit, (std::string(buf) + "-").c_str());
                 endLyric(true, 1);
                 return 1;
             }
@@ -660,10 +659,9 @@ static void createWindow() {
         }
         SetWindowPos(g_ui.hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
     }
-    char title[512];
     MediaItem_Take *take = GetActiveTake(g_session.audio);
-    snprintf(title, sizeof(title), "ReaTrace - %s", take ? GetTakeName(take) : "");
-    SetWindowText(g_ui.hwnd, title);
+    const char *name = take ? GetTakeName(take) : NULL;
+    SetWindowText(g_ui.hwnd, (std::string("ReaTrace - ") + (name ? name : "")).c_str());
     ShowWindow(g_ui.hwnd, SW_SHOW);
     matchArrange();
 }

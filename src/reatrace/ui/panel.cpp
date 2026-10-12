@@ -46,27 +46,28 @@ struct Widget {
     const char *fmt = nullptr;
     int button = 0;
     int *choice = nullptr; // choices: a row of buttons, one per option
-    const char *const *options = nullptr;
+    std::span<const char *const> options;
     int optionCount = 0;
 };
 
 static const char *const AUTO[] = {"Auto: whole item", "Auto: visible"};
 
 // Sections fold at their header; what changes while transcribing is in the toolbar.
-static std::vector<Widget> allWidgets() {
+// The panel bound to the settings s (g_settings, or defaults to read a slider's default from).
+static std::vector<Widget> allWidgets(Settings &s = g_settings) {
     return {
         {.type = W_HEADER, .label = "Display"},
         {.type = W_BUTTONS, .label = "", .button = B_AUTO_ALL, .options = AUTO, .optionCount = 2},
         {.type = W_SLIDER,
          .label = "Floor",
-         .value = &g_settings.rp.dbFloor,
+         .value = &s.rp.dbFloor,
          .lo = -120,
          .hi = -20,
          .display = 1,
          .fmt = "%.0f dB"},
         {.type = W_SLIDER,
          .label = "Contrast",
-         .value = &g_settings.rp.contrast,
+         .value = &s.rp.contrast,
          .lo = 0.1,
          .hi = 3,
          .logScale = true,
@@ -74,40 +75,40 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.2f"},
         {.type = W_SLIDER,
          .label = "Brightness",
-         .value = &g_settings.rp.brightness,
+         .value = &s.rp.brightness,
          .lo = -1,
          .hi = 1,
          .display = 1,
          .fmt = "%+.2f"},
         {.type = W_SLIDER,
          .label = "Colour curve",
-         .value = &g_settings.rp.bias,
+         .value = &s.rp.bias,
          .lo = -2,
          .hi = 2,
          .display = 1,
          .fmt = "%+.2f"},
         {.type = W_CHOICE,
          .label = "Colours",
-         .choice = &g_settings.rp.colormap,
+         .choice = &s.rp.colormap,
          .options = COLORMAPS,
          .optionCount = 2},
-        {.type = W_TOGGLE, .label = "Peaks only", .flag = &g_settings.rp.peaksOnly},
+        {.type = W_TOGGLE, .label = "Peaks only", .flag = &s.rp.peaksOnly},
         {.type = W_SLIDER,
          .label = "Peak dimming",
-         .value = &g_settings.rp.peakDim,
+         .value = &s.rp.peakDim,
          .hi = 1,
          .display = 1,
          .fmt = "%.2f"},
-        {.type = W_TOGGLE, .label = "Noise subtraction", .flag = &g_settings.rp.subtractNoise},
+        {.type = W_TOGGLE, .label = "Noise subtraction", .flag = &s.rp.subtractNoise},
         {.type = W_SLIDER,
          .label = "Noise strength",
-         .value = &g_settings.rp.noiseAlpha,
+         .value = &s.rp.noiseAlpha,
          .hi = 3,
          .display = 1,
          .fmt = "%.2f"},
         {.type = W_SLIDER,
          .label = "Noise from quietest",
-         .value = &g_settings.rp.noiseFraction,
+         .value = &s.rp.noiseFraction,
          .lo = 0.01,
          .hi = 0.5,
          .display = 100,
@@ -115,27 +116,25 @@ static std::vector<Widget> allWidgets() {
         {.type = W_HEADER, .label = "Suggestions and guides"},
         {.type = W_TOGGLE,
          .label = "Front-end vote (slower)",
-         .flag = &g_settings.estimateVote,
+         .flag = &s.estimateVote,
          .analysis = true},
-        {.type = W_TOGGLE,
-         .label = "Drawn notes take the sung pitch",
-         .flag = &g_settings.pitchFromContour},
+        {.type = W_TOGGLE, .label = "Drawn notes take the sung pitch", .flag = &s.pitchFromContour},
         {.type = W_SLIDER,
          .label = "Overtones",
-         .value = &g_settings.harmonics,
+         .value = &s.harmonics,
          .lo = 2,
          .hi = 16,
          .display = 1,
          .fmt = "%.0f"},
         {.type = W_SLIDER,
          .label = "Guide opacity",
-         .value = &g_settings.guideOpacity,
+         .value = &s.guideOpacity,
          .hi = 1,
          .display = 1,
          .fmt = "%.2f"},
         {.type = W_SLIDER,
          .label = "Quantise strength",
-         .value = &g_settings.quantStrength,
+         .value = &s.quantStrength,
          .hi = 1,
          .display = 100,
          .fmt = "%.0f%%"},
@@ -149,12 +148,12 @@ static std::vector<Widget> allWidgets() {
         {.type = W_CHOICE,
          .label = "Channel",
          .analysis = true,
-         .choice = &g_settings.channel,
+         .choice = &s.channel,
          .options = CHANNELS,
          .optionCount = 5},
         {.type = W_SLIDER,
          .label = "Resolution (gamma)",
-         .value = &g_settings.np.gamma,
+         .value = &s.np.gamma,
          .lo = 3,
          .hi = 40,
          .logScale = true,
@@ -163,7 +162,7 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.1f Hz"},
         {.type = W_SLIDER,
          .label = "Lowest frequency",
-         .value = &g_settings.np.fmin,
+         .value = &s.np.fmin,
          .lo = 20,
          .hi = 500,
          .logScale = true,
@@ -172,7 +171,7 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.0f Hz"},
         {.type = W_SLIDER,
          .label = "Highest frequency",
-         .value = &g_settings.np.fmax,
+         .value = &s.np.fmax,
          .lo = 1000,
          .hi = 11000,
          .logScale = true,
@@ -181,7 +180,7 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.0f Hz"},
         {.type = W_SLIDER,
          .label = "Bins per semitone",
-         .value = &g_settings.binsPerSemitone,
+         .value = &s.binsPerSemitone,
          .lo = 1,
          .hi = 10,
          .analysis = true,
@@ -189,7 +188,7 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.0f"},
         {.type = W_BUTTON, .label = "Reset to defaults", .button = B_RESET},
         {.type = W_HEADER, .label = "Playback"},
-        {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &g_settings.audition},
+        {.type = W_TOGGLE, .label = "Play notes when clicked", .flag = &s.audition},
         {.type = W_SLIDER,
          .label = "Notes volume",
          .value = &g_notesDb,
@@ -197,12 +196,10 @@ static std::vector<Widget> allWidgets() {
          .hi = 6,
          .display = 1,
          .fmt = "%+.1f dB"},
-        {.type = W_TOGGLE,
-         .label = "Isolate: all shown voices (shift+I)",
-         .flag = &g_settings.isolateAll},
+        {.type = W_TOGGLE, .label = "Isolate: all shown voices (shift+I)", .flag = &s.isolateAll},
         {.type = W_SLIDER,
          .label = "Isolate: band width",
-         .value = &g_settings.isolateWidth,
+         .value = &s.isolateWidth,
          .lo = 20,
          .hi = 400,
          .logScale = true,
@@ -210,17 +207,15 @@ static std::vector<Widget> allWidgets() {
          .fmt = "%.0f cents"},
         {.type = W_SLIDER,
          .label = "Isolate: the rest",
-         .value = &g_settings.isolateBackground,
+         .value = &s.isolateBackground,
          .lo = -60,
          .hi = 0,
          .display = 1,
          .fmt = "%.0f dB"},
         {.type = W_HEADER, .label = "Window"},
         {.type = W_TOGGLE, .label = "Show other voices", .flag = &g_ui.showOthers},
-        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &g_settings.followTheme},
-        {.type = W_TOGGLE,
-         .label = "Link time to arrange view (L)",
-         .flag = &g_settings.linkArrange},
+        {.type = W_TOGGLE, .label = "Colours from REAPER theme", .flag = &s.followTheme},
+        {.type = W_TOGGLE, .label = "Link time to arrange view (L)", .flag = &s.linkArrange},
         {.type = W_BUTTON, .label = "Dock / undock window (D)", .button = B_DOCK},
         {.type = W_BUTTONS,
          .label = "Settings for new items",
@@ -260,11 +255,18 @@ static int widgetHeight(WidgetType t) {
                                              : 24;
 }
 
-// Spectrogram settings need the display values recomputed; guide settings only a redraw.
-static bool isRenderParam(const void *p) {
-    return p >= static_cast<const void *>(&g_settings.rp) &&
-           p < static_cast<const void *>(&g_settings.rp + 1);
+// Whether p points into obj.
+template <class T> static bool pointsInto(const void *p, const T &obj) {
+    const auto *b = reinterpret_cast<const std::byte *>(&obj);
+    // the end of obj's bytes, to compare p with
+#pragma clang unsafe_buffer_usage begin
+    const std::byte *e = b + sizeof(T);
+#pragma clang unsafe_buffer_usage end
+    return !std::less<const void *>{}(p, b) && std::less<const void *>{}(p, e);
 }
+
+// Spectrogram settings need the display values recomputed; guide settings only a redraw.
+static bool isRenderParam(const void *p) { return pointsInto(p, g_settings.rp); }
 
 static double sliderFrac(const Widget &w, double v) {
     return w.logScale ? log(v / w.lo) / log(w.hi / w.lo) : (v - w.lo) / (w.hi - w.lo);
@@ -396,7 +398,7 @@ static void pressButton(int b) {
 static const int CMD_TOGGLE_PRESERVE_PITCH = 40671;
 
 static void applySpeed() {
-    const double rate = SPEED_RATES[g_speed];
+    const double rate = std::span(SPEED_RATES)[idx(g_speed)];
     if (rate != 1 && GetToggleCommandState(CMD_TOGGLE_PRESERVE_PITCH) == 0) {
         Main_OnCommand(CMD_TOGGLE_PRESERVE_PITCH, 0);
     }
@@ -471,13 +473,18 @@ static void readBalance() {
     }
 }
 
-// A slider's value in default settings: the same field of a fresh Settings; notes volume is 0 dB.
+// A slider's value in default settings: the same slider bound to a fresh Settings; notes volume
+// (not a setting) is 0 dB.
 static double sliderDefault(const Widget &w) {
-    static const Settings d;
-    const char *base = reinterpret_cast<const char *>(&g_settings),
-               *p = reinterpret_cast<const char *>(w.value);
-    if (p >= base && p < base + sizeof(Settings)) {
-        return *reinterpret_cast<const double *>(reinterpret_cast<const char *>(&d) + (p - base));
+    if (!pointsInto(w.value, g_settings)) {
+        return 0;
+    }
+    static Settings d;
+    const std::vector<Widget> live = allWidgets(), dflt = allWidgets(d);
+    for (size_t i = 0; i < live.size(); i++) {
+        if (live[i].value == w.value) {
+            return *dflt[i].value;
+        }
     }
     return 0;
 }
@@ -574,7 +581,10 @@ void drawPanel(Canvas &cv, HDC dc) {
             text(dc, folded(w.label) ? "+" : "–", l, top + 6, r, top + h, g_theme.dim, DT_RIGHT);
         } else if (w.type == W_SLIDER) {
             text(dc, w.label, l, top, r, top + 16, g_theme.text, DT_LEFT);
+            // The format comes from the widget table, so it is not a literal.
+#pragma clang unsafe_buffer_usage begin
             snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
+#pragma clang unsafe_buffer_usage end
             text(dc, buf, l, top, r, top + 16, g_theme.dim, DT_RIGHT);
             const int by = top + 20,
                       bx =
@@ -597,7 +607,7 @@ void drawPanel(Canvas &cv, HDC dc) {
                           br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
                 cv.fill(bl, top + 18, br - 2, top + 40, on ? g_theme.accent : g_theme.button);
-                text(dc, w.options[i], bl, top + 18, br - 2, top + 40,
+                text(dc, w.options[idx(i)], bl, top + 18, br - 2, top + 40,
                      on ? g_theme.onText : g_theme.text, DT_CENTER);
             }
         } else {
@@ -611,8 +621,9 @@ void drawPanel(Canvas &cv, HDC dc) {
 // The speed and what is heard, as REAPER has them (both can change elsewhere).
 void syncPlayback() {
     const double rate = Master_GetPlayRate(NULL);
+    const std::span<const double> rates = SPEED_RATES;
     for (int i = 0; i < 3; i++) {
-        if (fabs(SPEED_RATES[i] - rate) < fabs(SPEED_RATES[g_speed] - rate)) {
+        if (fabs(rates[idx(i)] - rate) < fabs(rates[idx(g_speed)] - rate)) {
             g_speed = i;
         }
     }

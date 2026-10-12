@@ -5,9 +5,11 @@
 #include "state.h"
 #include "ui/theme.h"
 
+#include <span>
+
 // Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
 struct Canvas {
-    ARGB *px;
+    std::span<ARGB> px; // w * h pixels
     int w, h;
     Rect clip;
     int scale; // device pixels per point
@@ -23,14 +25,13 @@ struct Canvas {
         }
         if (a >= 256) {
             for (int y = y0; y < y1; y++) {
-                std::fill(px + idx(y) * idx(w) + x0, px + idx(y) * idx(w) + x1, opaque(col));
+                std::ranges::fill(px.subspan(idx(y, w, x0), idx(x1 - x0)), opaque(col));
             }
             return;
         }
         for (int y = y0; y < y1; y++) {
-            ARGB *p = px + idx(y) * idx(w);
-            for (int x = x0; x < x1; x++) {
-                p[x] = blend(p[x], col, a);
+            for (ARGB &p : px.subspan(idx(y, w, x0), idx(x1 - x0))) {
+                p = blend(p, col, a);
             }
         }
     }

@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -70,7 +71,10 @@ class NoteEditor {
     // moves if any note would leave 0..127 or start before 0.
     bool nudgeSelected(const std::function<double(double)> &move, int semitones);
 
-    bool marquee(double r[4]) const; // marquee rectangle while selecting
+    struct Box {
+        double x0, y0, x1, y1; // window pixels, x0 <= x1 and y0 <= y1
+    };
+    std::optional<Box> marquee() const; // the marquee while selecting
     int drawing() const { return mode == DRAW ? drawIndex : -1; }
     // the note being drawn, moved or resized, -1 if none
     int dragNote() const {
