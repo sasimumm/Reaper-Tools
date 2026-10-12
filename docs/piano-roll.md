@@ -213,7 +213,7 @@ tempo tools and markers-to-tempo conversion. We display the tempo map and leave 
 | INT-1 | P0 | ✅ | Setup action creates the "ReaTrace notes" track (with ReaSynth) and a MIDI item covering the audio item; reopening finds the existing ones. |
 | INT-2 | P0 | ✅ | External changes (MIDI editor edits, undo/redo, item moves, deleted items) are picked up: notes and lyrics re-read when the take's hash changes (`MIDI_GetHash`); the window closes if the audio item disappears. |
 | INT-3 | P0 | ✅ | Audio item position, take offset and playrate respected when mapping spectrogram time to project time. |
-| INT-4 | P1 | — | MIDI item extended to cover notes drawn past its end. |
+| INT-4 | P1 | ✅ | MIDI item extended to cover notes drawn past its end. Both edges grow (`MIDI_SetItemExtents`, in the same undo point as the edit) when notes are drawn, moved, pasted or accepted outside the item; it never shrinks. |
 | INT-5 | P1 | — | Several audio items on a track (comping, edits): show all of them, each with its own cached analysis. |
 | INT-6 | P2 | ✅ | Store per-item settings in the project (done early, see §3a). |
 
@@ -243,10 +243,9 @@ Measured on Apple Silicon for 3 minutes of audio:
 5. ◐ **Editing, listening and lyrics polish** (leftover P1s). Done: copy/paste/duplicate/split/join
    (EDIT-10), axis lock (EDIT-8), audio/notes balance and solo (PLAY-5), lyrics lane (LYR-7), and
    alongside them theme colours (WIN-6), arrange view link (NAV-5), overview (NAV-7), bins per
-   semitone (CTL-12), looping (PLAY-4); bass analysis (SPEC-5) was tried and removed. Left:
-   arrow-key nudge (EDIT-9), follow
-   playback (NAV-4), reference tone (PLAY-8), MIDI item auto-extend (INT-4), several audio items
-   per track (INT-5), tuning reference (PITCH-9).
+   semitone (CTL-12), looping (PLAY-4), follow playback (NAV-4), arrow-key nudge (EDIT-9), MIDI
+   item auto-extend (INT-4); bass analysis (SPEC-5) was tried and removed. Left: reference tone
+   (PLAY-8), several audio items per track (INT-5), tuning reference (PITCH-9).
 6. — **Experiments:** pitch bends from the contour (PITCH-10), harmony contours (PITCH-11),
    harmonic/percussive separation (SPEC-9), filtered listening (PLAY-9), automatic hyphenation
    (LYR-6).

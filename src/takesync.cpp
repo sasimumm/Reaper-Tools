@@ -97,6 +97,23 @@ static TakeSnapshot snapshotOf(MediaItem_Take *take) {
     return snapshotOf(t);
 }
 
+// INT-4: notes drawn, moved or accepted past the item's edges would be hidden and silent, so the
+// item grows to cover them (both edges; events keep their project times).
+static void fitItemToNotes(MediaItem_Take *take) {
+    MediaItem *item = GetMediaItemTake_Item(take);
+    const double pos = GetMediaItemInfo_Value(item, "D_POSITION"),
+                 end = pos + GetMediaItemInfo_Value(item, "D_LENGTH");
+    ReaperTake t(take);
+    double a = pos, b = end;
+    for (int i = 0; i < t.noteCount(); i++) {
+        const Take::NoteEvent n = t.note(i);
+        a = std::min(a, t.toTime(n.start)), b = std::max(b, t.toTime(n.end));
+    }
+    if (a < pos || b > end) {
+        MIDI_SetItemExtents(item, TimeMap2_timeToQN(NULL, a), TimeMap2_timeToQN(NULL, b));
+    }
+}
+
 bool notesStale() { return snapshotOf(midiTake()) != g_session.snapshot; }
 
 void loadNotes() {
@@ -164,8 +181,11 @@ void commitNotes() {
     }
     if (take) {
         ReaperTake t(take);
-        writeNotes(t, loadedFrom, g_loaded, g_session.ed.notes, g_session.ed.deleted,
-                   g_session.ed.velocity);
+        if (writeNotes(t, loadedFrom, g_loaded, g_session.ed.notes, g_session.ed.deleted,
+                       g_session.ed.velocity) &&
+            changes.data) {
+            fitItemToNotes(take);
+        }
     }
     if (changes.data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
@@ -181,5 +201,6 @@ void insertIntoVoice(int v, const std::vector<Note> &notes) {
     if (take) {
         ReaperTake t(take);
         appendNotes(t, notes, g_session.ed.velocity);
+        fitItemToNotes(take);
     }
 }
