@@ -14,15 +14,25 @@ std::vector<Note> readNotes(Take &take) {
         notes.push_back({take.toTime(e.start), take.toTime(e.end), e.pitch, e.sel, i});
         startPPQ.push_back(e.start);
     }
+    // notes by start (ties by index), to find each lyric's note without scanning them all
+    std::vector<size_t> byStart(notes.size());
+    for (size_t n = 0; n < byStart.size(); n++) {
+        byStart[n] = n;
+    }
+    std::stable_sort(byStart.begin(), byStart.end(),
+                     [&](size_t a, size_t b) { return startPPQ[a] < startPPQ[b]; });
     const int texts = take.textCount();
     for (int i = 0; i < texts; i++) {
         Take::TextEvent t;
         if (!take.text(i, &t) || t.type != LYRIC_EVENT) {
             continue;
         }
-        for (size_t n = 0; n < notes.size(); n++) {
-            if (notes[n].lyricIdx < 0 && fabs(startPPQ[n] - t.ppq) < 0.5) {
-                notes[n].lyric = t.text, notes[n].lyricIdx = i;
+        // the first note (by index) starting within half a tick that has no lyric yet
+        auto it = std::lower_bound(byStart.begin(), byStart.end(), t.ppq - 0.5,
+                                   [&](size_t n, double p) { return startPPQ[n] <= p; });
+        for (; it != byStart.end() && startPPQ[*it] < t.ppq + 0.5; ++it) {
+            if (notes[*it].lyricIdx < 0) {
+                notes[*it].lyric = t.text, notes[*it].lyricIdx = i;
                 break;
             }
         }
