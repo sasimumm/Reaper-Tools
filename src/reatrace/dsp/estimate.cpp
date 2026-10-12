@@ -1,3 +1,5 @@
+// Note estimation (see estimate.h): the harmonic-template NMF, the SACF, frame activity and
+// segmentation, octave doublings, the vote's CQT/CFP front ends, and voice assignment.
 #include "dsp/estimate.h"
 
 #define ACCELERATE_NEW_LAPACK
@@ -16,30 +18,32 @@
 #include "dsp/wdlfft.h"
 #include "index.h"
 
-static const int SR = 22050, HOP = 256;
+static const int SR = 22050; // Hz, of mono
+static const int HOP = 256;  // samples per frame
 
-NSGTParams estimateNSGTParams() {
-    return NSGTParams();
-} // 60 bins per octave, gamma 11 Hz: as tested in transcribe
+// 60 bins per octave, gamma 11 Hz: as tested in transcribe
+NSGTParams estimateNSGTParams() { return NSGTParams(); }
 
-// Divide by the 99th percentile (numpy's linear interpolation) of the frame maxima.
+// Divide by the 99th percentile (numpy's linear interpolation) of the frame maxima; roll is
+// frames x n. The divisor is at least 1e-12.
 static void normaliseP99(std::vector<float> &roll, int n) {
     const int F = n > 0 ? static_cast<int>(roll.size() / idx(n)) : 0;
     if (!F) {
         return;
     }
+
     std::vector<float> mx(idx(F));
     for (int f = 0; f < F; f++) {
         mx[idx(f)] = *std::max_element(roll.begin() + static_cast<std::ptrdiff_t>(f) * n,
                                        roll.begin() + static_cast<std::ptrdiff_t>(f + 1) * n);
     }
     std::sort(mx.begin(), mx.end());
+
     const double pos = 0.99 * (F - 1);
     const int i = static_cast<int>(pos);
-    const double v = std::max(
-        1e-12,
-        static_cast<double>(mx[idx(i)]) +
-            (i + 1 < F ? static_cast<double>(mx[idx(i + 1)] - mx[idx(i)]) * (pos - i) : 0.0));
+    const double frac =
+        i + 1 < F ? static_cast<double>(mx[idx(i + 1)] - mx[idx(i)]) * (pos - i) : 0.0;
+    const double v = std::max(1e-12, static_cast<double>(mx[idx(i)]) + frac);
     for (float &x : roll) {
         x = static_cast<float>(static_cast<double>(x) / v);
     }
@@ -52,26 +56,37 @@ static const int NH = 12;          // partials per comb
 static const double ROLLOFF = 0.6; // partial h has amplitude h^-ROLLOFF
 static const double WIDTH = 0.6;   // partial width in bins at 36 bins per octave
 static const double LAM = 0.02;    // L1 penalty relative to frame energy
-static const int ITERS = 150, OUTER = 3, INNER = 25;
-static const int REGION = 6; // semitones sharing adapted partial amplitudes
-static const double CLAMP = 1.25, SOLO = 0.6;
-static const int CHUNK = 1024; // frames per matrix product, to bound memory
+static const int ITERS = 150;      // multiplicative updates in all
+static const int OUTER = 3;        // adaptation rounds (with adapt), each after INNER updates
+static const int INNER = 25;
+static const int REGION = 6;      // semitones sharing adapted partial amplitudes
+static const double CLAMP = 1.25; // adapted amplitudes stay within init / CLAMP .. init * CLAMP
+static const double SOLO = 0.6;   // a frame is solo-ish if one pitch (+-1 atom) has this share
+static const int CHUNK = 1024;    // frames per matrix product, to bound memory
 
+// Atoms: P harmonic combs (SUB per semitone, pmin..pmax) and the broadband noise atoms after them.
+// V ~ H W^T with V frames x B, H frames x K, W B x K; the roll pools H's comb atoms per semitone.
 std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                            const std::function<bool(double)> &progress, int harmonics) {
-    const int n = hi - lo + 1, F = s.frames, bpo = s.p.binsPerOctave;
+    const int n = hi - lo + 1;
+    const int F = s.frames;
+    const int bpo = s.p.binsPerOctave;
     std::vector<float> roll(idx(std::max(0, F)) * idx(std::max(0, n)), 0);
-    const int b0 = std::max(0, static_cast<int>(lround(s.binOfPitch(36)))),
-              B = s.bins - b0; // the axis starts at C2, as in transcribe
+
+    // the axis starts at C2, as in transcribe
+    const int b0 = std::max(0, static_cast<int>(lround(s.binOfPitch(36))));
+    const int B = s.bins - b0;
     if (F <= 0 || B <= 0 || n <= 0) {
         return roll;
     }
-    const int pmin = std::min(45, lo - 10), pmax = std::max(86, hi + 2),
-              P = (pmax - pmin) * SUB + 1;
+
+    const int pmin = std::min(45, lo - 10);
+    const int pmax = std::max(86, hi + 2);
+    const int P = (pmax - pmin) * SUB + 1;
     const double width = WIDTH * bpo / 36.0;
     auto pitchOf = [&](int p) { return pmin + static_cast<double>(p) / SUB; };
 
-    // Gaussian partials: part[(b * P + p) * NH + h - 1]
+    // Gaussian partials, cut at 5 widths: part[(b * P + p) * NH + h - 1]
     std::vector<float> part(idx(B) * idx(P) * NH, 0);
     for (int p = 0; p < P; p++) {
         for (int h = 1; h <= std::min(NH, harmonics); h++) {
@@ -86,6 +101,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             }
         }
     }
+
     // broadband atoms (half-octave bumps) soak up breath and consonants so low combs don't
     std::vector<std::vector<float>> noise;
     for (int c = 0; c < B; c += bpo / 2) {
@@ -102,6 +118,8 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         noise.push_back(col);
     }
     const int K = P + static_cast<int>(noise.size());
+
+    // partial amplitudes A[region * NH + h], starting from the h^-ROLLOFF rolloff
     const int regions = (P - 1) / (SUB * REGION) + 1;
     auto reg = [](int p) { return p / (SUB * REGION); };
     std::vector<double> init(NH);
@@ -113,6 +131,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         std::copy(init.begin(), init.end(), A.begin() + static_cast<std::ptrdiff_t>(r) * NH);
     }
 
+    // per-frame L1 penalty, and the mean magnitude H starts from
     auto V = [&](int f, int b) { return s.mag[idx(f) * idx(s.bins) + idx(b0) + idx(b)]; };
     const float eps = 1e-9f;
     double mean = 0;
@@ -127,9 +146,12 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
     }
     mean /= static_cast<double>(F) * B;
 
-    std::vector<float> H(idx(F) * idx(K), static_cast<float>(mean + static_cast<double>(eps))),
-        W(idx(B) * idx(K)), norm(idx(P));
+    std::vector<float> H(idx(F) * idx(K), static_cast<float>(mean + static_cast<double>(eps)));
+    std::vector<float> W(idx(B) * idx(K));
+    std::vector<float> norm(idx(P)); // each comb's sum before normalising
     std::vector<float> WH(idx(CHUNK) * idx(B)), NUM(idx(CHUNK) * idx(K));
+
+    // W from the partials and the current amplitudes, each comb column normalised to sum 1
     auto buildW = [&] {
         for (int p = 0; p < P; p++) {
             double sum = 0;
@@ -154,6 +176,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             }
         }
     };
+
     // WH = V / (H W^T) for frames c0..c0+fc
     auto ratio = [&](int c0, int fc) {
         cblas_sgemm(CblasRowMajor, CblasNoTrans, CblasTrans, fc, B, K, 1.0f, &H[idx(c0) * idx(K)],
@@ -165,8 +188,9 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                       static_cast<vDSP_Length>(B)); // V / (WH + eps)
         }
     };
+
+    // KL multiplicative updates with W fixed; W's columns sum to 1. False: cancelled.
     int done = 0;
-    // KL multiplicative updates with W fixed; W's columns sum to 1
     auto iterate = [&](int count) {
         for (int it = 0; it < count; it++, done++) {
             for (int c0 = 0; c0 < F; c0 += CHUNK) {
@@ -190,6 +214,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         }
         return true;
     };
+
     // Re-estimates the partial amplitudes per region from solo-ish frames (Vincent, Bertin & Badeau 2010).
     auto adaptStep = [&] {
         std::vector<float> RH(idx(B) * idx(P), 0), Hm(idx(CHUNK) * idx(P));
@@ -202,9 +227,9 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 double sum = 0, best = 0;
                 for (int p = 0; p < P; p++) {
                     sum += static_cast<double>(h[idx(p)]);
-                    best = std::max(best, static_cast<double>(p > 0 ? h[idx(p - 1)] : 0) +
-                                              static_cast<double>(h[idx(p)]) +
-                                              (p + 1 < P ? static_cast<double>(h[idx(p + 1)]) : 0));
+                    const double below = static_cast<double>(p > 0 ? h[idx(p - 1)] : 0);
+                    const double above = p + 1 < P ? static_cast<double>(h[idx(p + 1)]) : 0;
+                    best = std::max(best, below + static_cast<double>(h[idx(p)]) + above);
                 }
                 const bool solo = best / (sum + static_cast<double>(eps)) >= SOLO;
                 for (int p = 0; p < P; p++) {
@@ -215,13 +240,15 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, B, P, fc, 1.0f, WH.data(), B,
                         Hm.data(), P, 1.0f, RH.data(), P);
         }
+
+        // multiplicative update of A, numerator and denominator summed per region
         std::vector<double> nr(idx(regions) * NH, 0), dr(idx(regions) * NH, 0);
         for (int p = 0; p < P; p++) {
             for (int b = 0; b < B; b++) {
                 const std::span<const float> pp =
                     std::span(part).subspan((idx(b) * idx(P) + idx(p)) * NH, NH);
-                const double rh = static_cast<double>(RH[idx(b, P, p)] / norm[idx(p)]),
-                             hn = hsum[idx(p)] / static_cast<double>(norm[idx(p)]);
+                const double rh = static_cast<double>(RH[idx(b, P, p)] / norm[idx(p)]);
+                const double hn = hsum[idx(p)] / static_cast<double>(norm[idx(p)]);
                 for (int h = 0; h < NH; h++) {
                     nr[idx(reg(p), NH, h)] += static_cast<double>(pp[idx(h)]) * rh;
                     dr[idx(reg(p), NH, h)] += static_cast<double>(pp[idx(h)]) * hn;
@@ -231,14 +258,17 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         for (size_t i = 0; i < A.size(); i++) {
             A[i] *= (nr[i] + static_cast<double>(eps)) / (dr[i] + static_cast<double>(eps));
         }
+
+        // relative to the fundamental
         for (int r = 0; r < regions; r++) {
             const double a0 = std::max(static_cast<double>(eps), A[idx(r) * NH]);
             for (int h = 0; h < NH; h++) {
                 A[idx(r, NH, h)] /= a0;
             }
         }
-        if (regions > 2) // smooth across regions in the log domain
-        {
+
+        // smooth across regions in the log domain
+        if (regions > 2) {
             std::vector<double> L(A.size());
             for (size_t i = 0; i < A.size(); i++) {
                 L[i] = log(std::max(static_cast<double>(eps), A[i]));
@@ -250,6 +280,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 }
             }
         }
+
         for (int r = 0; r < regions; r++) {
             for (int h = 0; h < NH; h++) {
                 double &a = A[idx(r, NH, h)];
@@ -258,6 +289,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         }
     };
 
+    // INNER updates before each adaptation round, the rest of the ITERS after the last
     const int outer = adapt ? OUTER : 0;
     for (int it = 0;; it++) {
         buildW();
@@ -273,8 +305,9 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
     // pool the three atoms of each semitone
     for (int f = 0; f < F; f++) {
         for (int m = lo; m <= hi; m++) {
+            const int centre = SUB * (m - pmin);
             double sum = 0;
-            for (int j = SUB * (m - pmin) - 1; j <= SUB * (m - pmin) + 1; j++) {
+            for (int j = centre - 1; j <= centre + 1; j++) {
                 if (j >= 0 && j < P) {
                     sum += static_cast<double>(H[idx(f, K, j)]);
                 }
@@ -291,9 +324,11 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
 static const int SACF_BANDS = 16;
 static const double SACF_LOW = 80, SACF_HIGH = 6000; // band edges, Hz
 static const double SACF_K = 0.3;                    // generalised ACF: ifft(|X|^K)
-static const int SACF_NFFT = 2048, SACF_UP = 4;      // 93 ms frames; lag oversampling
+static const int SACF_NFFT = 2048;                   // 93 ms frames
+static const int SACF_UP = 4;                        // lag oversampling
 static const int SACF_MARGIN = SR / 2;               // filter run-in around each chunk, samples
 
+// One second-order section, direct form II transposed: b over 1 + a1 z^-1 + a2 z^-2.
 struct Biquad {
     double b0, b1, b2, a1, a2;
 };
@@ -302,23 +337,33 @@ struct Biquad {
 // bilinear transform, as two second-order sections.
 static std::array<Biquad, 2> butterBandpass(double lo, double hi) {
     typedef std::complex<double> C;
-    const double fs = 2, w1 = 2 * fs * tan(M_PI * (lo / (SR / 2.0)) / fs),
-                 w2 = 2 * fs * tan(M_PI * (hi / (SR / 2.0)) / fs);
+
+    // band edges prewarped, at scipy's fs = 2 for frequencies relative to Nyquist
+    const double fs = 2;
+    const double w1 = 2 * fs * tan(M_PI * (lo / (SR / 2.0)) / fs);
+    const double w2 = 2 * fs * tan(M_PI * (hi / (SR / 2.0)) / fs);
     const double bw = w2 - w1, wo = sqrt(w1 * w2), fs2 = 2 * fs;
+
+    // the order-2 Butterworth poles, moved to the band (lowpass to bandpass doubles them)
     const std::array<C, 2> proto = {-std::exp(C(0, -M_PI / 4)), -std::exp(C(0, M_PI / 4))};
     std::array<C, 4> poles;
     for (size_t i = 0; i < 2; i++) {
-        const C pl = proto[i] * (bw / 2), r = std::sqrt(pl * pl - wo * wo);
+        const C pl = proto[i] * (bw / 2);
+        const C r = std::sqrt(pl * pl - wo * wo);
         poles[i] = pl + r;
         poles[2 + i] = pl - r;
     }
+
+    // bilinear transform
     C den = 1;
     for (C &p : poles) {
         den *= fs2 - p;
         p = (fs2 + p) / (fs2 - p);
     }
-    const double k =
-        bw * bw * std::real(C(fs2 * fs2) / den); // zeros: two at s=0 (z=1), two at infinity (z=-1)
+    // zeros: two at s=0 (z=1), two at infinity (z=-1)
+    const double k = bw * bw * std::real(C(fs2 * fs2) / den);
+
+    // the gain goes on the first section
     std::array<Biquad, 2> out{};
     for (size_t s = 0; s < 2; s++) {
         const C a = poles[2 * s], b = poles[2 * s + 1];
@@ -332,7 +377,8 @@ static std::array<Biquad, 2> butterBandpass(double lo, double hi) {
 static void biquadRun(const Biquad &q, auto &&x) {
     double z1 = 0, z2 = 0;
     for (float &v : x) {
-        const double in = static_cast<double>(v), y = q.b0 * in + z1;
+        const double in = static_cast<double>(v);
+        const double y = q.b0 * in + z1;
         z1 = q.b1 * in - q.a1 * y + z2;
         z2 = q.b2 * in - q.a2 * y;
         v = static_cast<float>(y);
@@ -352,9 +398,14 @@ static void filtfilt(const std::array<Biquad, 2> &sos, std::vector<float> &x) {
     }
 }
 
+// Per chunk of frames and per band: bandpass the samples (zero phase), take |X|^K of each frame
+// and sum over the bands, then one inverse FFT per frame gives the summed generalised ACF. Its
+// sub-octave peaks are removed, and each semitone takes the maximum over its lags. Chunks run in
+// parallel.
 std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,
                             const std::function<bool(double)> &progress) {
-    const int n = hi - lo + 1, F = std::max(0, frames);
+    const int n = hi - lo + 1;
+    const int F = std::max(0, frames);
     std::vector<float> roll(idx(F) * idx(std::max(0, n)), 0);
     if (!F || n <= 0) {
         return roll;
@@ -362,25 +413,31 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
 
+    // log-spaced bands from SACF_LOW to SACF_HIGH
     std::array<std::array<Biquad, 2>, SACF_BANDS> bands{};
     for (int i = 0; i < SACF_BANDS; i++) {
         bands[idx(i)] = butterBandpass(
             SACF_LOW * pow(SACF_HIGH / SACF_LOW, static_cast<double>(i) / SACF_BANDS),
             SACF_LOW * pow(SACF_HIGH / SACF_LOW, static_cast<double>(i + 1) / SACF_BANDS));
     }
-    const int maxlag = static_cast<int>(SR / 70.0 * SACF_UP), NI = SACF_NFFT * SACF_UP;
+
+    const int maxlag = static_cast<int>(SR / 70.0 * SACF_UP); // down to 70 Hz
+    const int NI = SACF_NFFT * SACF_UP;                       // inverse FFT size
+
     // lags of each semitone: within +-50 cents, else the nearest lag
+    auto midiOfLag = [](int l) {
+        return 69 + 12 * log2(static_cast<double>(SR) * SACF_UP / l / 440);
+    };
     std::vector<int> la(idx(n)), lb(idx(n));
     for (int k = lo; k <= hi; k++) {
         int a = maxlag, b = 0, nearest = 1;
         for (int l = 1; l < maxlag; l++) {
-            const double m = 69 + 12 * log2(static_cast<double>(SR) * SACF_UP / l / 440);
+            const double m = midiOfLag(l);
             if (fabs(m - k) <= 0.5) {
                 a = std::min(a, l);
                 b = std::max(b, l);
             }
-            if (fabs(m - k) <
-                fabs(69 + 12 * log2(static_cast<double>(SR) * SACF_UP / nearest / 440) - k)) {
+            if (fabs(m - k) < fabs(midiOfLag(nearest) - k)) {
                 nearest = l;
             }
         }
@@ -390,28 +447,38 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
         la[idx(k - lo)] = a;
         lb[idx(k - lo)] = b;
     }
+
     std::vector<float> hann(SACF_NFFT);
     for (int i = 0; i < SACF_NFFT; i++) {
         hann[idx(i)] = static_cast<float>(0.5 - 0.5 * cos(2 * M_PI * i / SACF_NFFT));
     }
 
-    const int chunk = 512, chunks = (F + chunk - 1) / chunk;
+    const int chunk = 512; // frames per work item
+    const int chunks = (F + chunk - 1) / chunk;
     std::atomic<int> next{0}, finished{0};
     std::atomic<bool> cancel{false};
+
+    // takes chunks until none are left or a cancel
     auto worker = [&] {
         std::vector<float> x, acc(idx(chunk) * maxlag), st(maxlag);
         std::vector<WDL_FFT_REAL> buf(SACF_NFFT), ibuf(NI);
-        const std::span<const int> perm = permuteTab(SACF_NFFT / 2), iperm = permuteTab(NI / 2);
-        std::vector<float> pw(SACF_NFFT / 2 + 1), expo(pw.size(), static_cast<float>(SACF_K / 2));
+        const std::span<const int> perm = permuteTab(SACF_NFFT / 2);
+        const std::span<const int> iperm = permuteTab(NI / 2);
+        std::vector<float> pw(SACF_NFFT / 2 + 1);
+        std::vector<float> expo(pw.size(), static_cast<float>(SACF_K / 2));
         int bins = static_cast<int>(pw.size());
         // the bands' compressed spectra, summed per frame: the inverse FFT is linear, so one per
         // frame after the band loop gives the summed autocorrelation
         std::vector<float> psum(idx(chunk) * pw.size());
+
         for (int ci = 0; !cancel && (ci = next++) < chunks;) {
-            const int c0 = ci * chunk, fc = std::min(chunk, F - c0);
+            const int c0 = ci * chunk;
+            const int fc = std::min(chunk, F - c0);
+            // the chunk's samples with SACF_MARGIN on both sides for the filters to settle
             const long long s0 = static_cast<long long>(c0) * HOP - SACF_NFFT / 2 - SACF_MARGIN;
             const int len = (fc - 1) * HOP + SACF_NFFT + 2 * SACF_MARGIN;
             std::fill(psum.begin(), psum.end(), 0.0f);
+
             for (int band = 0; band < SACF_BANDS; band++) {
                 x.assign(idx(len), 0);
                 for (int i = 0; i < len; i++) {
@@ -442,6 +509,8 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                     vDSP_vadd(ps, 1, pw.data(), 1, ps, 1, pw.size());
                 }
             }
+
+            // summed spectra -> autocorrelation, lags 0..maxlag-1 (oversampled by zero padding)
             for (int f = 0; f < fc; f++) {
                 const std::span<const float> ps =
                     std::span(psum).subspan(idx(f) * pw.size(), pw.size());
@@ -457,25 +526,29 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                     a[idx(l)] = static_cast<float>(ibuf[idx(l)]);
                 }
             }
+
             for (int f = 0; f < fc; f++) {
                 const std::span<float> S =
                     std::span(acc).subspan(idx(f) * idx(maxlag), idx(maxlag));
                 for (int l = 0; l < maxlag; l++) {
                     S[idx(l)] = std::max(0.0f, S[idx(l)]);
                 }
-                // "enhanced": remove the peaks at multiples of each period (sub-octaves)
+                // "enhanced": remove the peaks at multiples of each period (sub-octaves), by
+                // subtracting the ACF time-stretched by 2 and 3
                 for (int fct = 2; fct <= 3; fct++) {
                     for (int l = 0; l < maxlag; l++) {
                         const double pos = static_cast<double>(l) / fct;
                         const int i = static_cast<int>(pos);
-                        st[idx(l)] = S[idx(i)] + (i + 1 < maxlag ? (S[idx(i + 1)] - S[idx(i)]) *
-                                                                       static_cast<float>(pos - i)
-                                                                 : 0);
+                        const float frac = i + 1 < maxlag ? (S[idx(i + 1)] - S[idx(i)]) *
+                                                                static_cast<float>(pos - i)
+                                                          : 0;
+                        st[idx(l)] = S[idx(i)] + frac;
                     }
                     for (int l = 0; l < maxlag; l++) {
                         S[idx(l)] = std::max(0.0f, S[idx(l)] - st[idx(l)]);
                     }
                 }
+
                 for (int k = 0; k < n; k++) {
                     float m = 0;
                     for (int l = la[idx(k)]; l <= lb[idx(k)]; l++) {
@@ -488,6 +561,7 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
             (void)d;
         }
     };
+
     const int threads =
         std::max(1, std::min(chunks, static_cast<int>(std::thread::hardware_concurrency())));
     // the calling thread reports progress until the chunks are done, or a worker failed
@@ -510,30 +584,41 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
 
 // --- activity and segmentation (transcribe notes.frame_active; hysteresis instead of a grid) -----
 
+// Frame x pitch activity of a roll (frames x n, as the roll).
 struct Activity {
     std::vector<float> S;                // median filtered and gated
     std::vector<unsigned char> on, hold; // starts a note / keeps one going
 };
 
 // Median over 5 frames along time ("reflect" edges as scipy), gate, local pitch peaks, absolute and
-// relative thresholds (halved for `hold`), and no upper octave weaker than OCT x the note below.
+// relative thresholds (halved for `hold`), and no upper octave weaker than oct x the note below.
+// gate: frames x n, or null for none.
 static Activity activity(const std::vector<float> &roll, int F, int n,
                          const std::vector<unsigned char> *gate, double absT, double rel,
                          double oct) {
     Activity a;
-    a.S.assign(roll.size(), 0), a.on.assign(roll.size(), 0), a.hold.assign(roll.size(), 0);
-    auto refl = [F](int i) { return i < 0 ? -i - 1 : i >= F ? 2 * F - i - 1 : i; };
+    a.S.assign(roll.size(), 0);
+    a.on.assign(roll.size(), 0);
+    a.hold.assign(roll.size(), 0);
+
+    auto refl = [F](int i) {
+        if (i < 0) {
+            return -i - 1;
+        }
+        return i >= F ? 2 * F - i - 1 : i;
+    };
     std::array<float, 5> w{};
     for (int f = 0; f < F; f++) {
         for (int p = 0; p < n; p++) {
             for (int d = -2; d <= 2; d++) {
-                w[idx(d + 2)] =
-                    roll[idx(refl(std::max(-F, std::min(2 * F - 1, f + d)))) * idx(n) + idx(p)];
+                const int g = refl(std::max(-F, std::min(2 * F - 1, f + d)));
+                w[idx(d + 2)] = roll[idx(g) * idx(n) + idx(p)];
             }
             std::nth_element(w.begin(), std::next(w.begin(), 2), w.end());
             a.S[idx(f, n, p)] = gate && !(*gate)[idx(f, n, p)] ? 0 : w[2];
         }
     }
+
     for (int f = 0; f < F; f++) {
         const std::span<const float> S = std::span(a.S).subspan(idx(f) * idx(n), idx(n));
         const float mx = *std::max_element(S.begin(), S.end());
@@ -560,25 +645,28 @@ static Activity activity(const std::vector<float> &roll, int F, int n,
 
 // --- octave doublings (transcribe refine.octave_doublings) ----------------------------------------
 
-static const int RA_NFFT = 2048, RA_BINS = 520; // reassigned spectrogram up to ~5.6 kHz
+static const int RA_NFFT = 2048;
+static const int RA_BINS = 520; // reassigned spectrogram up to ~5.6 kHz
 static const double TOL = 0.45; // semitones a partial track may stray from its nominal frequency
 static const double ADD = 0.9;  // even-partial surplus (log units) that adds the octave above
-static const double FM_VETO = 0.8,
-                    SELF_FM =
-                        0.5; // common fate: the upper F0 moving with the lower note's partials
-static const double CHUNK_S =
-    0.25; // seconds per surplus measurement (transcribe: an 8th-note slot)
-static const float REATTACK_DIP =
-    0.7f; // a re-attack needs the level before it below this share of the level after
+// common fate: the upper F0 moving with the lower note's partials (correlation above FM_VETO),
+// while the lower note's 1st and 3rd partials move together (above SELF_FM)
+static const double FM_VETO = 0.8;
+static const double SELF_FM = 0.5;
+// seconds per surplus measurement (transcribe: an 8th-note slot)
+static const double CHUNK_S = 0.25;
+// a re-attack needs the level before it below this share of the level after
+static const float REATTACK_DIP = 0.7f;
 
 // Reassigned spectrogram (librosa's: instantaneous frequency from the derivative window, magnitude
-// of the plain STFT), computed only for the frames asked for.
+// of the plain STFT), computed only for the frames asked for. Borrows the signal, which must outlive
+// it.
 struct Partials {
-    const std::vector<float> &y;
+    const std::vector<float> &y; // samples at SR
     int frames;
-    std::vector<std::vector<float>> F, M;
-    std::vector<float> win, dwin;
-    std::vector<WDL_FFT_REAL> a, b;
+    std::vector<std::vector<float>> F, M; // per frame (empty until computed): Hz and magnitude
+    std::vector<float> win, dwin;         // Hann window and its derivative
+    std::vector<WDL_FFT_REAL> a, b;       // FFT scratch
 
     Partials(const std::vector<float> &signal, int frameCount)
         : y(signal), frames(frameCount), F(idx(frameCount)), M(idx(frameCount)), win(RA_NFFT),
@@ -592,6 +680,7 @@ struct Partials {
         }
     }
 
+    // Computes frame f (centred on f * HOP) if not done yet.
     void ensure(int f) {
         if (!F[idx(f)].empty()) {
             return;
@@ -611,24 +700,28 @@ struct Partials {
             const size_t pk = 2 * idx(perm[idx(k)]);
             // WDL's real FFT is twice numpy's; halve so the power threshold means the same
             const std::complex<double> h(0.5 * static_cast<double>(a[pk]),
-                                         0.5 * static_cast<double>(a[pk + 1])),
-                d(0.5 * static_cast<double>(b[pk]), 0.5 * static_cast<double>(b[pk + 1]));
+                                         0.5 * static_cast<double>(a[pk + 1]));
+            const std::complex<double> d(0.5 * static_cast<double>(b[pk]),
+                                         0.5 * static_cast<double>(b[pk + 1]));
             const double mag = std::abs(h);
             M[idx(f)][idx(k)] = static_cast<float>(mag);
             if (mag * mag < 1e-6) {
                 continue; // librosa's ref_power: no frequency (0, as transcribe's nan_to_num)
             }
+            // the bin's frequency, corrected by the phase derivative
             const double fr =
                 static_cast<double>(k) * SR / RA_NFFT - std::imag(d / h) * 0.5 * SR / M_PI;
             F[idx(f)][idx(k)] = static_cast<float>(std::max(0.0, std::min(SR / 2.0, fr)));
         }
     }
 
-    // log2 frequency (NaN where nothing is near) and log magnitude of the strongest bin near f0, frames a..b-1
+    // log2 frequency (NaN where nothing is near) and log magnitude of the strongest bin within
+    // +-tol semitones of f0 (Hz), frames a0..b0-1.
     void track(double f0, int a0, int b0, std::vector<double> &t, std::vector<double> &m,
                double tol = TOL) {
         b0 = std::min(b0, frames);
-        t.clear(), m.clear();
+        t.clear();
+        m.clear();
         const double bw = static_cast<double>(SR) / RA_NFFT;
         const int k0 = std::max(0, static_cast<int>(floor(f0 * pow(2, -tol / 12) / bw - 1)));
         const int k1 =
@@ -643,14 +736,16 @@ struct Partials {
             }
             const double fr = static_cast<double>(F[idx(f)][idx(best)]);
             const bool ok = fr > 0 && fabs(12 * log2(std::max(fr, 1e-3) / f0)) < tol;
-            t.push_back(ok ? log2(std::max(fr, 1e-3)) : static_cast<double>(NAN)),
-                m.push_back(log(static_cast<double>(M[idx(f)][idx(best)]) + 1e-6));
+            t.push_back(ok ? log2(std::max(fr, 1e-3)) : static_cast<double>(NAN));
+            m.push_back(log(static_cast<double>(M[idx(f)][idx(best)]) + 1e-6));
         }
     }
 
-    // log mean magnitude of partials 1..nh (up to 5 kHz)
+    // log mean magnitude of partials 1..nh of f0 (Hz) over frames a0..b0-1; NaN above 5 kHz or
+    // where nothing was measured.
     std::vector<double> harmonicAmps(double f0, int a0, int b0, int nh = 10) {
-        std::vector<double> out(idx(nh), static_cast<double>(NAN)), t, m;
+        std::vector<double> out(idx(nh), static_cast<double>(NAN));
+        std::vector<double> t, m;
         for (int h = 1; h <= nh && h * f0 <= 5000; h++) {
             track(h * f0, a0, b0, t, m);
             double sum = 0;
@@ -665,9 +760,11 @@ struct Partials {
     }
 };
 
+// MIDI pitch -> Hz (A4 = 440).
 static double hzOf(int midi) { return 440 * pow(2.0, (midi - 69) / 12.0); }
 
 // How far the even partials stick out over their odd neighbours (log units); NaN if unmeasurable.
+// amps: harmonicAmps, partial h at h-1.
 static double evenSurplus(const std::vector<double> &amps) {
     double sum = 0;
     int n = 0;
@@ -681,10 +778,12 @@ static double evenSurplus(const std::vector<double> &amps) {
     return n ? sum / n : static_cast<double>(NAN);
 }
 
-// Gaps filled, a quadratic trend removed, smoothed over 3 frames; false if too little is voiced.
+// Gaps filled, a quadratic trend removed, smoothed over 3 frames; false if too little is voiced
+// (fewer than 8 finite values).
 static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
     const int n = static_cast<int>(x.size());
-    std::vector<int> ok;
+
+    std::vector<int> ok; // indices of the finite values
     for (int i = 0; i < n; i++) {
         if (std::isfinite(x[idx(i)])) {
             ok.push_back(i);
@@ -693,6 +792,8 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
     if (static_cast<int>(ok.size()) < 8) {
         return false;
     }
+
+    // gaps interpolated linearly, the ends held
     std::vector<double> v(idx(n));
     for (int i = 0, j = 0; i < n; i++) {
         while (j + 1 < static_cast<int>(ok.size()) && ok[idx(j + 1)] <= i) {
@@ -704,11 +805,15 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
             v[idx(i)] = x[idx(ok.back())];
         } else {
             const int a = ok[idx(j)], b = ok[idx(j + 1)];
-            v[idx(i)] =
-                a == i ? x[idx(a)] : x[idx(a)] + (x[idx(b)] - x[idx(a)]) * (i - a) / (b - a);
+            if (a == i) {
+                v[idx(i)] = x[idx(a)];
+            } else {
+                v[idx(i)] = x[idx(a)] + (x[idx(b)] - x[idx(a)]) * (i - a) / (b - a);
+            }
         }
     }
-    // least-squares quadratic, centred for conditioning
+
+    // least-squares quadratic, centred for conditioning: the normal equations' sums
     std::array<double, 5> S = {};
     std::array<double, 3> T = {};
     const double c = (n - 1) / 2.0;
@@ -723,6 +828,8 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
         T[1] += v[idx(i)] * u;
         T[2] += v[idx(i)] * u * u;
     }
+
+    // Gaussian elimination on the augmented 3x3 system, then back substitution
     std::array<std::array<double, 4>, 3> A = {
         {{S[0], S[1], S[2], T[0]}, {S[1], S[2], S[3], T[1]}, {S[2], S[3], S[4], T[2]}}
     };
@@ -742,13 +849,21 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
         }
         coef[idx(i)] = sum / A[idx(i)][idx(i)];
     }
+
     std::vector<double> d(idx(n));
     for (int i = 0; i < n; i++) {
         const double u = i - c;
         d[idx(i)] = v[idx(i)] - (coef[0] + coef[1] * u + coef[2] * u * u);
     }
+
+    // 3-frame mean, edges reflected
     out.assign(idx(n), 0);
-    auto at = [&](int i) { return d[i < 0 ? idx(-i - 1) : i >= n ? idx(2 * n - i - 1) : idx(i)]; };
+    auto at = [&](int i) {
+        if (i < 0) {
+            return d[idx(-i - 1)];
+        }
+        return d[i >= n ? idx(2 * n - i - 1) : idx(i)];
+    };
     for (int i = 0; i < n; i++) {
         out[idx(i)] = (at(i - 1) + at(i) + at(i + 1)) / 3;
     }
@@ -768,12 +883,14 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
     if (voiced(x) < 0.6 || voiced(y) < 0.6 || !detrend(x, a) || !detrend(y, b)) {
         return static_cast<double>(NAN);
     }
+
     const int n = static_cast<int>(a.size());
     double ma = 0, mb = 0;
     for (int i = 0; i < n; i++) {
         ma += a[idx(i)] / n;
         mb += b[idx(i)] / n;
     }
+
     double sab = 0, saa = 0, sbb = 0;
     for (int i = 0; i < n; i++) {
         sab += (a[idx(i)] - ma) * (b[idx(i)] - mb);
@@ -787,18 +904,25 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
 }
 
 // Common fate: the upper note's F0 wobbles with the lower note's 1st or 3rd partial, which it can't
-// share, while those two move together: it is the lower voice's own overtone.
+// share, while those two move together: it is the lower voice's own overtone. Measured on the
+// overlap less 2 frames at each end; false if that is under 10 frames.
 static bool isOvertone(Partials &P, const NoteEstimate &up, const NoteEstimate &low) {
-    const int a = std::max(up.f0, low.f0) + 2, b = std::min(up.f1, low.f1) - 2;
+    const int a = std::max(up.f0, low.f0) + 2;
+    const int b = std::min(up.f1, low.f1) - 2;
     if (b - a < 10) {
         return false;
     }
+
     const double fl = hzOf(low.pitch);
     std::vector<double> tu, t1, t3, m;
     P.track(hzOf(up.pitch), a, b, tu, m);
     P.track(fl, a, b, t1, m);
     P.track(3 * fl, a, b, t3, m);
-    const double c1 = trackCorr(tu, t1), c3 = trackCorr(tu, t3), self = trackCorr(t1, t3);
+    const double c1 = trackCorr(tu, t1);
+    const double c3 = trackCorr(tu, t3);
+    const double self = trackCorr(t1, t3);
+
+    // the stronger of the two finite correlations, -2 if neither is
     double fm = -2;
     if (std::isfinite(c1)) {
         fm = std::max(fm, c1);
@@ -812,6 +936,7 @@ static bool isOvertone(Partials &P, const NoteEstimate &up, const NoteEstimate &
 // A voice an octave above another is folded into the lower note by the harmonic NMF; it shows as
 // even partials standing out over their odd neighbours. Adds the octave above where they do, unless
 // common fate says it is the lower voice's overtone; removes a detected upper octave that is one.
+// frameRate: frames per second. Added notes go after the kept ones, at half the strength.
 static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate> &raw, Partials &P,
                                                  int hi, double frameRate) {
     std::vector<NoteEstimate> add;
@@ -819,20 +944,26 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
     auto overlaps = [](const NoteEstimate &a, const NoteEstimate &b) {
         return std::min(a.f1, b.f1) > std::max(a.f0, b.f0);
     };
-    const int L = std::max(4, static_cast<int>(lround(CHUNK_S * frameRate)));
+    const int L = std::max(4, static_cast<int>(lround(CHUNK_S * frameRate))); // frames per chunk
+
     for (const NoteEstimate &n : raw) {
         if (n.pitch + 12 > hi) {
             continue;
         }
+
+        // the surplus per chunk of L frames, each less a frame at both ends
         const double f0 = hzOf(n.pitch);
         std::vector<double> E;
         std::vector<int> starts;
         for (int c = n.f0; c < n.f1; c += L) {
-            const int a = c + 1, b = std::min(n.f1, c + L) - 1;
+            const int a = c + 1;
+            const int b = std::min(n.f1, c + L) - 1;
             E.push_back(b > a ? evenSurplus(P.harmonicAmps(f0, a, std::max(b, a + 2)))
                               : static_cast<double>(NAN));
             starts.push_back(c);
         }
+
+        // each run of chunks with surplus >= ADD becomes a candidate octave note
         for (size_t s = 0; s < E.size();) {
             if (!(E[s] >= ADD)) {
                 s++;
@@ -855,6 +986,7 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
             s = e;
         }
     }
+
     for (size_t i = 0; i < raw.size(); i++) {
         for (const NoteEstimate &low : raw) {
             if (low.pitch == raw[i].pitch - 12 && overlaps(raw[i], low) &&
@@ -864,6 +996,7 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
             }
         }
     }
+
     std::vector<NoteEstimate> out;
     for (size_t i = 0; i < raw.size(); i++) {
         if (!drop[i]) {
@@ -876,6 +1009,7 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
 
 // --- front ends for the vote (transcribe mf0.FRONT_ENDS, notes.VOTERS) --------------------------
 
+// An empty spectrogram on the vote's axis: 7 octaves from C2 at bpo bins per octave, hop HOP.
 static Spectrogram axisFromC2(int bpo, int frames) {
     Spectrogram s;
     s.p.sampleRate = SR;
@@ -908,20 +1042,26 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
                        const std::function<bool(double)> &progress) {
     const int frames = static_cast<int>(x.size() / HOP) + 1;
     Spectrogram s = axisFromC2(bpo, frames);
-    const int LOG2N = 17, N = 1 << LOG2N;
-    const double r = pow(2.0, 1.0 / bpo),
-                 alpha = (r * r - 1) / (r * r + 1); // librosa's relative bandwidth
+    const int LOG2N = 17;
+    const int N = 1 << LOG2N; // block length, samples
+    const double r = pow(2.0, 1.0 / bpo);
+    const double alpha = (r * r - 1) / (r * r + 1); // librosa's relative bandwidth
+
+    // one CQT bin's kernel on the block's FFT
     struct Bin {
-        int k0 = 0, k1 = 0, M = 0, logM = 0, step = 0;
-        std::vector<float> w;
+        int k0 = 0, k1 = 0;   // FFT bins covered
+        int M = 0, logM = 0;  // inverse FFT length (a power of 2, at least N / HOP)
+        int step = 0;         // inverse FFT samples per hop
+        std::vector<float> w; // window spectrum over k0..k1
         float scale = 0;
     };
     std::vector<Bin> bins(idx(s.bins));
     double maxL = 0;
     int maxM = 0;
     for (int b = 0; b < s.bins; b++) {
-        const double f = s.p.fmin * pow(2.0, static_cast<double>(b) / bpo),
-                     L = filterScale * SR / (alpha * f), c = f * N / SR;
+        const double f = s.p.fmin * pow(2.0, static_cast<double>(b) / bpo); // Hz
+        const double L = filterScale * SR / (alpha * f); // window length, samples
+        const double c = f * N / SR;                     // centre, FFT bins
         maxL = std::max(maxL, L);
         Bin &bn = bins[idx(b)];
         const double reach = 4.0 * N / L; // main lobe and the first sidelobes
@@ -937,15 +1077,19 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
             bn.logM++;
         }
         bn.step = bn.M * HOP / N;
-        bn.scale = static_cast<float>(
-            sqrt(L) / 2 / N); // 1/N: a sine reads its amplitude; sqrt(L)/2: librosa's scale
+        // 1/N: a sine reads its amplitude; sqrt(L)/2: librosa's scale
+        bn.scale = static_cast<float>(sqrt(L) / 2 / N);
         maxM = std::max(maxM, bn.M);
     }
-    const int margin = (static_cast<int>(ceil(maxL / 2 / HOP)) + 1) * HOP,
-              framesPerBlock = (N - 2 * margin) / HOP;
+
+    // blocks overlap by half the longest window on each side, so every frame sees all of it
+    const int margin = (static_cast<int>(ceil(maxL / 2 / HOP)) + 1) * HOP;
+    const int framesPerBlock = (N - 2 * margin) / HOP;
     FFTSetup setup = vDSP_create_fftsetup(LOG2N, kFFTRadix2);
     std::vector<float> block(N), re(N / 2), im(N / 2), sre(idx(maxM)), sim(idx(maxM));
-    DSPSplitComplex X = {re.data(), im.data()}, Y = {sre.data(), sim.data()};
+    DSPSplitComplex X = {re.data(), im.data()};
+    DSPSplitComplex Y = {sre.data(), sim.data()};
+
     for (int first = 0; first < frames; first += framesPerBlock) {
         const long long start = static_cast<long long>(first) * HOP - margin;
         for (int i = 0; i < N; i++) {
@@ -958,11 +1102,13 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
             im[idx(i)] = block[idx(2 * i + 1)];
         }
         vDSP_fft_zrip(setup, &X, 1, LOG2N, kFFTDirection_Forward); // twice the DFT, as WDL's
+
+        // per bin: window the spectrum around it, inverse FFT, take every step-th sample
         const int nf = std::min(framesPerBlock, frames - first);
         for (int b = 0; b < s.bins; b++) {
             const Bin &bn = bins[idx(b)];
-            std::fill(sre.begin(), sre.begin() + bn.M, 0.0f),
-                std::fill(sim.begin(), sim.begin() + bn.M, 0.0f);
+            std::fill(sre.begin(), sre.begin() + bn.M, 0.0f);
+            std::fill(sim.begin(), sim.begin() + bn.M, 0.0f);
             for (int k = bn.k0; k <= bn.k1; k++) {
                 sre[idx(k - bn.k0)] = re[idx(k)] * bn.w[idx(k - bn.k0)];
                 sim[idx(k - bn.k0)] = im[idx(k)] * bn.w[idx(k - bn.k0)];
@@ -981,17 +1127,21 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
     return s;
 }
 
+// Per frame: the spectrum compressed to power G_SPEC, its generalised cepstrum (power G_CEPS),
+// both read at each axis bin's frequency and multiplied.
 Spectrogram computeCFP(const std::vector<float> &x, int bpo,
                        const std::function<bool(double)> &progress) {
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
-    const int NF = 4096, frames = static_cast<int>(x.size() / HOP) + 1;
+    const int NF = 4096; // FFT length, samples
+    const int frames = static_cast<int>(x.size() / HOP) + 1;
     const double G_SPEC = 0.24, G_CEPS = 0.6;
     Spectrogram s = axisFromC2(bpo, frames);
     std::vector<float> hann(NF);
     for (int i = 0; i < NF; i++) {
         hann[idx(i)] = static_cast<float>(0.5 - 0.5 * cos(2 * M_PI * i / NF));
     }
+
     // where each axis bin falls on the spectrum's and the cepstrum's (1/quefrency) axes, for linear interpolation
     std::vector<double> specPos(idx(s.bins)), cepsFreq(idx(s.bins));
     for (int b = 0; b < s.bins; b++) {
@@ -1000,16 +1150,20 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
     for (double &v : specPos) {
         v = v * NF / SR;
     }
+
     const std::span<const int> perm = permuteTab(NF / 2);
     std::vector<WDL_FFT_REAL> buf(NF), ceps(NF);
-    std::vector<float> Z(NF / 2 + 1), C(NF / 2);
-    const std::vector<float> gs(Z.size(), static_cast<float>(G_SPEC / 2)),
-        gc(C.size(), static_cast<float>(G_CEPS));
-    const int nz = static_cast<int>(Z.size()), nc = static_cast<int>(C.size());
+    std::vector<float> Z(NF / 2 + 1), C(NF / 2); // compressed spectrum and cepstrum
+    const std::vector<float> gs(Z.size(), static_cast<float>(G_SPEC / 2));
+    const std::vector<float> gc(C.size(), static_cast<float>(G_CEPS));
+    const int nz = static_cast<int>(Z.size());
+    const int nc = static_cast<int>(C.size());
+
     for (int f = 0; f < frames; f++) {
         if (progress && f % 1024 == 0 && !progress(static_cast<double>(f) / frames)) {
             break;
         }
+
         for (int i = 0; i < NF; i++) {
             const long long j = static_cast<long long>(f) * HOP - NF / 2 + i;
             buf[idx(i)] =
@@ -1025,6 +1179,8 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
             Z[idx(k)] = 0.25f * (buf[pk] * buf[pk] + buf[pk + 1] * buf[pk + 1]);
         }
         vvpowf(Z.data(), gs.data(), Z.data(), &nz);
+
+        // the inverse FFT of the compressed spectrum, half-wave rectified and compressed
         std::fill(ceps.begin(), ceps.end(), 0);
         ceps[0] = Z[0];
         ceps[1] = Z[NF / 2];
@@ -1036,6 +1192,7 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
             C[idx(q)] = std::max(0.0f, static_cast<float>(ceps[idx(q)] / NF));
         }
         vvpowf(C.data(), gc.data(), C.data(), &nc);
+
         const std::span<float> out = std::span(s.mag).subspan(idx(f) * idx(s.bins), idx(s.bins));
         for (int b = 0; b < s.bins; b++) {
             const double pos = specPos[idx(b)];
@@ -1046,12 +1203,14 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
             const double q = std::max(1.0, std::min(NF / 2.0 - 1, SR / cepsFreq[idx(b)]));
             const int qi = std::min(NF / 2 - 2, static_cast<int>(q));
             // interpolated linearly in frequency, as transcribe does on the reversed 1/q axis
-            const double fa = SR / static_cast<double>(qi + 1), fb = SR / static_cast<double>(qi),
-                         fq = SR / q;
-            const double cv = fb > fa ? static_cast<double>(C[idx(qi + 1)]) +
-                                            static_cast<double>(C[idx(qi)] - C[idx(qi + 1)]) *
-                                                (fq - fa) / (fb - fa)
-                                      : static_cast<double>(C[idx(qi)]);
+            const double fa = SR / static_cast<double>(qi + 1);
+            const double fb = SR / static_cast<double>(qi);
+            const double fq = SR / q;
+            double cv = static_cast<double>(C[idx(qi)]);
+            if (fb > fa) {
+                cv = static_cast<double>(C[idx(qi + 1)]) +
+                     static_cast<double>(C[idx(qi)] - C[idx(qi + 1)]) * (fq - fa) / (fb - fa);
+            }
             out[idx(b)] = static_cast<float>(spec * cv);
         }
     }
@@ -1059,19 +1218,24 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
 }
 
 // Adds (frame, pitch) cells every voter's notes cover but `raw` lacks: a run of them extends a touching
-// same-pitch note, else becomes a note (if long enough) with the voters' mean strength.
+// same-pitch note, else becomes a note (if long enough) with the voters' mean strength. Pitches
+// lo..lo+n-1, F frames; minLen in frames.
 static void vote(std::vector<NoteEstimate> &raw,
                  const std::vector<std::vector<NoteEstimate>> &voters, int F, int lo, int n,
                  int minLen) {
     if (voters.empty()) {
         return;
     }
+
+    // per frame at one pitch: raw has it, every voter has it, this voter has it, mean strength
     std::vector<unsigned char> mine(idx(F)), all(idx(F)), cov(idx(F));
     std::vector<float> str(idx(F));
     for (int p = 0; p < n; p++) {
         const int pitch = lo + p;
-        std::fill(mine.begin(), mine.end(), 0), std::fill(all.begin(), all.end(), 1),
-            std::fill(str.begin(), str.end(), 0.0f);
+        std::fill(mine.begin(), mine.end(), 0);
+        std::fill(all.begin(), all.end(), 1);
+        std::fill(str.begin(), str.end(), 0.0f);
+
         for (const NoteEstimate &e : raw) {
             if (e.pitch == pitch) {
                 std::fill(mine.begin() + e.f0, mine.begin() + std::min(F, e.f1), 1);
@@ -1091,6 +1255,8 @@ static void vote(std::vector<NoteEstimate> &raw,
                 all[idx(f)] &= cov[idx(f)];
             }
         }
+
+        // runs of frames all voters cover and raw lacks
         for (int f = 0; f < F;) {
             if (!all[idx(f)] || mine[idx(f)]) {
                 f++;
@@ -1100,6 +1266,7 @@ static void vote(std::vector<NoteEstimate> &raw,
             while (b < F && all[idx(b)] && !mine[idx(b)]) {
                 b++;
             }
+
             NoteEstimate *before = nullptr, *after = nullptr;
             for (NoteEstimate &e : raw) {
                 if (e.pitch == pitch && e.f1 == f) {
@@ -1129,14 +1296,23 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                                         const EstimateParams &ep,
                                         const std::function<bool(double)> &progress) {
     std::vector<NoteEstimate> out;
-    const int lo = ep.lo, hi = ep.hi, n = hi - lo + 1, F = s.frames;
+    const int lo = ep.lo, hi = ep.hi;
+    const int n = hi - lo + 1;
+    const int F = s.frames;
     if (F <= 0 || n <= 0) {
         return out;
     }
+
     // progress: main NMF, SACF, the three voters
-    const double nmfEnd = ep.vote ? 0.3 : ep.sacfAbs > 0 ? 0.6 : 1, sacfEnd = ep.vote ? 0.45 : 1;
-    const double nmfShare = nmfEnd;
+    double nmfEnd = 1;
+    if (ep.vote) {
+        nmfEnd = 0.3;
+    } else if (ep.sacfAbs > 0) {
+        nmfEnd = 0.6;
+    }
+    const double sacfEnd = ep.vote ? 0.45 : 1;
     std::atomic<bool> cancelled{false};
+    // progress mapped to a..b of the whole; false (and cancelled) once progress declines
     auto stage = [&](double a, double b) {
         return [&, a, b](double f) {
             if (progress && !progress(a + (b - a) * f)) {
@@ -1145,11 +1321,12 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
             return !cancelled;
         };
     };
-    std::vector<float> roll = nmfRoll(s, lo, hi, ep.adapt, stage(0, nmfShare));
+    std::vector<float> roll = nmfRoll(s, lo, hi, ep.adapt, stage(0, nmfEnd));
     if (cancelled) {
         return out;
     }
 
+    // the gate: basic-pitch's note posterior within +-1 semitone above ep.gate
     const BasicPitch *bp = basicPitch ? basicPitch() : nullptr;
     std::vector<unsigned char> gate;
     if (bp && bp->frames > 0) {
@@ -1170,9 +1347,10 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         }
     }
     const std::vector<unsigned char> *gp = gate.empty() ? nullptr : &gate;
+
     Activity act = activity(roll, F, n, gp, ep.abs, ep.rel, ep.oct);
     if (ep.sacfAbs > 0) {
-        std::vector<float> sroll = sacfRoll(mono, F, lo, hi, stage(nmfShare, sacfEnd));
+        std::vector<float> sroll = sacfRoll(mono, F, lo, hi, stage(nmfEnd, sacfEnd));
         if (cancelled) {
             return out;
         }
@@ -1181,17 +1359,20 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         for (size_t i = 0; i < act.on.size(); i++) {
             act.on[i] |= sa.on[i];
             act.hold[i] |= sa.hold[i];
-            act.S[i] = std::max(
-                act.S[i], sa.S[i] * static_cast<float>(ep.abs / ep.sacfAbs)); // on the NMF's scale
+            // on the NMF's scale
+            act.S[i] = std::max(act.S[i], sa.S[i] * static_cast<float>(ep.abs / ep.sacfAbs));
         }
     }
 
     // runs: start on an `on` frame, continue over `hold` frames bridging short dropouts, split where
     // basic-pitch sees a new onset at that pitch and the note's own level dipped before it (basic-pitch
     // also reports onsets on a held note when another voice stops)
-    const double fr = static_cast<double>(SR) / HOP;
-    const int minLen = std::max(1, static_cast<int>(lround(ep.minLength * fr))),
-              bridge = static_cast<int>(lround(ep.bridge * fr));
+    const double fr = static_cast<double>(SR) / HOP; // frames per second
+    const int minLen = std::max(1, static_cast<int>(lround(ep.minLength * fr)));
+    const int bridge = static_cast<int>(lround(ep.bridge * fr));
+
+    // basic-pitch's onset at (f, midi) is a local maximum above 0.5 (the first of equal ones), and
+    // the roll over the 70 ms before f dipped below REATTACK_DIP of its peak over the 70 ms after
     auto reattack = [&](int f, int midi) {
         if (!bp || bp->frames <= 0 || midi < BasicPitch::LOWEST ||
             midi >= BasicPitch::LOWEST + BasicPitch::PITCHES) {
@@ -1208,7 +1389,9 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                 return false;
             }
         }
-        const int p = midi - lo, w = static_cast<int>(lround(0.07 * fr));
+
+        const int p = midi - lo;
+        const int w = static_cast<int>(lround(0.07 * fr));
         float dip = 1e30f, after = 0;
         for (int h = std::max(0, f - w); h < f; h++) {
             dip = std::min(dip, roll[idx(h, n, p)]);
@@ -1218,6 +1401,8 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         }
         return dip < REATTACK_DIP * after;
     };
+
+    // notes from an activity, per pitch; marks the frame a split re-attacks at as `on`
     auto runs = [&](Activity &a) {
         std::vector<NoteEstimate> notes;
         for (int p = 0; p < n; p++) {
@@ -1255,6 +1440,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         }
         return notes;
     };
+
     out = runs(act);
 
     if (ep.vote) {
@@ -1319,9 +1505,10 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
 
 // --- voices -------------------------------------------------------------------------------------
 
-static const double AGE = 2.0,
-                    AGE_CAP =
-                        2.0; // semitones of cost per second a strand has been silent, capped (s)
+// semitones of cost per second a strand has been silent, capped at AGE_CAP seconds
+static const double AGE = 2.0;
+static const double AGE_CAP = 2.0;
+// share of sung frames a number of simultaneous notes needs to count as a voice
 static const double POLYPHONY_SHARE = 0.003;
 
 std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double frameRate,
@@ -1330,11 +1517,13 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
     if (notes.empty() || maxVoices < 1) {
         return voice;
     }
+
+    // how many voices: the most notes sounding together in POLYPHONY_SHARE of sung frames
     int F = 0;
     for (const NoteEstimate &n : notes) {
         F = std::max(F, n.f1);
     }
-    std::vector<int> cnt(idx(F + 1), 0);
+    std::vector<int> cnt(idx(F + 1), 0); // notes sounding per frame
     for (const NoteEstimate &n : notes) {
         for (int f = n.f0; f < n.f1; f++) {
             cnt[idx(f)]++;
@@ -1354,6 +1543,7 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
             nv = k;
         }
     }
+
     // resting pitch per strand (top first) before it has sung: spread over the notes' range
     std::vector<int> pitches;
     pitches.reserve(notes.size());
@@ -1365,27 +1555,34 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
     for (int v = 0; v < nv; v++) {
         const double pos = (1 - (v + 0.5) / nv) * static_cast<double>(pitches.size() - 1);
         const int i = static_cast<int>(pos);
-        rest[idx(v)] = pitches[idx(i)] + (i + 1 < static_cast<int>(pitches.size())
-                                              ? (pitches[idx(i + 1)] - pitches[idx(i)]) * (pos - i)
-                                              : 0);
+        const double frac = i + 1 < static_cast<int>(pitches.size())
+                                ? (pitches[idx(i + 1)] - pitches[idx(i)]) * (pos - i)
+                                : 0;
+        rest[idx(v)] = pitches[idx(i)] + frac;
     }
 
+    // notes in onset order
     std::vector<int> order(notes.size());
     for (size_t i = 0; i < order.size(); i++) {
         order[i] = static_cast<int>(i);
     }
     std::sort(order.begin(), order.end(),
               [&](int a, int b) { return notes[idx(a)].f0 < notes[idx(b)].f0; });
-    std::vector<int> strandOf(notes.size(), -1),
-        current(idx(nv), -1); // note sounding on each strand
-    std::vector<double> last(idx(nv), -1);
+
+    std::vector<int> strandOf(notes.size(), -1);
+    std::vector<int> current(idx(nv), -1);    // note sounding on each strand, -1 if none
+    std::vector<double> last(idx(nv), -1);    // the strand's last pitch, -1 if it never sang
     std::vector<int> silentFrom(idx(nv), -1); // frame the strand fell silent, -1 if it never sang
+
+    // each group of notes starting on the same frame t
     for (size_t g = 0; g < order.size();) {
         const int t = notes[idx(order[g])].f0;
         std::vector<int> fresh;
         for (; g < order.size() && notes[idx(order[g])].f0 == t; g++) {
             fresh.push_back(order[g]);
         }
+
+        // strands whose note ended by t become free
         for (int v = 0; v < nv; v++) {
             if (current[idx(v)] >= 0 && notes[idx(current[idx(v)])].f1 <= t) {
                 silentFrom[idx(v)] = notes[idx(current[idx(v)])].f1;
@@ -1407,8 +1604,10 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
         std::sort(fresh.begin(), fresh.end(),
                   [&](int a, int b) { return notes[idx(a)].pitch > notes[idx(b)].pitch; });
 
-        // place as many as fit without crossing, at the lowest cost (k = all of them first, then fewer)
-        const int nf = static_cast<int>(fresh.size()), nfree = static_cast<int>(free.size());
+        // place as many as fit without crossing, at the lowest cost (k = all of them first, then
+        // fewer): every k-subset of the notes onto every k-subset of the free strands, in order
+        const int nf = static_cast<int>(fresh.size());
+        const int nfree = static_cast<int>(free.size());
         std::vector<int> best, bestNotes;
         for (int k = nf; k >= 0 && best.empty() && (k > 0 || nf == 0); k--) {
             double bestCost = 1e30;
@@ -1431,6 +1630,8 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
                             combo.push_back(free[idx(i)]); // top to bottom
                         }
                     }
+
+                    // pitches down the strands, -1000 for silent ones: crossing if any rises
                     std::vector<int> pitchOn(idx(nv), -1000);
                     for (int v = 0; v < nv; v++) {
                         if (current[idx(v)] >= 0) {
@@ -1451,6 +1652,8 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
                     if (crossing) {
                         continue;
                     }
+
+                    // the leap from the strand's last (or resting) pitch, plus its silence
                     double cost = 0;
                     for (int i = 0; i < k; i++) {
                         const int v = combo[idx(i)];
@@ -1458,9 +1661,8 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
                             silentFrom[idx(v)] < 0
                                 ? AGE_CAP
                                 : std::min(AGE_CAP, (t - silentFrom[idx(v)]) / frameRate);
-                        cost += fabs(notes[idx(sub[idx(i)])].pitch -
-                                     (last[idx(v)] >= 0 ? last[idx(v)] : rest[idx(v)])) +
-                                AGE * silent;
+                        const double from = last[idx(v)] >= 0 ? last[idx(v)] : rest[idx(v)];
+                        cost += fabs(notes[idx(sub[idx(i)])].pitch - from) + AGE * silent;
                     }
                     if (cost < bestCost) {
                         bestCost = cost;
@@ -1470,8 +1672,10 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
                 }
             }
         }
+
         for (size_t i = 0; i < best.size(); i++) {
-            const int v = best[i], n = bestNotes[i];
+            const int v = best[i];
+            const int n = bestNotes[i];
             strandOf[idx(n)] = v;
             current[idx(v)] = n;
             last[idx(v)] = notes[idx(n)].pitch;
