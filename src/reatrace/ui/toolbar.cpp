@@ -185,7 +185,14 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             }
             text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.onText : g_theme.dim, DT_CENTER);
             break;
-        default: // toggles and buttons
+        case SUGGEST:
+        case CONTOUR:
+        case GHOSTS:
+        case EXPLAIN:
+        case ISOLATE:
+        case FOLLOW:
+        case HELP:
+        case PANEL: // toggles and buttons
             if (on || hov) {
                 cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
             }

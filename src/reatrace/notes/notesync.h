@@ -41,6 +41,12 @@ class Take {
     virtual void deleteText(int i) = 0;
     virtual void insertText(const TextEvent &t) = 0;
     virtual void sort() = 0;
+
+  protected:
+    // Copied only as a whole fake or real take, never through this interface.
+    Take() = default;
+    Take(const Take &) = default;
+    Take &operator=(const Take &) = default;
 };
 
 static const int LYRIC_EVENT = 5; // MIDI meta event type used by REAPER's notation lyrics
