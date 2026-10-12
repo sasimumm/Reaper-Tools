@@ -114,6 +114,18 @@ int main() {
         assert(e.duplicateSelected() && e.notes.size() == 7 && near(e.notes[5].start, 12) &&
                near(e.notes[6].end, 14));
 
+        // nudge: selected notes only, all or nothing
+        e.notes = {{1, 2, 60, true, 0, "la"}, {3, 4, 120, true, 1}, {5, 6, 64, false, 2}};
+        auto later = [](double t) { return t + 0.5; };
+        assert(e.nudgeSelected(later, 1) && near(e.notes[0].start, 1.5) &&
+               near(e.notes[0].end, 2.5) && e.notes[0].pitch == 61 && e.notes[0].lyric == "la");
+        assert(e.notes[1].pitch == 121 && near(e.notes[2].start, 5) && e.notes[2].pitch == 64);
+        assert(!e.nudgeSelected([](double t) { return t; }, 12) && e.notes[1].pitch == 121 &&
+               e.notes[0].pitch == 61); // 133 is out of range: nothing moves
+        assert(!e.nudgeSelected([](double t) { return t - 2; }, 0) && near(e.notes[0].start, 1.5));
+        e.selectAll(false);
+        assert(!e.nudgeSelected(later, 0));
+
         e.notes = {{1, 2, 60, false, 0, "la"}};
         assert(!e.splitAt(1.5)); // nothing selected
         assert(e.splitAt(1.5, 0) && e.notes.size() == 2 && near(e.notes[0].end, 1.5) &&

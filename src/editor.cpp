@@ -236,6 +236,24 @@ bool NoteEditor::duplicateSelected() {
     return true;
 }
 
+bool NoteEditor::nudgeSelected(const std::function<double(double)> &move, int semitones) {
+    std::vector<Note> out = notes;
+    bool any = false;
+    for (Note &n : out) {
+        if (!n.sel) {
+            continue;
+        }
+        n.start = move(n.start), n.end = move(n.end), n.pitch += semitones, any = true;
+        if (n.pitch < 0 || n.pitch > 127 || n.start < 0) {
+            return false;
+        }
+    }
+    if (any) {
+        notes = std::move(out);
+    }
+    return any;
+}
+
 bool NoteEditor::splitAt(double t, int note) {
     bool any = false;
     const size_t count = notes.size();

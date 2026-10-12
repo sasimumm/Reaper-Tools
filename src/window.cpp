@@ -236,6 +236,10 @@ static bool onKey(int key) {
         g_settings.explain = !g_settings.explain;
     } else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) {
         selectVoice(key - '1');
+    } else if ((key == VK_LEFT || key == VK_RIGHT) && !(m & ~MOD_SHIFT)) {
+        nudgeSelected(key == VK_LEFT ? -1 : 1, 0);
+    } else if ((key == VK_UP || key == VK_DOWN) && !(m & ~MOD_SHIFT)) {
+        nudgeSelected(0, (key == VK_UP ? 1 : -1) * (m & MOD_SHIFT ? 12 : 1));
     } else if (key == 'Q' && !m) {
         quantiseSelected();
     } else if (key == 'D' && !m) {
@@ -306,6 +310,11 @@ static bool isOurKey(int key, int flags) {
     case '.' | CHARKEY:
     case '?' | CHARKEY: return true;
     case '/' | CHARKEY: return (flags & FSHIFT) != 0;
+    case VK_LEFT:
+    case VK_RIGHT:
+    case VK_UP:
+    case VK_DOWN: // with notes selected; otherwise REAPER's (move the edit cursor, ...)
+        return !cmd && !(flags & FALT) && firstSelected() >= 0;
     case 'A': return true;
     case 'V':
     case 'C': return cmd;

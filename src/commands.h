@@ -5,6 +5,7 @@
 
 double gridStepQN();
 void quantiseSelected();
+void nudgeSelected(int steps, int semitones);
 const std::vector<Segment> &suggestions();
 int suggestionVoice(size_t i);
 bool covered(const Segment &sg);

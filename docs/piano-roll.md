@@ -146,7 +146,7 @@ vibrato, scoops and slides, so a sung note has to be reduced to one semitone.
 | EDIT-6 | P0 | ✅ | Each gesture is one REAPER undo point (`Undo_BeginBlock2`/`EndBlock2`); selection-only changes make none. |
 | EDIT-7 | P1 | ✅ | Option/alt held = no snap while drawing, moving or resizing. |
 | EDIT-8 | P1 | ✅ | Axis lock during a move once the drag passes 10 px (DrawScribe). Only while shift is held, so diagonal moves still work; releasing shift unlocks (self-checked). |
-| EDIT-9 | P1 | — | Arrow keys nudge selection (left/right = one grid step, up/down = semitone, shift+up/down = octave). |
+| EDIT-9 | P1 | ✅ | Arrow keys nudge selection (left/right = one grid step, up/down = semitone, shift+up/down = octave). The step is the zoom-aware grid (TIME-6), a bar when zoomed out to bars; pitch changes are auditioned. Without a selection the arrows go to REAPER. |
 | EDIT-10 | P1 | ✅ | Copy, paste at edit cursor, duplicate (cmd+D), split at mouse, join selected notes. Keys: cmd+C/X/V, cmd+D, K (split), J (join). cmd+V pastes notes after a copy in this window and lyrics once other text has been copied (the system clipboard isn't overwritten). Split keeps the lyric on the first half; join takes the first note's pitch and joins the lyrics without hyphens (self-checked). Notes pasted past the MIDI item's end are hidden until INT-4. |
 | EDIT-11 | P1 | ✅ | Draw a note and audition it immediately (see §7). |
 | EDIT-12 | P0 | ✅ | Notes get a fixed velocity (96); no velocity editing. |

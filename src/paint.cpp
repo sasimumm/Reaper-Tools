@@ -658,6 +658,8 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Split, join", "K, J"},
           {"Copy, cut, paste, duplicate", "cmd+C, X, V, D"},
           {"Quantise selected", "Q"},
+          {"Nudge time, pitch", "arrows"},
+          {"Nudge an octave", "shift+up, down"},
           {"Delete", "Delete, right-click"}}},
         {"Suggestions and voices",
          {{"Show suggestions", "N"},

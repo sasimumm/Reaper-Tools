@@ -40,6 +40,26 @@ static double snapToGrid(double t) {
     return TimeMap2_QNToTime(NULL, qn - ms < me - qn ? ms : me);
 }
 
+// Arrow keys: left/right one grid step (a bar when zoomed out to bars), up/down a semitone.
+void nudgeSelected(int steps, int semitones) {
+    const auto move = [steps](double t) {
+        const double qn = TimeMap2_timeToQN(NULL, t);
+        double step = gridStepQN();
+        if (step <= 0) {
+            double ms = 0, me = 0;
+            TimeMap_QNToMeasures(NULL, qn, &ms, &me);
+            step = me - ms;
+        }
+        return TimeMap2_QNToTime(NULL, qn + steps * step);
+    };
+    if (g_session.ed.nudgeSelected(move, semitones)) {
+        if (semitones != 0) {
+            previewPitch(g_session.ed.notes[firstSelected()].pitch);
+        }
+        commitNotes();
+    }
+}
+
 // --- quantise -------------------------------------------------------------------------
 
 // Moves selected notes' starts and ends towards the grid by the quantise strength.
