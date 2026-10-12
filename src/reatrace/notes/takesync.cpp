@@ -1,3 +1,5 @@
+// The active voice's notes <-> its MIDI take over REAPER's MIDI API: loading, committing edits
+// as undo points, and the other voices' notes for display.
 #include "notes/takesync.h"
 
 #include "index.h"
@@ -9,6 +11,7 @@ static std::vector<Note> g_loaded; // notes as read from the take, by take index
 
 // --- notes <-> MIDI take ---------------------------------------------------------
 
+// The active voice's notes item's active take, or NULL (also once the item has been deleted).
 MediaItem_Take *midiTake() {
     if (g_session.midi && !ValidatePtr2(NULL, g_session.midi, "MediaItem*")) {
         g_session.midi = NULL;
@@ -20,12 +23,16 @@ MediaItem_Take *midiTake() {
 class ReaperTake : public Take {
   public:
     explicit ReaperTake(MediaItem_Take *take) : m_take(take) {}
+
     const void *identity() override { return m_take; }
+
     std::string hash() override {
         char h[128] = "";
         MIDI_GetHash(m_take, false, h, sizeof(h)); // includes text events, so lyric edits count
         return h;
     }
+
+    // The item's position, start offset and playrate, then every tempo/time signature marker.
     std::string timeMapping() override {
         MediaItem *item = GetMediaItemTake_Item(m_take);
         char buf[160];
@@ -45,23 +52,28 @@ class ReaperTake : public Take {
         }
         return out;
     }
+
     double toTime(double ppq) override { return MIDI_GetProjTimeFromPPQPos(m_take, ppq); }
     double toPPQ(double time) override { return MIDI_GetPPQPosFromProjTime(m_take, time); }
+
     int noteCount() override {
         int notes = 0;
         MIDI_CountEvts(m_take, &notes, NULL, NULL);
         return notes;
     }
+
     NoteEvent note(int i) override {
         NoteEvent e = {0, 0, 0, false};
         MIDI_GetNote(m_take, i, &e.sel, NULL, &e.start, &e.end, NULL, &e.pitch, NULL);
         return e;
     }
+
     int textCount() override {
         int texts = 0;
         MIDI_CountEvts(m_take, NULL, NULL, &texts);
         return texts;
     }
+
     bool text(int i, TextEvent *out) override {
         std::array<char, 1024> msg{};
         int size = static_cast<int>(msg.size()) - 1;
@@ -69,30 +81,38 @@ class ReaperTake : public Take {
                                   &size)) {
             return false;
         }
+        // terminate within the buffer, whatever size comes back
         msg[idx(std::max(0, std::min(size, static_cast<int>(msg.size()) - 1)))] = 0;
         out->text = msg.data();
         return true;
     }
+
     void setNote(int i, const NoteEvent &n) override {
         const bool noSort = true;
         MIDI_SetNote(m_take, i, &n.sel, NULL, &n.start, &n.end, NULL, &n.pitch, NULL, &noSort);
     }
+
     void deleteNote(int i) override { MIDI_DeleteNote(m_take, i); }
+
     void insertNote(const NoteEvent &n, int velocity) override {
         const bool noSort = true;
         MIDI_InsertNote(m_take, n.sel, false, n.start, n.end, 0, n.pitch, velocity, &noSort);
     }
+
     void deleteText(int i) override { MIDI_DeleteTextSysexEvt(m_take, i); }
+
     void insertText(const TextEvent &t) override {
         MIDI_InsertTextSysexEvt(m_take, false, false, t.ppq, t.type, t.text.c_str(),
                                 static_cast<int>(t.text.size()));
     }
+
     void sort() override { MIDI_Sort(m_take); }
 
   private:
     MediaItem_Take *m_take;
 };
 
+// The snapshot of a REAPER take; an empty one for NULL.
 static TakeSnapshot snapshotOf(MediaItem_Take *take) {
     if (!take) {
         return {};
@@ -105,8 +125,10 @@ static TakeSnapshot snapshotOf(MediaItem_Take *take) {
 // item grows to cover them (both edges; events keep their project times).
 static void fitItemToNotes(MediaItem_Take *take) {
     MediaItem *item = GetMediaItemTake_Item(take);
-    const double pos = GetMediaItemInfo_Value(item, "D_POSITION"),
-                 end = pos + GetMediaItemInfo_Value(item, "D_LENGTH");
+    const double pos = GetMediaItemInfo_Value(item, "D_POSITION");
+    const double end = pos + GetMediaItemInfo_Value(item, "D_LENGTH");
+
+    // the notes' extent, project seconds
     ReaperTake t(take);
     double a = pos, b = end;
     for (int i = 0; i < t.noteCount(); i++) {
@@ -121,6 +143,8 @@ static void fitItemToNotes(MediaItem_Take *take) {
 
 bool notesStale() { return snapshotOf(midiTake()) != g_session.snapshot; }
 
+// Reads the active take's notes into the editor (cancelling any gesture), as the new baseline
+// for commitNotes().
 void loadNotes() {
     g_session.ed.cancel();
     MediaItem_Take *take = midiTake();
@@ -179,13 +203,18 @@ void commitNotes() {
     if (changes.data) {
         Undo_BeginBlock2(NULL);
     }
+
+    // no notes item yet: create one when there is something to write
     MediaItem_Take *take = midiTake();
     TakeSnapshot loadedFrom = g_session.snapshot;
-    if (!take && changes.data &&
-        (g_session.midi = VoiceItem(g_session.audio, g_session.voice, true))) {
-        take = GetActiveTake(g_session.midi);
-        loadedFrom = snapshotOf(take); // new and empty: nothing in it to overwrite
+    if (!take && changes.data) {
+        g_session.midi = VoiceItem(g_session.audio, g_session.voice, true);
+        if (g_session.midi) {
+            take = GetActiveTake(g_session.midi);
+            loadedFrom = snapshotOf(take); // new and empty: nothing in it to overwrite
+        }
     }
+
     if (take) {
         ReaperTake t(take);
         if (writeNotes(t, loadedFrom, g_loaded, g_session.ed.notes, g_session.ed.deleted,
@@ -194,6 +223,7 @@ void commitNotes() {
             fitItemToNotes(take);
         }
     }
+
     if (changes.data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
         UpdateArrange();

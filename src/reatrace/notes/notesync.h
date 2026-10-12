@@ -25,8 +25,8 @@ class Take {
     virtual ~Take() = default;
     virtual const void *identity() = 0; // which take this is
     virtual std::string hash() = 0;     // changes with any edit of its events
-    // Changes whenever toTime() would: the item moved, its start offset or rate changed, the tempo map
-    // changed. Notes are kept in project seconds, so this matters as much as the hash.
+    // Changes whenever toTime() would: the item moved, its start offset or rate changed, the tempo
+    // map changed. Notes are kept in project seconds, so this matters as much as the hash.
     virtual std::string timeMapping() = 0;
     virtual double toTime(double ppq) = 0;
     virtual double toPPQ(double time) = 0;
@@ -76,8 +76,8 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
                       const std::vector<int> &deleted);
 
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
-// returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take indices removed
-// (highest first), new notes (idx < 0) inserted. If lyrics changed, the lyric events attached to
+// returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take
+// indices removed (highest first), new notes (idx < 0) inserted. If lyrics changed, the lyric events attached to
 // loaded notes are replaced by one per edited note with a lyric; other text events are left alone.
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<Note> &loaded,
                 const std::vector<Note> &edited, const std::vector<int> &deleted, int velocity);

@@ -7,9 +7,10 @@
 #include <string>
 #include <vector>
 
+// A note in the editor.
 struct Note {
     double start, end; // project time, seconds
-    int pitch;
+    int pitch;         // MIDI note number
     bool sel;
     int idx; // index in the MIDI take, -1 for notes not written yet
     std::string lyric = {};
@@ -37,29 +38,32 @@ std::vector<std::string> splitSyllables(const std::string &text);
 
 // No modes: drag on empty space draws, drag a note body moves, drag an edge resizes,
 // shift+drag on empty space selects with a marquee, cmd+click toggles selection.
-// alt disables snapping, shift locks a move to time or pitch. Moves and resizes apply original + delta, snapped via the anchor note.
+// alt disables snapping, shift locks a move to time or pitch. Moves and resizes apply original +
+// delta, snapped via the anchor note. Mouse positions are window pixels, mods MOD_* flags.
 class NoteEditor {
   public:
     enum Hit { NONE, BODY, LEFT, RIGHT };
 
     std::vector<Note> notes;
     std::vector<int> deleted; // take indices deleted since notes were loaded
-    std::function<double(double)> snap = [](double t) { return t; };
-    double minLen = 0.05; // seconds
+    std::function<double(double)> snap = [](double t) { return t; }; // seconds to seconds
+    double minLen = 0.05;                                            // seconds
     int velocity = 96;
     int moves = 0; // counts mouse moves, so caches of the notes can tell a drag step happened
 
+    // What is at (x, y), the topmost note's index in *noteIndex.
     Hit hitTest(const ViewMap &v, double x, double y, int *noteIndex) const;
     void mouseDown(const ViewMap &v, double x, double y, int mods);
     void mouseMove(const ViewMap &v, double x, double y, int mods);
-    bool mouseUp(const ViewMap &v, double x, double y,
-                 int mods); // true if notes or selection changed
-    void cancel();          // abort the current gesture
+    // true if notes or selection changed
+    bool mouseUp(const ViewMap &v, double x, double y, int mods);
+    void cancel(); // abort the current gesture
     bool active() const { return mode != IDLE; }
 
+    // These return true if anything changed; deleted notes' take indices go to `deleted`.
     bool deleteSelected();
     bool selectAll(bool sel);
-    bool deleteAt(const ViewMap &v, double x, double y);
+    bool deleteAt(const ViewMap &v, double x, double y); // the note at (x, y)
 
     // Editing commands; all return true if notes changed. New notes come out selected.
     std::vector<Note> copySelected() const;               // as unwritten notes, lyrics kept
@@ -78,18 +82,23 @@ class NoteEditor {
     int drawing() const { return mode == DRAW ? drawIndex : -1; }
     // the note being drawn, moved or resized, -1 if none
     int dragNote() const {
-        return mode == DRAW                                           ? drawIndex
-               : mode == MOVE || mode == RESIZE_L || mode == RESIZE_R ? anchor
-                                                                      : -1;
+        if (mode == DRAW) {
+            return drawIndex;
+        }
+        if (mode == MOVE || mode == RESIZE_L || mode == RESIZE_R) {
+            return anchor;
+        }
+        return -1;
     }
 
   private:
     enum Mode { IDLE, PENDING_DRAW, DRAW, PENDING_DRAG, MOVE, RESIZE_L, RESIZE_R, MARQUEE };
     Mode mode = IDLE;
-    Hit dragHit = NONE;
-    double downX = 0, downY = 0, curX = 0, curY = 0;
-    int anchor = -1, drawIndex = -1;
-    bool changed = false, cmdMarquee = false;
+    Hit dragHit = NONE;                              // where the pending drag was pressed
+    double downX = 0, downY = 0, curX = 0, curY = 0; // window pixels
+    int anchor = -1, drawIndex = -1; // the note pressed (it snaps for all), the note being drawn
+    bool changed = false;            // since mouse down
+    bool cmdMarquee = false;         // the marquee adds to the selection
     enum Axis { AXIS_FREE, AXIS_TIME, AXIS_PITCH } axis = AXIS_FREE; // shift+move: only along this
     std::vector<Note> orig;                                          // notes at mouse down
 };

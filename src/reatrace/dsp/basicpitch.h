@@ -8,7 +8,8 @@
 #include <vector>
 
 struct BasicPitch {
-    static const int PITCHES = 88, LOWEST = 21; // A0 .. C8
+    static const int PITCHES = 88; // A0 .. C8
+    static const int LOWEST = 21;  // MIDI pitch of the first row, A0
     int frames = 0; // on the uniform 256-sample hop at 22050 Hz: frame f is sample f*256
     std::vector<float> note, onset; // frames*PITCHES, 0..1
 

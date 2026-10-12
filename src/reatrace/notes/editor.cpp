@@ -1,3 +1,4 @@
+// Note editing gestures (draw, move, resize, marquee) and editing commands on a note list.
 #include "notes/editor.h"
 
 #include "index.h"
@@ -10,12 +11,15 @@ static const double INFLATE = 3, EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD =
 // Shift while moving locks to the axis the drag mostly went along once it passes this (DrawScribe).
 static const double AXIS_LOCK_THRESHOLD = 10;
 
+// Keeps a pitch within MIDI's 0..127.
+static int clampPitch(int pitch) { return std::max(0, std::min(127, pitch)); }
+
 NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *noteIndex) const {
-    for (int i = static_cast<int>(notes.size()) - 1; i >= 0; i--) // last drawn is on top
-    {
+    // last drawn is on top
+    for (int i = static_cast<int>(notes.size()) - 1; i >= 0; i--) {
         const Note &n = notes[idx(i)];
-        const double x0 = v.x(n.start), x1 = v.x(n.end), y0 = v.y(n.pitch + 0.5),
-                     y1 = v.y(n.pitch - 0.5);
+        const double x0 = v.x(n.start), x1 = v.x(n.end);
+        const double y0 = v.y(n.pitch + 0.5), y1 = v.y(n.pitch - 0.5);
         if (x < x0 - INFLATE || x > x1 + INFLATE || y < y0 - INFLATE || y > y1 + INFLATE) {
             continue;
         }
@@ -42,6 +46,7 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
     changed = false;
     axis = AXIS_FREE;
     orig = notes;
+
     int i = -1;
     Hit h = hitTest(v, x, y, &i);
     if (h == NONE) {
@@ -55,6 +60,8 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
         mode = IDLE;
         return;
     }
+
+    // pressing an unselected note selects just it; a selected one keeps the selection (to drag it)
     if (!notes[idx(i)].sel) {
         for (Note &n : notes) {
             n.sel = false;
@@ -75,12 +82,13 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
     const bool past = fabs(x - downX) >= DRAG_THRESHOLD || fabs(y - downY) >= DRAG_THRESHOLD;
     auto sn = [&](double t) { return (mods & MOD_ALT) ? t : snap(t); };
 
+    // past the drag threshold, a pending gesture starts
     if (mode == PENDING_DRAW && past) {
         for (Note &n : notes) {
             n.sel = false;
         }
         const double t = sn(v.t(downX));
-        notes.push_back({t, t + minLen, std::max(0, std::min(127, v.pitchAt(downY))), true, -1});
+        notes.push_back({t, t + minLen, clampPitch(v.pitchAt(downY)), true, -1});
         drawIndex = static_cast<int>(notes.size()) - 1;
         mode = DRAW;
     }
@@ -88,10 +96,11 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         mode = dragHit == LEFT ? RESIZE_L : dragHit == RIGHT ? RESIZE_R : MOVE;
     }
 
-    const double dtRaw = v.t(x) - v.t(downX);
+    const double dtRaw = v.t(x) - v.t(downX); // seconds since mouse down, unsnapped
     if (mode == DRAW) {
         Note &n = notes[idx(drawIndex)];
-        const double a = sn(v.t(downX)), b = sn(v.t(x));
+        const double a = sn(v.t(downX));
+        const double b = sn(v.t(x));
         n.start = std::min(a, b);
         n.end = std::max(std::max(a, b), n.start + minLen);
     } else if (mode == MOVE) {
@@ -101,6 +110,7 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         } else if (axis == AXIS_FREE && (ax > AXIS_LOCK_THRESHOLD || ay > AXIS_LOCK_THRESHOLD)) {
             axis = ax >= ay ? AXIS_TIME : AXIS_PITCH;
         }
+        // the anchor's start snaps; every selected note moves by the same amount
         const Note &a = orig[idx(anchor)];
         const double dt = axis == AXIS_PITCH ? 0 : sn(a.start + dtRaw) - a.start;
         const int dp = axis == AXIS_TIME ? 0 : v.pitchAt(y) - v.pitchAt(downY);
@@ -108,22 +118,26 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
             if (orig[i].sel) {
                 notes[i].start = orig[i].start + dt;
                 notes[i].end = orig[i].end + dt;
-                notes[i].pitch = std::max(0, std::min(127, orig[i].pitch + dp));
+                notes[i].pitch = clampPitch(orig[i].pitch + dp);
             }
         }
     } else if (mode == RESIZE_R || mode == RESIZE_L) {
+        // the anchor's edge snaps; every selected note's edge moves by the same amount
         const Note &a = orig[idx(anchor)];
-        const double edge = mode == RESIZE_R ? a.end : a.start, dt = sn(edge + dtRaw) - edge;
+        const double edge = mode == RESIZE_R ? a.end : a.start;
+        const double dt = sn(edge + dtRaw) - edge;
         for (size_t i = 0; i < notes.size(); i++) {
-            if (orig[i].sel) {
-                if (mode == RESIZE_R) {
-                    notes[i].end = std::max(orig[i].start + minLen, orig[i].end + dt);
-                } else {
-                    notes[i].start = std::min(orig[i].end - minLen, orig[i].start + dt);
-                }
+            if (!orig[i].sel) {
+                continue;
+            }
+            if (mode == RESIZE_R) {
+                notes[i].end = std::max(orig[i].start + minLen, orig[i].end + dt);
+            } else {
+                notes[i].start = std::min(orig[i].end - minLen, orig[i].start + dt);
             }
         }
     } else if (const std::optional<Box> r = marquee()) {
+        // cmd+marquee adds to the selection made before it
         for (size_t i = 0; i < notes.size(); i++) {
             const Note &n = notes[i];
             const bool in = v.x(n.end) >= r->x0 && v.x(n.start) <= r->x1 &&
@@ -137,12 +151,15 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
     if (mode != IDLE) {
         mouseMove(v, x, y, mods);
     }
-    if (mode == PENDING_DRAW) { // click on empty space
+
+    if (mode == PENDING_DRAW) {
+        // click on empty space
         for (Note &n : notes) {
             changed |= n.sel;
             n.sel = false;
         }
-    } else if (mode == PENDING_DRAG) { // click on an already selected note: select just it
+    } else if (mode == PENDING_DRAG) {
+        // click on an already selected note: select just it
         for (size_t i = 0; i < notes.size(); i++) {
             const bool sel = static_cast<int>(i) == anchor;
             changed |= notes[i].sel != sel;
@@ -157,6 +174,7 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
             }
         }
     }
+
     mode = IDLE;
     anchor = drawIndex = -1;
     return changed;
@@ -173,13 +191,14 @@ void NoteEditor::cancel() {
 bool NoteEditor::deleteSelected() {
     bool any = false;
     for (size_t i = notes.size(); i-- > 0;) {
-        if (notes[i].sel) {
-            if (notes[i].idx >= 0) {
-                deleted.push_back(notes[i].idx);
-            }
-            notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
-            any = true;
+        if (!notes[i].sel) {
+            continue;
         }
+        if (notes[i].idx >= 0) {
+            deleted.push_back(notes[i].idx);
+        }
+        notes.erase(notes.begin() + static_cast<std::ptrdiff_t>(i));
+        any = true;
     }
     return any;
 }
@@ -240,16 +259,16 @@ bool NoteEditor::duplicateSelected() {
     if (clip.empty()) {
         return false;
     }
-    double a = clip[0].start, b = clip[0].end;
+    double end = clip[0].end;
     for (const Note &n : clip) {
-        a = std::min(a, n.start);
-        b = std::max(b, n.end);
+        end = std::max(end, n.end);
     }
-    paste(clip, b);
+    paste(clip, end);
     return true;
 }
 
 bool NoteEditor::nudgeSelected(const std::function<double(double)> &move, int semitones) {
+    // on a copy, so nothing changes if any note would go out of range
     std::vector<Note> out = notes;
     bool any = false;
     for (Note &n : out) {
@@ -272,17 +291,14 @@ bool NoteEditor::nudgeSelected(const std::function<double(double)> &move, int se
 
 bool NoteEditor::splitAt(double t, int note) {
     bool any = false;
-    const size_t count = notes.size();
+    const size_t count = notes.size(); // not the halves added on the way
     for (size_t i = 0; i < count; i++) {
-        if (note >= 0 ? static_cast<int>(i) != note : !notes[i].sel) {
+        const bool wanted = note >= 0 ? static_cast<int>(i) == note : notes[i].sel;
+        if (!wanted || t < notes[i].start + minLen || t > notes[i].end - minLen) {
             continue;
         }
-        if (t < notes[i].start + minLen || t > notes[i].end - minLen) {
-            continue;
-        }
-        Note second = {
-            t, notes[i].end, notes[i].pitch, notes[i].sel, -1
-        }; // the lyric stays on the first half
+        // the lyric stays on the first half
+        Note second = {t, notes[i].end, notes[i].pitch, notes[i].sel, -1};
         notes[i].end = t;
         notes.push_back(second);
         any = true;
@@ -302,6 +318,7 @@ bool NoteEditor::joinSelected() {
     }
     std::sort(sel.begin(), sel.end(),
               [&](int a, int b) { return notes[idx(a)].start < notes[idx(b)].start; });
+
     Note &first = notes[idx(sel[0])];
     // lyrics are joined, dropping the hyphens between syllables: "hel-" + "lo" -> "hello"
     for (size_t k = 1; k < sel.size(); k++) {
@@ -315,6 +332,8 @@ bool NoteEditor::joinSelected() {
         }
         first.lyric += n.lyric;
     }
+
+    // remove the rest, highest index first so the others stay valid
     std::sort(sel.begin() + 1, sel.end(), std::greater<int>());
     for (size_t k = 1; k < sel.size(); k++) {
         if (notes[idx(sel[k])].idx >= 0) {
@@ -340,13 +359,16 @@ std::vector<std::string> splitSyllables(const std::string &text) {
     for (char ch : text) {
         if (isspace(static_cast<unsigned char>(ch))) {
             if (!cur.empty()) {
-                out.push_back(cur), cur.clear();
+                out.push_back(cur);
+                cur.clear();
             }
             continue;
         }
         cur += ch;
+        // a lone "-" isn't a syllable: it's kept to start the next one
         if (ch == '-' && cur != "-") {
-            out.push_back(cur), cur.clear();
+            out.push_back(cur);
+            cur.clear();
         }
     }
     if (!cur.empty() && cur != "-") {

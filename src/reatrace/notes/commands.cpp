@@ -1,3 +1,5 @@
+// Editing commands on the active voice's notes: grid snapping, nudge, quantise, suggestions,
+// clipboard, loop and split.
 #include "notes/commands.h"
 
 #include "analysis.h"
@@ -9,36 +11,48 @@
 #include <span>
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
+static const double MIN_GRID_PX = 10;        // grid lines at least this far apart
+static const int SUGGESTION_HIT_SLOP = 2;    // pixels around a suggestion that still hit it
+
+// The suggestions shown: the contour's segments or the note estimator's.
 const std::vector<Segment> &suggestions() {
     return g_settings.suggestFrom ? g_analysis.segments : g_analysis.estimated;
 }
-// The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the active voice's.
+
+// The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the
+// active voice's.
 int suggestionVoice(size_t i) {
-    return g_settings.suggestFrom || i >= g_analysis.estimatedVoice.size()
-               ? g_session.voice
-               : g_analysis.estimatedVoice[i];
+    if (g_settings.suggestFrom || i >= g_analysis.estimatedVoice.size()) {
+        return g_session.voice;
+    }
+    return g_analysis.estimatedVoice[i];
 }
 
 // --- grid ------------------------------------------------------------------------
 
-// Finest straight division (in quarter notes) at least 10 px apart, or 0 for "measures".
+// Finest straight division (in quarter notes) at least MIN_GRID_PX apart, or 0 for "measures".
+// Measured at the tempo 200 px into the note area.
 double gridStepQN() {
-    const double tMid = g_ui.view.t(g_ui.view.x0 + 200), qn = TimeMap2_timeToQN(NULL, tMid);
+    const double tMid = g_ui.view.t(g_ui.view.x0 + 200);
+    const double qn = TimeMap2_timeToQN(NULL, tMid);
     for (double step : {0.125, 0.25, 0.5, 1.0}) {
-        if ((TimeMap2_QNToTime(NULL, qn + step) - TimeMap2_QNToTime(NULL, qn)) * g_ui.view.pps >=
-            10) {
+        const double px =
+            (TimeMap2_QNToTime(NULL, qn + step) - TimeMap2_QNToTime(NULL, qn)) * g_ui.view.pps;
+        if (px >= MIN_GRID_PX) {
             return step;
         }
     }
     return 0;
 }
 
+// Nearest grid line to t (seconds), or the nearest measure start when the grid is in measures.
 static double snapToGrid(double t) {
-    const double qn = TimeMap2_timeToQN(NULL, t), step = gridStepQN();
+    const double qn = TimeMap2_timeToQN(NULL, t);
+    const double step = gridStepQN();
     if (step > 0) {
         return TimeMap2_QNToTime(NULL, floor(qn / step + 0.5) * step);
     }
-    double ms = 0, me = 0;
+    double ms = 0, me = 0; // start of this measure and the next, QN
     TimeMap_QNToMeasures(NULL, qn, &ms, &me);
     return TimeMap2_QNToTime(NULL, qn - ms < me - qn ? ms : me);
 }
@@ -55,12 +69,13 @@ void nudgeSelected(int steps, int semitones) {
         }
         return TimeMap2_QNToTime(NULL, qn + steps * step);
     };
-    if (g_session.ed.nudgeSelected(move, semitones)) {
-        if (semitones != 0) {
-            previewPitch(g_session.ed.notes[idx(firstSelected())].pitch);
-        }
-        commitNotes();
+    if (!g_session.ed.nudgeSelected(move, semitones)) {
+        return;
     }
+    if (semitones != 0) {
+        previewPitch(g_session.ed.notes[idx(firstSelected())].pitch);
+    }
+    commitNotes();
 }
 
 // --- quantise -------------------------------------------------------------------------
@@ -86,40 +101,46 @@ bool covered(size_t i) {
     static double audioPos = 0;
     const std::vector<Segment> &sug = suggestions();
     const int drag = g_session.ed.active() ? g_session.ed.moves : -1;
-    if (moves != drag || notesVersion != g_session.notesVersion ||
-        valVersion != g_analysis.valVersion || suggestFrom != g_settings.suggestFrom ||
-        count != sug.size() || audioPos != g_session.audioPos) {
-        moves = drag;
-        notesVersion = g_session.notesVersion;
-        valVersion = g_analysis.valVersion;
-        suggestFrom = g_settings.suggestFrom;
-        count = sug.size();
-        audioPos = g_session.audioPos;
-        std::array<std::vector<const Note *>, 128> byPitch;
-        auto add = [&](const std::vector<Note> &notes) {
-            for (const Note &n : notes) {
-                if (n.pitch >= 0 && n.pitch < 128) {
-                    byPitch[idx(n.pitch)].push_back(&n);
-                }
-            }
-        };
-        add(g_session.ed.notes);
-        for (int v = 0; v < WINDOW_VOICES; v++) {
-            if (v != g_session.voice) {
-                add(g_session.others[idx(v)].notes);
+    const bool cached = moves == drag && notesVersion == g_session.notesVersion &&
+                        valVersion == g_analysis.valVersion &&
+                        suggestFrom == g_settings.suggestFrom && count == sug.size() &&
+                        audioPos == g_session.audioPos;
+    if (cached) {
+        return i < flags.size() && flags[i];
+    }
+    moves = drag;
+    notesVersion = g_session.notesVersion;
+    valVersion = g_analysis.valVersion;
+    suggestFrom = g_settings.suggestFrom;
+    count = sug.size();
+    audioPos = g_session.audioPos;
+
+    std::array<std::vector<const Note *>, 128> byPitch;
+    auto add = [&](const std::vector<Note> &notes) {
+        for (const Note &n : notes) {
+            if (n.pitch >= 0 && n.pitch < 128) {
+                byPitch[idx(n.pitch)].push_back(&n);
             }
         }
-        flags.assign(sug.size(), 0);
-        for (size_t k = 0; k < sug.size(); k++) {
-            const Segment &sg = sug[k];
-            const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
-            for (int q = std::max(0, static_cast<int>(ceil(sg.pitch - 1)));
-                 q <= std::min(127, static_cast<int>(floor(sg.pitch + 1))) && !flags[k]; q++) {
-                for (const Note *n : byPitch[idx(q)]) {
-                    if (coversSuggestion(*n, a, b, sg.pitch)) {
-                        flags[k] = 1;
-                        break;
-                    }
+    };
+    add(g_session.ed.notes);
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        if (v != g_session.voice) {
+            add(g_session.others[idx(v)].notes);
+        }
+    }
+
+    flags.assign(sug.size(), 0);
+    for (size_t k = 0; k < sug.size(); k++) {
+        const Segment &sg = sug[k];
+        const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
+        const int lo = std::max(0, static_cast<int>(ceil(sg.pitch - 1)));
+        const int hi = std::min(127, static_cast<int>(floor(sg.pitch + 1)));
+        for (int q = lo; q <= hi && !flags[k]; q++) {
+            for (const Note *n : byPitch[idx(q)]) {
+                if (coversSuggestion(*n, a, b, sg.pitch)) {
+                    flags[k] = 1;
+                    break;
                 }
             }
         }
@@ -127,6 +148,8 @@ bool covered(size_t i) {
     return i < flags.size() && flags[i];
 }
 
+// A suggestion's rect in window pixels: its time span on its rounded pitch's row, at least 2 px
+// wide and 3 px high.
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
     const int p = static_cast<int>(lround(sg.pitch));
     *x0 = static_cast<int>(lround(g_ui.view.x(frameTime(sg.f0))));
@@ -140,46 +163,52 @@ bool suggestionHidden(size_t i) {
     return v >= 0 && (g_ui.hiddenVoices >> v & 1);
 }
 
+// The shown, uncovered suggestion at window pixel (x, y), or -1.
 int suggestionAt(int x, int y) {
     if (!g_settings.suggest) {
         return -1;
     }
+    const int slop = SUGGESTION_HIT_SLOP;
     const std::vector<Segment> &sug = suggestions();
     for (size_t i = 0; i < sug.size(); i++) {
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         segmentRect(sug[i], &x0, &y0, &x1, &y1);
-        if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !suggestionHidden(i) &&
-            !covered(i)) {
+        const bool inside = x >= x0 - slop && x < x1 + slop && y >= y0 - slop && y < y1 + slop;
+        if (inside && !suggestionHidden(i) && !covered(i)) {
             return static_cast<int>(i);
         }
     }
     return -1;
 }
 
+// The earliest selected note, or -1.
 int firstSelected() {
+    const std::vector<Note> &notes = g_session.ed.notes;
     int best = -1;
-    for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
-        if (g_session.ed.notes[i].sel &&
-            (best < 0 || g_session.ed.notes[i].start < g_session.ed.notes[idx(best)].start)) {
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (notes[i].sel && (best < 0 || notes[i].start < notes[idx(best)].start)) {
             best = static_cast<int>(i);
         }
     }
     return best;
 }
 
+// Nearest onset within ONSET_SNAP_RANGE of t (the later one on a tie), else t.
 static double snapToOnsets(double t) {
-    auto it = std::lower_bound(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end(), t);
+    const auto &times = g_analysis.snapTimes;
+    auto it = std::lower_bound(times.begin(), times.end(), t);
     double best = t, dist = ONSET_SNAP_RANGE;
-    if (it != g_analysis.snapTimes.end() && *it - t <= dist) {
+    if (it != times.end() && *it - t <= dist) {
         best = *it;
         dist = *it - t;
     }
-    if (it != g_analysis.snapTimes.begin() && t - *(it - 1) < dist) {
+    if (it != times.begin() && t - *(it - 1) < dist) {
         best = *(it - 1);
     }
     return best;
 }
 
+// Points the editor's snap at the snap mode chosen in the toolbar.
 void setupEditorSnap() {
     if (g_settings.snapMode == SNAP_GRID) {
         g_session.ed.snap = snapToGrid;
@@ -190,14 +219,15 @@ void setupEditorSnap() {
     }
 }
 
+// Suggestion i as a new, solely selected note of the active voice.
 void acceptSuggestion(int i) {
     const Segment &sg = suggestions()[idx(i)];
+    const int pitch = static_cast<int>(lround(sg.pitch));
     for (Note &o : g_session.ed.notes) {
         o.sel = false;
     }
-    g_session.ed.notes.push_back(
-        {frameTime(sg.f0), frameTime(sg.f1 + 1), static_cast<int>(lround(sg.pitch)), true, -1});
-    previewPitch(static_cast<int>(lround(sg.pitch)));
+    g_session.ed.notes.push_back({frameTime(sg.f0), frameTime(sg.f1 + 1), pitch, true, -1});
+    previewPitch(pitch);
     commitNotes();
 }
 
@@ -216,6 +246,9 @@ void acceptVisibleSuggestions() {
         }
         byVoice[idx(v)].push_back({a, b, static_cast<int>(lround(sg.pitch)), false, -1});
     }
+
+    // other voices' takes are written directly, so they need an undo block of their own; the
+    // active voice's notes go through commitNotes()
     bool others = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
         others |= v != g_session.voice && !byVoice[idx(v)].empty();
@@ -243,12 +276,11 @@ void acceptVisibleSuggestions() {
 // A freshly drawn note takes the median sung pitch under it when that is within two semitones.
 void pitchFromContour(Note &nt) {
     const double fr = g_analysis.spec->frameRate();
+    const int f0 = static_cast<int>(lround((nt.start - g_session.audioPos) * fr));
+    const int f1 = static_cast<int>(lround((nt.end - g_session.audioPos) * fr));
+    const int skip = static_cast<int>(lround(0.05 * fr)); // the scoop into the note
     double sung = 0;
-    if (contourMedian(g_analysis.contour,
-                      static_cast<int>(lround((nt.start - g_session.audioPos) * fr)),
-                      static_cast<int>(lround((nt.end - g_session.audioPos) * fr)),
-                      static_cast<int>(lround(0.05 * fr)), &sung) &&
-        fabs(sung - nt.pitch) <= 2) {
+    if (contourMedian(g_analysis.contour, f0, f1, skip, &sung) && fabs(sung - nt.pitch) <= 2) {
         nt.pitch = static_cast<int>(lround(sung));
     }
 }
@@ -288,7 +320,7 @@ void setSelection(double a, double b) {
 
 // R: loop the selected notes' range (else the time selection) from its start; again to stop.
 void loopPlay() {
-    if (GetPlayState() & 1) {
+    if (GetPlayState() & 1) { // playing
         OnStopButton();
         return;
     }
@@ -316,13 +348,14 @@ void loopPlay() {
 void splitNotes() {
     const Rect n = noteArea();
     int hit = -1;
-    const bool inArea = n.in(g_ui.mouseX, g_ui.mouseY);
-    if (inArea) {
+    double t = 0;
+    if (n.in(g_ui.mouseX, g_ui.mouseY)) {
         g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &hit);
+        const double mouseT = g_ui.view.t(g_ui.mouseX);
+        t = (mods() & MOD_ALT) ? mouseT : g_session.ed.snap(mouseT);
+    } else {
+        t = GetCursorPosition();
     }
-    const double t = inArea ? ((mods() & MOD_ALT) ? g_ui.view.t(g_ui.mouseX)
-                                                  : g_session.ed.snap(g_ui.view.t(g_ui.mouseX)))
-                            : GetCursorPosition();
     if (g_session.ed.splitAt(t, hit)) {
         commitNotes();
     }

@@ -1,3 +1,4 @@
+// The isolate JSFX source, generated so its slider layout follows isolate.h.
 #include "playback/isolate.h"
 
 #include <sstream>
@@ -11,6 +12,7 @@
 // everything passes.
 std::string isolateJSFX() {
     std::ostringstream s;
+    // sliders: width, background, then per voice its change count and (time, pitch) pairs
     s << "desc:" << ISOLATE_DESC << " (written by the ReaTrace extension)\n"
       << "slider1:100<20,400,1>Width (cents)\n"
       << "slider2:-24<-60,0,1>Background (dB)\n";
@@ -25,6 +27,7 @@ std::string isolateJSFX() {
               << i + 1 << "\n";
         }
     }
+
     s << "in_pin:left\nin_pin:right\nout_pin:left\nout_pin:right\n\n@init\n"
       << "VOICES = " << ISOLATE_VOICES << "; STRIDE = " << 1 + 2 * ISOLATE_CHANGES << ";\n"
       << R"(H = 40; // most bands per voice

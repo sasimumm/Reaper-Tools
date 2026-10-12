@@ -1,7 +1,9 @@
+// Reading the editor's notes from a Take and writing edits back, independent of REAPER.
 #include "notes/notesync.h"
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 
 TakeSnapshot snapshotOf(Take &take) { return {take.identity(), take.hash(), take.timeMapping()}; }
 
@@ -14,13 +16,13 @@ std::vector<Note> readNotes(Take &take) {
         notes.push_back({take.toTime(e.start), take.toTime(e.end), e.pitch, e.sel, i});
         startPPQ.push_back(e.start);
     }
+
     // notes by start (ties by index), to find each lyric's note without scanning them all
     std::vector<size_t> byStart(notes.size());
-    for (size_t n = 0; n < byStart.size(); n++) {
-        byStart[n] = n;
-    }
+    std::iota(byStart.begin(), byStart.end(), size_t{0});
     std::stable_sort(byStart.begin(), byStart.end(),
                      [&](size_t a, size_t b) { return startPPQ[a] < startPPQ[b]; });
+
     const int texts = take.textCount();
     for (int i = 0; i < texts; i++) {
         Take::TextEvent t;
@@ -41,8 +43,14 @@ std::vector<Note> readNotes(Take &take) {
     return notes;
 }
 
+// Whether n was read from the take (it is loaded[n.idx]), rather than added since.
 static bool known(const Note &n, const std::vector<Note> &loaded) {
     return n.idx >= 0 && n.idx < static_cast<int>(loaded.size());
+}
+
+// n as a take note event, with its times in PPQ.
+static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel) {
+    return {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
 }
 
 NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &edited,
@@ -61,6 +69,7 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
         }
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         c.data |= n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
+        // a lyric event sits at its note's start, so it moves with it
         c.lyrics |= n.lyric != o.lyric || (n.start != o.start && !n.lyric.empty());
     }
     return c;
@@ -72,13 +81,15 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
         return false;
     }
     const bool lyrics = diffNotes(loaded, edited, deleted).lyrics;
+
+    // changed notes in place, then deletions, then new notes: indices stay valid until sort()
     for (const Note &n : edited) {
         if (!known(n, loaded)) {
             continue;
         }
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
-            take.setNote(n.idx, {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, n.sel});
+            take.setNote(n.idx, toEvent(take, n, n.sel));
         }
     }
     std::vector<int> del = deleted;
@@ -88,9 +99,10 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
     }
     for (const Note &n : edited) {
         if (n.idx < 0) {
-            take.insertNote({take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, n.sel}, velocity);
+            take.insertNote(toEvent(take, n, n.sel), velocity);
         }
     }
+
     if (lyrics) {
         std::vector<int> old;
         for (const Note &o : loaded) {
@@ -114,7 +126,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
 
 void appendNotes(Take &take, const std::vector<Note> &notes, int velocity) {
     for (const Note &n : notes) {
-        take.insertNote({take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, false}, velocity);
+        take.insertNote(toEvent(take, n, false), velocity);
     }
     take.sort();
 }
