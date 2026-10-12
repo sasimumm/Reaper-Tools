@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -121,7 +122,7 @@ struct Fx {
     }
 
     // Runs x through the effect, block by block as REAPER would, the same signal on both channels.
-    std::vector<float> run(const std::vector<float> &x) {
+    std::vector<float> run(std::span<const float> x) {
         std::vector<float> y(x.size());
         for (size_t b = 0; b < x.size(); b += BLOCK) {
             *playPos = static_cast<double>(b) / SR;
@@ -159,7 +160,7 @@ static std::vector<float> tone(double pitch, double seconds, double vibratoCents
 }
 
 // level of y relative to x in dB over [a, b) seconds
-static double gainDb(const std::vector<float> &x, const std::vector<float> &y, double a, double b) {
+static double gainDb(std::span<const float> x, std::span<const float> y, double a, double b) {
     double ex = 0, ey = 0;
     for (size_t i = static_cast<size_t>(a * SR); i < static_cast<size_t>(b * SR) && i < x.size();
          i++) {

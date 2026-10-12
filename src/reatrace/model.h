@@ -3,6 +3,7 @@
 #pragma once
 
 #include <functional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -88,7 +89,7 @@ void decodeSettings(const char *str, Settings &s);
 
 // Moves the selected notes' starts and ends towards snap() by `strength` (0..1), keeping each at
 // least minLen long (all in project seconds); true if any moved.
-bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)> &snap,
+bool quantiseNotes(std::span<Note> notes, const std::function<double(double)> &snap,
                    double strength, double minLen);
 
 // Whether a drawn note hides a suggestion at [start, end) seconds and `pitch` (semitones): within

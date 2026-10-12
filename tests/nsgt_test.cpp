@@ -5,13 +5,14 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <vector>
 
 #include "dsp/nsgt.h"
 #include "index.h"
 
 // The default NSGT of x.
-static Spectrogram analyze(const std::vector<float> &x) {
+static Spectrogram analyze(std::span<const float> x) {
     return computeNSGT(NSGTParams(), static_cast<long long>(x.size()),
                        [&](long long start, std::span<float> out) { readPadded(x, start, out); });
 }

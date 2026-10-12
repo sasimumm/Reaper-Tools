@@ -4,6 +4,7 @@
 
 #include "index.h"
 #include <functional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,6 @@ struct BasicPitch {
 
 // mono: audio at 22050 Hz. modelPath: the compiled model (nmp.mlmodelc). progress(fraction)
 // returning false cancels. Returns false (and sets *error) if the model can't be loaded or run.
-bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono, int frames,
+bool runBasicPitch(const std::string &modelPath, std::span<const float> mono, int frames,
                    BasicPitch &out, std::string *error = nullptr,
                    const std::function<bool(double)> &progress = nullptr);

@@ -26,7 +26,7 @@ NSGTParams estimateNSGTParams() { return NSGTParams(); }
 
 // Divide by the 99th percentile (numpy's linear interpolation) of the frame maxima; roll is
 // frames x n. The divisor is at least 1e-12.
-static void normaliseP99(std::vector<float> &roll, int n) {
+static void normaliseP99(std::span<float> roll, int n) {
     const int F = n > 0 ? static_cast<int>(roll.size() / idx(n)) : 0;
     if (!F) {
         return;
@@ -122,7 +122,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
     // partial amplitudes A[region * NH + h], starting from the h^-ROLLOFF rolloff
     const int regions = (P - 1) / (SUB * REGION) + 1;
     auto reg = [](int p) { return p / (SUB * REGION); };
-    std::vector<double> init(NH);
+    std::array<double, NH> init{};
     for (int h = 0; h < NH; h++) {
         init[idx(h)] = pow(h + 1.0, -ROLLOFF);
     }
@@ -386,7 +386,7 @@ static void biquadRun(const Biquad &q, auto &&x) {
 }
 
 // zero-phase: forward, then backward
-static void filtfilt(const std::array<Biquad, 2> &sos, std::vector<float> &x) {
+static void filtfilt(const std::array<Biquad, 2> &sos, std::span<float> x) {
     if (x.empty()) {
         return;
     }
@@ -402,7 +402,7 @@ static void filtfilt(const std::array<Biquad, 2> &sos, std::vector<float> &x) {
 // and sum over the bands, then one inverse FFT per frame gives the summed generalised ACF. Its
 // sub-octave peaks are removed, and each semitone takes the maximum over its lags. Chunks run in
 // parallel.
-std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,
+std::vector<float> sacfRoll(std::span<const float> mono, int frames, int lo, int hi,
                             const std::function<bool(double)> &progress) {
     const int n = hi - lo + 1;
     const int F = std::max(0, frames);
@@ -593,7 +593,7 @@ struct Activity {
 // Median over 5 frames along time ("reflect" edges as scipy), gate, local pitch peaks, absolute and
 // relative thresholds (halved for `hold`), and no upper octave weaker than oct x the note below.
 // gate: frames x n, or null for none.
-static Activity activity(const std::vector<float> &roll, int F, int n,
+static Activity activity(std::span<const float> roll, int F, int n,
                          const std::vector<unsigned char> *gate, double absT, double rel,
                          double oct) {
     Activity a;
@@ -662,13 +662,13 @@ static const float REATTACK_DIP = 0.7f;
 // of the plain STFT), computed only for the frames asked for. Borrows the signal, which must outlive
 // it.
 struct Partials {
-    const std::vector<float> &y; // samples at SR
+    std::span<const float> y; // samples at SR
     int frames;
     std::vector<std::vector<float>> F, M; // per frame (empty until computed): Hz and magnitude
     std::vector<float> win, dwin;         // Hann window and its derivative
     std::vector<WDL_FFT_REAL> a, b;       // FFT scratch
 
-    Partials(const std::vector<float> &signal, int frameCount)
+    Partials(std::span<const float> signal, int frameCount)
         : y(signal), frames(frameCount), F(idx(frameCount)), M(idx(frameCount)), win(RA_NFFT),
           dwin(RA_NFFT), a(RA_NFFT), b(RA_NFFT) {
         for (int i = 0; i < RA_NFFT; i++) {
@@ -765,7 +765,7 @@ static double hzOf(int midi) { return 440 * pow(2.0, (midi - 69) / 12.0); }
 
 // How far the even partials stick out over their odd neighbours (log units); NaN if unmeasurable.
 // amps: harmonicAmps, partial h at h-1.
-static double evenSurplus(const std::vector<double> &amps) {
+static double evenSurplus(std::span<const double> amps) {
     double sum = 0;
     int n = 0;
     for (int h : {2, 4, 6, 8}) {
@@ -780,7 +780,7 @@ static double evenSurplus(const std::vector<double> &amps) {
 
 // Gaps filled, a quadratic trend removed, smoothed over 3 frames; false if too little is voiced
 // (fewer than 8 finite values).
-static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
+static bool detrend(std::span<const double> x, std::vector<double> &out) {
     const int n = static_cast<int>(x.size());
 
     std::vector<int> ok; // indices of the finite values
@@ -871,8 +871,8 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
 }
 
 // Pearson correlation of two frequency tracks, NaN if either is mostly unvoiced or flat.
-static double trackCorr(const std::vector<double> &x, const std::vector<double> &y) {
-    auto voiced = [](const std::vector<double> &v) {
+static double trackCorr(std::span<const double> x, std::span<const double> y) {
+    auto voiced = [](std::span<const double> v) {
         int n = 0;
         for (double e : v) {
             n += std::isfinite(e);
@@ -937,7 +937,7 @@ static bool isOvertone(Partials &P, const NoteEstimate &up, const NoteEstimate &
 // even partials standing out over their odd neighbours. Adds the octave above where they do, unless
 // common fate says it is the lower voice's overtone; removes a detected upper octave that is one.
 // frameRate: frames per second. Added notes go after the kept ones, at half the strength.
-static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate> &raw, Partials &P,
+static std::vector<NoteEstimate> octaveDoublings(std::span<const NoteEstimate> raw, Partials &P,
                                                  int hi, double frameRate) {
     std::vector<NoteEstimate> add;
     std::vector<bool> drop(raw.size(), false);
@@ -1038,7 +1038,7 @@ static double hannSpectrum(double u) {
 // Like computeNSGT: one FFT per block, each bin's window spectrum multiplied in, then a small inverse
 // FFT decimated to the hop. Blocks are 2^17 samples (Accelerate's FFT) since a long CQT window at C2
 // is over a second.
-Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
+Spectrogram computeCQT(std::span<const float> x, int bpo, double filterScale,
                        const std::function<bool(double)> &progress) {
     const int frames = static_cast<int>(x.size() / HOP) + 1;
     Spectrogram s = axisFromC2(bpo, frames);
@@ -1129,7 +1129,7 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
 
 // Per frame: the spectrum compressed to power G_SPEC, its generalised cepstrum (power G_CEPS),
 // both read at each axis bin's frequency and multiplied.
-Spectrogram computeCFP(const std::vector<float> &x, int bpo,
+Spectrogram computeCFP(std::span<const float> x, int bpo,
                        const std::function<bool(double)> &progress) {
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
@@ -1220,9 +1220,8 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
 // Adds (frame, pitch) cells every voter's notes cover but `raw` lacks: a run of them extends a touching
 // same-pitch note, else becomes a note (if long enough) with the voters' mean strength. Pitches
 // lo..lo+n-1, F frames; minLen in frames.
-static void vote(std::vector<NoteEstimate> &raw,
-                 const std::vector<std::vector<NoteEstimate>> &voters, int F, int lo, int n,
-                 int minLen) {
+static void vote(std::vector<NoteEstimate> &raw, std::span<const std::vector<NoteEstimate>> voters,
+                 int F, int lo, int n, int minLen) {
     if (voters.empty()) {
         return;
     }
@@ -1291,7 +1290,7 @@ static void vote(std::vector<NoteEstimate> &raw,
     }
 }
 
-std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono,
+std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, std::span<const float> mono,
                                         const std::function<const BasicPitch *()> &basicPitch,
                                         const EstimateParams &ep,
                                         const std::function<bool(double)> &progress) {
@@ -1511,7 +1510,7 @@ static const double AGE_CAP = 2.0;
 // share of sung frames a number of simultaneous notes needs to count as a voice
 static const double POLYPHONY_SHARE = 0.003;
 
-std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double frameRate,
+std::vector<int> assignVoices(std::span<const NoteEstimate> notes, double frameRate,
                               int maxVoices) {
     std::vector<int> voice(notes.size(), -1);
     if (notes.empty() || maxVoices < 1) {

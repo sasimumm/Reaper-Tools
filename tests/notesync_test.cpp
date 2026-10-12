@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -199,8 +200,8 @@ int main() {
     // seconds
     {
         // writing refused, and the take untouched
-        auto refused = [](FakeTake &t, const TakeSnapshot &snap, const std::vector<Note> &loaded,
-                          const std::vector<Note> &edited, const std::vector<int> &deleted = {}) {
+        auto refused = [](FakeTake &t, const TakeSnapshot &snap, std::span<const Note> loaded,
+                          std::span<const Note> edited, const std::vector<int> &deleted = {}) {
             const std::string before = t.hash();
             const bool wrote = writeNotes(t, snap, loaded, edited, deleted, 96);
             return !wrote && t.hash() == before;
@@ -243,7 +244,7 @@ int main() {
     // another voice's accepted notes are appended unselected, then sorted
     {
         FakeTake t = song();
-        appendNotes(t, {{0.5, 0.75, 70, true, -1}}, 80);
+        appendNotes(t, std::vector<Note>{{0.5, 0.75, 70, true, -1}}, 80);
         assert(t.notes.size() == 4 && t.notes[1].e.pitch == 70 && !t.notes[1].e.sel &&
                t.notes[1].velocity == 80);
     }

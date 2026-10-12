@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -66,11 +67,12 @@ class NoteEditor {
     bool deleteAt(const ViewMap &v, double x, double y); // the note at (x, y)
 
     // Editing commands; all return true if notes changed. New notes come out selected.
-    std::vector<Note> copySelected() const;               // as unwritten notes, lyrics kept
-    void paste(const std::vector<Note> &clip, double at); // earliest clip note starts at `at`
-    bool duplicateSelected();                             // right after the selection
-    bool splitAt(double t, int note = -1);                // that note, or selected notes spanning t
-    bool joinSelected(); // one note from the first's start to the last's end
+    std::vector<Note> copySelected() const; // as unwritten notes, lyrics kept
+    // Earliest clip note starts at `at`. clip must not view `notes`, which this appends to.
+    void paste(std::span<const Note> clip, double at);
+    bool duplicateSelected();              // right after the selection
+    bool splitAt(double t, int note = -1); // that note, or selected notes spanning t
+    bool joinSelected();                   // one note from the first's start to the last's end
     // Arrow keys: selected notes' starts and ends through `move`, pitches by `semitones`; nothing
     // moves if any note would leave 0..127 or start before 0.
     bool nudgeSelected(const std::function<double(double)> &move, int semitones);

@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numeric>
+#include <span>
 
 TakeSnapshot snapshotOf(Take &take) { return {take.identity(), take.hash(), take.timeMapping()}; }
 
@@ -44,7 +45,7 @@ std::vector<Note> readNotes(Take &take) {
 }
 
 // Whether n was read from the take (it is loaded[n.idx]), rather than added since.
-static bool known(const Note &n, const std::vector<Note> &loaded) {
+static bool known(const Note &n, std::span<const Note> loaded) {
     return n.idx >= 0 && n.idx < static_cast<int>(loaded.size());
 }
 
@@ -53,8 +54,8 @@ static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel) {
     return {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
 }
 
-NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &edited,
-                      const std::vector<int> &deleted) {
+NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited,
+                      std::span<const int> deleted) {
     NoteChanges c;
     c.data = !deleted.empty();
     for (int i : deleted) {
@@ -75,8 +76,8 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
     return c;
 }
 
-bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<Note> &loaded,
-                const std::vector<Note> &edited, const std::vector<int> &deleted, int velocity) {
+bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
+                std::span<const Note> edited, std::span<const int> deleted, int velocity) {
     if (snapshotOf(take) != loadedFrom) {
         return false;
     }
@@ -92,7 +93,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
             take.setNote(n.idx, toEvent(take, n, n.sel));
         }
     }
-    std::vector<int> del = deleted;
+    std::vector<int> del(deleted.begin(), deleted.end());
     std::sort(del.rbegin(), del.rend()); // highest first so earlier indices stay valid
     for (int i : del) {
         take.deleteNote(i);
@@ -124,7 +125,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
     return true;
 }
 
-void appendNotes(Take &take, const std::vector<Note> &notes, int velocity) {
+void appendNotes(Take &take, std::span<const Note> notes, int velocity) {
     for (const Note &n : notes) {
         take.insertNote(toEvent(take, n, false), velocity);
     }

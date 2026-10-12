@@ -5,6 +5,7 @@
 #pragma once
 
 #include <functional>
+#include <span>
 #include <vector>
 
 #include "dsp/basicpitch.h"
@@ -40,14 +41,14 @@ NSGTParams estimateNSGTParams();
 // basic-pitch on mono, or null to run without the gate (more false notes). It is only called after
 // the main NMF, so basic-pitch can run alongside it. progress(fraction) returning false cancels
 // (the result is then empty or partial). Notes are sorted by start frame, then pitch.
-std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono,
+std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, std::span<const float> mono,
                                         const std::function<const BasicPitch *()> &basicPitch,
                                         const EstimateParams &ep = EstimateParams(),
                                         const std::function<bool(double)> &progress = nullptr);
 
 // As above with basic-pitch already computed (bp may be null; it must outlive the call).
 inline std::vector<NoteEstimate>
-estimateNotes(const Spectrogram &s, const std::vector<float> &mono, const BasicPitch *bp,
+estimateNotes(const Spectrogram &s, std::span<const float> mono, const BasicPitch *bp,
               const EstimateParams &ep = EstimateParams(),
               const std::function<bool(double)> &progress = nullptr) {
     return estimateNotes(s, mono, [bp] { return bp; }, ep, progress);
@@ -59,8 +60,7 @@ estimateNotes(const Spectrogram &s, const std::vector<float> &mono, const BasicP
 // a while costing more (keeps a solo line in one strand). The strand singing most is voice 0 (the
 // lead); the others follow top to bottom. -1: crowded out (more notes than voices). frameRate is
 // in frames per second; the result is parallel to notes.
-std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double frameRate,
-                              int maxVoices);
+std::vector<int> assignVoices(std::span<const NoteEstimate> notes, double frameRate, int maxVoices);
 
 // Stages, exposed for the self-check. Rolls are frames x (hi-lo+1), row-major, normalised to the p99
 // of frame maxima.
@@ -76,12 +76,12 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
 // librosa's CQT magnitude (a sine of amplitude A reads A/2 * sqrt(window length)), with Hann windows
 // filterScale times the constant-Q length; and combined frequency and periodicity (Su & Yang 2015),
 // a power-compressed spectrum times the generalised cepstrum mapped to frequency.
-Spectrogram computeCQT(const std::vector<float> &mono, int binsPerOctave, double filterScale,
+Spectrogram computeCQT(std::span<const float> mono, int binsPerOctave, double filterScale,
                        const std::function<bool(double)> &progress = nullptr);
-Spectrogram computeCFP(const std::vector<float> &mono, int binsPerOctave = 36,
+Spectrogram computeCFP(std::span<const float> mono, int binsPerOctave = 36,
                        const std::function<bool(double)> &progress = nullptr);
 
 // Enhanced summary autocorrelation of mono (22050 Hz) per semitone lo..hi, for `frames` frames at
 // hop 256. Cancelled: possibly partial and not normalised.
-std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,
+std::vector<float> sacfRoll(std::span<const float> mono, int frames, int lo, int hi,
                             const std::function<bool(double)> &progress = nullptr);

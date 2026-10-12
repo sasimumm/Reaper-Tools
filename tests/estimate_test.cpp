@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -23,7 +24,7 @@ static const double SR = 22050; // the estimator's sample rate
 // Adds a voice-like tone (from transcribe's mf0.synth) over [a, b) seconds: partials 1..8 at
 // h^-0.6 with random (but repeatable: srand(1)) phases, vibrato of `depth` (fraction of f0) at
 // `rate` Hz, even partials scaled by evenGain, 20 ms fades.
-static void tone(std::vector<float> &x, double a, double b, double midi, float amp = 0.1f,
+static void tone(std::span<float> x, double a, double b, double midi, float amp = 0.1f,
                  double rate = 5.5, double depth = 0.004, double evenGain = 1,
                  double vibPhase = 0) {
     srand(1);
@@ -48,15 +49,14 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
 }
 
 // The estimator's NSGT of x.
-static Spectrogram analyze(const std::vector<float> &x) {
+static Spectrogram analyze(std::span<const float> x) {
     return computeNSGT(estimateNSGTParams(), static_cast<long long>(x.size()),
                        [&](long long st, std::span<float> out) { readPadded(x, st, out); });
 }
 
 // The k strongest local maxima of a roll's mean over frames [f0, f1), as MIDI pitches in
 // ascending order. The roll is frames x n semitones, row-major, its first semitone MIDI pitch lo.
-static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int f0, int f1,
-                              int k) {
+static std::vector<int> peaks(std::span<const float> roll, int lo, int n, int f0, int f1, int k) {
     std::vector<double> m(idx(n), 0);
     for (int f = f0; f < f1; f++) {
         for (int p = 0; p < n; p++) {
@@ -142,11 +142,11 @@ int main() {
         assert(b[2] == b[3] && b[3] == b[4] && b[4] == b[5] && b[2] == 0);
 
         // more notes than voices: the weakest is crowded out; one voice only for a solo line
-        const std::vector<int> c =
-            assignVoices({{0, 10, 60, 1}, {0, 10, 64, 0.5f}, {0, 10, 67, 0.9f}}, fr, 2);
+        const std::vector<int> c = assignVoices(
+            std::vector<NoteEstimate>{{0, 10, 60, 1}, {0, 10, 64, 0.5f}, {0, 10, 67, 0.9f}}, fr, 2);
         assert(c[1] == -1 && c[0] >= 0 && c[2] >= 0 && c[0] != c[2]);
-        const std::vector<int> d =
-            assignVoices({{0, 10, 60, 1}, {10, 20, 62, 1}, {20, 30, 64, 1}}, fr, 4);
+        const std::vector<int> d = assignVoices(
+            std::vector<NoteEstimate>{{0, 10, 60, 1}, {10, 20, 62, 1}, {20, 30, 64, 1}}, fr, 4);
         assert(d[0] == 0 && d[1] == 0 && d[2] == 0);
     }
 
@@ -306,7 +306,7 @@ int main() {
         EstimateParams off;
         off.octaveDoublings = false;
         const std::vector<NoteEstimate> e0 = estimateNotes(sy, y, &by, off);
-        auto has = [](const std::vector<NoteEstimate> &v, int p) {
+        auto has = [](std::span<const NoteEstimate> v, int p) {
             for (const NoteEstimate &ne : v) {
                 if (ne.pitch == p) {
                     return true;

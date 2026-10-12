@@ -3,6 +3,8 @@
 // line, shortcut sheet, panel and toolbar. Layout is in points; drawing is in device pixels.
 #include "ui/paint.h"
 
+#include <span>
+
 #include "analysis.h"
 #include "dsp/parallel.h"
 #include "index.h"
@@ -46,7 +48,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
 // Marks the pixels of the layer (w by h, rows from note area point n.t) within half a semitone of
 // each of nt's first `harmonics` overtones, over the note's time span.
-static void markExplained(std::vector<char> &dim, const Rect &n, int w, int h, int harmonics,
+static void markExplained(std::span<char> dim, const Rect &n, int w, int h, int harmonics,
                           const Note &nt) {
     const double S = g_scale;
     const int xa = std::max(0, static_cast<int>(floor((g_ui.view.x(nt.start) - n.l) * S)));
@@ -996,7 +998,7 @@ static void drawKeyboard(Canvas &cv, HDC dc, const Rect &n, int pLo, int pHi) {
 }
 
 // The ruler under the toolbar: bars on top, seconds below, onsets as marks on the bottom edge.
-static void drawRuler(Canvas &cv, HDC dc, const Layout &L, const std::vector<GridLine> &grid) {
+static void drawRuler(Canvas &cv, HDC dc, const Layout &L, std::span<const GridLine> grid) {
     const Rect n = L.notes, ru = L.ruler;
     const int rt = ru.t;
     char buf[160];

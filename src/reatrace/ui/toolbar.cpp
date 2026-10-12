@@ -2,6 +2,8 @@
 // paint, click and tooltip from the window's width.
 #include "ui/toolbar.h"
 
+#include <span>
+
 #include "notes/commands.h"
 #include "playback/isolate.h"
 #include "ui/panel.h"
@@ -158,7 +160,7 @@ bool isOn(const Item &it) {
 }
 
 // The clickable item at (x, y), or null.
-const Item *itemAt(int x, int y, const std::vector<Item> &all) {
+const Item *itemAt(int x, int y, std::span<const Item> all) {
     for (const Item &it : all) {
         if (it.kind != LABEL && it.r.in(x, y)) {
             return &it;

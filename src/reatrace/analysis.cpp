@@ -292,7 +292,7 @@ struct Job {
     // mix and side) and its vocal analysis. stage counts the spectrograms done, of `stages`.
     void computeSpec(int &stage, int stages) {
         // sample j of x, 0 outside it
-        const auto sampleAt = [](const std::vector<float> &x, long long j) {
+        const auto sampleAt = [](std::span<const float> x, long long j) {
             return j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
         };
         for (int ch = 0; ch < RAW_CHANNELS; ch++) {

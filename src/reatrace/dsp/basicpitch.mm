@@ -48,7 +48,7 @@ static std::span<const float> firstBatch(MLMultiArray *a) {
 #pragma clang unsafe_buffer_usage end
 }
 
-bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono, int frames,
+bool runBasicPitch(const std::string &modelPath, std::span<const float> mono, int frames,
                    BasicPitch &out, std::string *error,
                    const std::function<bool(double)> &progress) {
     @autoreleasepool {

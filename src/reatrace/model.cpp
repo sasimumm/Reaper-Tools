@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <string_view>
 
 // One stored setting: its name in the "name=value;" text and a pointer to exactly one of the
@@ -114,7 +115,7 @@ void decodeSettings(const char *str, Settings &settings) {
     }
 }
 
-bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)> &snap,
+bool quantiseNotes(std::span<Note> notes, const std::function<double(double)> &snap,
                    double strength, double minLen) {
     bool any = false;
     for (Note &n : notes) {

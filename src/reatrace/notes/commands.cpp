@@ -116,7 +116,7 @@ bool covered(size_t i) {
     audioPos = g_session.audioPos;
 
     std::array<std::vector<const Note *>, 128> byPitch;
-    auto add = [&](const std::vector<Note> &notes) {
+    auto add = [&](std::span<const Note> notes) {
         for (const Note &n : notes) {
             if (n.pitch >= 0 && n.pitch < 128) {
                 byPitch[idx(n.pitch)].push_back(&n);

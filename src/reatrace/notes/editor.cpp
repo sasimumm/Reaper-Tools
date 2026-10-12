@@ -4,6 +4,7 @@
 #include "index.h"
 #include <algorithm>
 #include <cctype>
+#include <span>
 
 // Hit zones from DrawScore: note rects are inflated by 3 px, 6 px edge zones resize,
 // notes narrower than 12 px can only be moved, and a drag starts after 3 px.
@@ -234,7 +235,7 @@ std::vector<Note> NoteEditor::copySelected() const {
     return out;
 }
 
-void NoteEditor::paste(const std::vector<Note> &clip, double at) {
+void NoteEditor::paste(std::span<const Note> clip, double at) {
     if (clip.empty()) {
         return;
     }

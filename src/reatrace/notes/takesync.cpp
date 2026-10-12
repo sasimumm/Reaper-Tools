@@ -232,7 +232,7 @@ void commitNotes() {
 }
 
 // Notes straight into another voice's take (its track and item are created if needed).
-void insertIntoVoice(int v, const std::vector<Note> &notes) {
+void insertIntoVoice(int v, std::span<const Note> notes) {
     MediaItem *item = VoiceItem(g_session.audio, v, true);
     MediaItem_Take *take = item ? GetActiveTake(item) : NULL;
     if (take) {

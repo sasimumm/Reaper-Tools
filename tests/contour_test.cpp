@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
 #include <vector>
 
 #include "dsp/contour.h"
@@ -12,7 +13,7 @@
 
 // Adds a sung-like tone over [t0, t1) seconds at a MIDI pitch: 12 harmonics with a "formant"
 // making the 3rd louder than the fundamental, optional vibrato of +-vibratoCents at 5.5 Hz.
-static void tone(std::vector<float> &x, double sr, double t0, double t1, double pitch,
+static void tone(std::span<float> x, double sr, double t0, double t1, double pitch,
                  double vibratoCents) {
     std::array<double, 13> phase = {0};
     for (long long i = static_cast<long long>(t0 * sr); i < static_cast<long long>(t1 * sr); i++) {

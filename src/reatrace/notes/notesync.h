@@ -2,6 +2,7 @@
 // a Take, which takesync.cpp implements over REAPER's MIDI API and tests/notesync_test.cpp fakes.
 #pragma once
 
+#include <span>
 #include <string>
 #include <vector>
 
@@ -72,15 +73,15 @@ struct NoteChanges {
     bool data = false;   // notes or lyrics: worth an undo point (selection alone isn't)
     bool lyrics = false; // the lyric events need rewriting
 };
-NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &edited,
-                      const std::vector<int> &deleted);
+NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited,
+                      std::span<const int> deleted);
 
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
 // returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take
 // indices removed (highest first), new notes (idx < 0) inserted. If lyrics changed, the lyric events attached to
 // loaded notes are replaced by one per edited note with a lyric; other text events are left alone.
-bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<Note> &loaded,
-                const std::vector<Note> &edited, const std::vector<int> &deleted, int velocity);
+bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
+                std::span<const Note> edited, std::span<const int> deleted, int velocity);
 
 // Adds unselected notes (another voice's accepted suggestions).
-void appendNotes(Take &take, const std::vector<Note> &notes, int velocity);
+void appendNotes(Take &take, std::span<const Note> notes, int velocity);
