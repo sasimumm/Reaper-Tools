@@ -1,6 +1,7 @@
 #include "ui/paint.h"
 
 #include "analysis.h"
+#include "dsp/parallel.h"
 #include "notes/commands.h"
 #include "notes/lyrics.h"
 #include "ui/draw.h"
@@ -54,11 +55,30 @@ static void applyTheme() {
     g_theme.track = mix(g_theme.panel, g_theme.text, 0.2);
 }
 
-// Renders the note area at device resolution: g_scale pixels per point.
+static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
+
+// Black-key rows darkened as Canvas::fill(.., 0x000000, 40) would, baked into the layer.
+static unsigned int shadeBlack(unsigned int c) {
+    const unsigned int k = 256 - 40;
+    return 0xff000000 | ((((c & 0xff00ff) * k) >> 8) & 0xff00ff) |
+           ((((c & 0xff00) * k) >> 8) & 0xff00);
+}
+
+// Renders the note area at device resolution: g_scale pixels per point, in column stripes on
+// several threads. Black-key rows are shaded; with Explain, energy on drawn notes and their
+// overtones is dimmed (marked once per note and overtone, not tested per pixel).
 static void renderLayer(const Rect &n) {
     const double S = g_scale;
     const int w = (n.r - n.l) * g_scale, h = (n.b - n.t) * g_scale;
-    g_layer.assign((size_t)w * h, 0xff000000 | C_AREA);
+    std::vector<char> black(h);
+    for (int y = 0; y < h; y++) {
+        black[y] = (char)isBlack(g_ui.view.pitchAt(n.t + (y + 0.5) / S));
+    }
+    g_layer.resize((size_t)w * h);
+    for (int y = 0; y < h; y++) {
+        std::fill_n(&g_layer[(size_t)y * w], w,
+                    black[y] ? shadeBlack(C_AREA) : 0xff000000 | C_AREA);
+    }
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
         return;
@@ -74,69 +94,73 @@ static void renderLayer(const Rect &n) {
         }
         rowLo[y] = std::max(0, a), rowHi[y] = std::min(s.bins - 1, b);
     }
-    std::vector<double> rowPitch(h);
-    for (int y = 0; y < h; y++) {
-        rowPitch[y] = g_ui.view.p(n.t + (y + 0.5) / S);
+    // Explain: pixels whose row centre is within half a semitone of a sounding note's overtone
+    std::vector<char> dim;
+    if (g_settings.explain) {
+        dim.assign((size_t)w * h, 0);
+        const int nh = (int)lround(g_settings.harmonics);
+        auto add = [&](const Note &nt) {
+            const int xa = std::max(0, (int)floor((g_ui.view.x(nt.start) - n.l) * S)),
+                      xb = std::min(w, (int)ceil((g_ui.view.x(nt.end) - n.l) * S));
+            for (int hh = 1; hh <= nh && xa < xb; hh++) {
+                const double ep = nt.pitch + 12 * log2((double)hh);
+                const int ya = std::max(0, (int)floor((g_ui.view.y(ep + 0.5) - n.t) * S - 0.5) + 1);
+                const int yb = std::min(h, (int)ceil((g_ui.view.y(ep - 0.5) - n.t) * S - 0.5));
+                for (int y = ya; y < yb; y++) {
+                    memset(&dim[(size_t)y * w + xa], 1, (size_t)(xb - xa));
+                }
+            }
+        };
+        for (const Note &nt : g_session.ed.notes) {
+            add(nt);
+        }
+        for (int v = 0; v < WINDOW_VOICES; v++) {
+            if (v != g_session.voice) {
+                for (const Note &nt : g_session.others[v].notes) {
+                    add(nt);
+                }
+            }
+        }
     }
-    std::vector<double> explained; // pitches of notes and overtones sounding in this column
-    const int nh = (int)lround(g_settings.harmonics);
-    std::vector<unsigned char> col(s.bins);
-    for (int x = 0; x < w; x++) {
-        explained.clear();
-        if (g_settings.explain) {
-            const double ta = g_ui.view.t(n.l + x / S), tb = g_ui.view.t(n.l + (x + 1) / S);
-            auto add = [&](const Note &nt) {
-                if (nt.start < tb && nt.end > ta) {
-                    for (int hh = 1; hh <= nh; hh++) {
-                        explained.push_back(nt.pitch + 12 * log2((double)hh));
-                    }
-                }
-            };
-            for (const Note &nt : g_session.ed.notes) {
-                add(nt);
+    const int stripes = std::max(1, std::min(8, (int)std::thread::hardware_concurrency()));
+    std::atomic<bool> stop{false};
+    parallel(stripes, stop, [&](int stripe) {
+        std::vector<unsigned char> col(s.bins);
+        for (int x = stripe * w / stripes; x < (stripe + 1) * w / stripes; x++) {
+            const double fa = (g_ui.view.t(n.l + x / S) - g_session.audioPos) * s.frameRate();
+            const double fb = (g_ui.view.t(n.l + (x + 1) / S) - g_session.audioPos) * s.frameRate();
+            int f0 = (int)ceil(fa), f1 = (int)ceil(fb) - 1;
+            if (f0 > f1) {
+                f0 = f1 = (int)lround(0.5 * (fa + fb));
             }
-            for (int v = 0; v < WINDOW_VOICES; v++) {
-                if (v != g_session.voice) {
-                    for (const Note &nt : g_session.others[v].notes) {
-                        add(nt);
-                    }
-                }
-            }
-        }
-        const double fa = (g_ui.view.t(n.l + x / S) - g_session.audioPos) * s.frameRate();
-        const double fb = (g_ui.view.t(n.l + (x + 1) / S) - g_session.audioPos) * s.frameRate();
-        int f0 = (int)ceil(fa), f1 = (int)ceil(fb) - 1;
-        if (f0 > f1) {
-            f0 = f1 = (int)lround(0.5 * (fa + fb));
-        }
-        f0 = std::max(f0, 0), f1 = std::min(f1, s.frames - 1);
-        if (f0 > f1) {
-            continue;
-        }
-        memcpy(col.data(), &g_analysis.val[(size_t)f0 * s.bins], s.bins);
-        for (int f = f0 + 1; f <= f1; f++) {
-            const unsigned char *v = &g_analysis.val[(size_t)f * s.bins];
-            for (int b = 0; b < s.bins; b++) {
-                col[b] = std::max(col[b], v[b]);
-            }
-        }
-        for (int y = 0; y < h; y++) {
-            if (rowLo[y] > rowHi[y]) {
+            f0 = std::max(f0, 0), f1 = std::min(f1, s.frames - 1);
+            if (f0 > f1) {
                 continue;
             }
-            unsigned char m = 0;
-            for (int k = rowLo[y]; k <= rowHi[y]; k++) {
-                m = std::max(m, col[k]);
-            }
-            for (double ep : explained) {
-                if (fabs(rowPitch[y] - ep) < 0.5) {
-                    m = (unsigned char)(m * EXPLAIN_DIM);
-                    break;
+            memcpy(col.data(), &g_analysis.val[(size_t)f0 * s.bins], s.bins);
+            for (int f = f0 + 1; f <= f1; f++) {
+                const unsigned char *v = &g_analysis.val[(size_t)f * s.bins];
+                for (int b = 0; b < s.bins; b++) {
+                    col[b] = std::max(col[b], v[b]);
                 }
             }
-            g_layer[(size_t)y * w + x] = 0xff000000 | g_analysis.lut[m];
+            for (int y = 0; y < h; y++) {
+                if (rowLo[y] > rowHi[y]) {
+                    continue;
+                }
+                unsigned char m = 0;
+                for (int k = rowLo[y]; k <= rowHi[y]; k++) {
+                    m = std::max(m, col[k]);
+                }
+                const size_t at = (size_t)y * w + x;
+                if (!dim.empty() && dim[at]) {
+                    m = (unsigned char)(m * EXPLAIN_DIM);
+                }
+                const unsigned int c = 0xff000000 | g_analysis.lut[m];
+                g_layer[at] = black[y] ? shadeBlack(c) : c;
+            }
         }
-    }
+    });
 }
 
 // The overview: the whole item over the overview's width, vocal range E2..C6 over its height.
@@ -232,7 +256,6 @@ static void pitchName(int p, char *buf, int sz) {
     static const char *names[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
     snprintf(buf, sz, "%s%d", names[((p % 12) + 12) % 12], p / 12 - 1);
 }
-static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
 // --- overtone guides ------------------------------------------------------------------
 
@@ -845,9 +868,6 @@ void paint(HDC hdc) {
     const int pLo = (int)floor(g_ui.view.p(n.b)), pHi = (int)ceil(g_ui.view.p(n.t));
     for (int p = pLo; p <= pHi; p++) {
         const int y = (int)lround(g_ui.view.y(p - 0.5)); // boundary below pitch p
-        if (isBlack(p)) { // shaded like a piano roll, to read pitch away from the keyboard
-            cv.fill(n.l, (int)lround(g_ui.view.y(p + 0.5)), n.r, y, 0x000000, 40);
-        }
         cv.fill(n.l, y, n.r, y + 1, 0xffffff, p % 12 == 0 ? 50 : 10);
     }
     std::vector<GridLine> grid = gridLines(n);
