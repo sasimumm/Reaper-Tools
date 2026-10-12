@@ -22,19 +22,24 @@ struct Canvas {
         const int s = scale;
         x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
         x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
+        if (x0 >= x1) {
+            return;
+        }
+        if (a >= 256) {
+            for (int y = y0; y < y1; y++) {
+                std::fill(px + (size_t)y * w + x0, px + (size_t)y * w + x1, 0xff000000 | col);
+            }
+            return;
+        }
+        // red and blue blended together, green apart: two multiplies per channel pair
+        const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
+        const unsigned int rb = (col & 0xff00ff) * ua, g = (col & 0xff00) * ua;
         for (int y = y0; y < y1; y++) {
             unsigned int *p = px + (size_t)y * w;
             for (int x = x0; x < x1; x++) {
-                if (a >= 256) {
-                    p[x] = 0xff000000 | col;
-                    continue;
-                }
                 const unsigned int d = p[x];
-                const unsigned int r =
-                    (((d >> 16) & 255) * (256 - a) + ((col >> 16) & 255) * a) >> 8;
-                const unsigned int g = (((d >> 8) & 255) * (256 - a) + ((col >> 8) & 255) * a) >> 8;
-                const unsigned int b = ((d & 255) * (256 - a) + (col & 255) * a) >> 8;
-                p[x] = 0xff000000 | (r << 16) | (g << 8) | b;
+                p[x] = 0xff000000 | ((((d & 0xff00ff) * ia + rb) >> 8) & 0xff00ff) |
+                       ((((d & 0xff00) * ia + g) >> 8) & 0xff00);
             }
         }
     }

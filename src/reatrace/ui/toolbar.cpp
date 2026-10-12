@@ -151,7 +151,6 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
     cv.clip = tb;
     cv.fill(tb.l, tb.t, tb.r, tb.b, g_theme.panel);
     cv.fill(tb.l, tb.b - 1, tb.r, tb.b, 0x000000);
-    syncPlayback();
     const std::vector<Item> all = items(L);
     const Item *hover = itemAt(g_ui.mouseX, g_ui.mouseY, all);
     for (const Item &it : all) {

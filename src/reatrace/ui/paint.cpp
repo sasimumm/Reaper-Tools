@@ -173,12 +173,10 @@ double overviewTime(int x) {
     const Rect o = overviewArea();
     return g_session.audioPos + g_session.audioLen * (x - o.l) / std::max(1, o.r - o.l);
 }
-static double overviewX(double t) {
-    const Rect o = overviewArea();
+static double overviewX(const Rect &o, double t) {
     return o.l + (t - g_session.audioPos) / std::max(1e-9, g_session.audioLen) * (o.r - o.l);
 }
-static double overviewY(double pitch) {
-    const Rect o = overviewArea();
+static double overviewY(const Rect &o, double pitch) {
     return o.b - 1 - (pitch - OV_LOW) / (OV_HIGH - OV_LOW) * (o.b - o.t - 2);
 }
 
@@ -836,7 +834,9 @@ void paint(HDC hdc) {
     syncViewOrigin();
     const Rect n = L.notes, ru = L.ruler;
     Canvas cv = {fb, w, h, {0, 0, c.r, c.b}, S};
-    cv.fill(0, 0, c.r, c.b, g_theme.bg);
+    // the background around the note area (the spectrogram layer covers that)
+    cv.fill(0, 0, c.r, n.t, g_theme.bg), cv.fill(0, n.b, c.r, c.b, g_theme.bg);
+    cv.fill(0, n.t, n.l, n.b, g_theme.bg), cv.fill(n.r, n.t, c.r, n.b, g_theme.bg);
     HDC dc = g_memdc;
     SetBkMode(dc, TRANSPARENT);
     char buf[160];
@@ -1068,13 +1068,14 @@ void paint(HDC hdc) {
         }
         cv.clip = o;
         for (const Note &nt : g_session.ed.notes) {
-            const int y = (int)lround(overviewY(nt.pitch));
-            cv.fill((int)lround(overviewX(nt.start)), y - 1,
-                    std::max((int)lround(overviewX(nt.start)) + 1, (int)lround(overviewX(nt.end))),
+            const int y = (int)lround(overviewY(o, nt.pitch));
+            cv.fill((int)lround(overviewX(o, nt.start)), y - 1,
+                    std::max((int)lround(overviewX(o, nt.start)) + 1,
+                             (int)lround(overviewX(o, nt.end))),
                     y + 1, noteColour);
         }
-        const int va = (int)lround(overviewX(g_ui.view.t(n.l))),
-                  vb = std::max(va + 2, (int)lround(overviewX(g_ui.view.t(n.r))));
+        const int va = (int)lround(overviewX(o, g_ui.view.t(n.l))),
+                  vb = std::max(va + 2, (int)lround(overviewX(o, g_ui.view.t(n.r))));
         cv.fill(o.l, o.t, va, o.b, 0x000000, 120), cv.fill(vb, o.t, o.r, o.b, 0x000000, 120);
         cv.frame(va, o.t, vb, o.b, 0xffffff);
         cv.fill(o.l, o.t, o.r, o.t + 1, 0x000000);
@@ -1088,6 +1089,7 @@ void paint(HDC hdc) {
     }
 
     cv.clip = {0, 0, c.r, c.b};
+    syncPlayback(); // what the panel and the toolbar show
     if (L.panelShown) {
         drawPanel(cv, dc);
     }
