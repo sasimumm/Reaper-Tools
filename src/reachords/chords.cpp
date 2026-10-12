@@ -491,6 +491,9 @@ const std::vector<ChordSpan> &Chords_Spans() {
     for (int i = 0; i < CountMediaItems(NULL); i++) {
         MediaItem *it = GetMediaItem(NULL, i);
         ChordSource *src = sourceOf(it);
+        if (src) {
+            src->m_item = it; // known here: placement() needn't scan the project for it
+        }
         Placement p;
         if (!src || !src->placement(&p)) {
             continue;
