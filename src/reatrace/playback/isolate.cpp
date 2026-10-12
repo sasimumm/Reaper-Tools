@@ -94,7 +94,7 @@ void updateIsolate() {
         if (voice >= 0 && b > now - 1 && a < now + 60 &&
             (voice == g_session.voice ||
              (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1))) &&
-            !covered(sug[i])) {
+            !covered(i)) {
             spans[voice].push_back({a, b, (int)lround(sug[i].pitch), false, -1});
         }
     }

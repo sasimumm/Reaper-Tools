@@ -64,7 +64,7 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
 }
 
 void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
-    curX = x, curY = y;
+    curX = x, curY = y, moves++;
     const bool past = fabs(x - downX) >= DRAG_THRESHOLD || fabs(y - downY) >= DRAG_THRESHOLD;
     auto sn = [&](double t) { return (mods & MOD_ALT) ? t : snap(t); };
 

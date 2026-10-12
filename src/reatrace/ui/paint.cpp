@@ -339,7 +339,7 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         const Segment &sg = sug[i];
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         segmentRect(sg, &x0, &y0, &x1, &y1);
-        if (x1 < n.l || x0 > n.r || suggestionHidden(i) || covered(sg)) {
+        if (x1 < n.l || x0 > n.r || suggestionHidden(i) || covered(i)) {
             continue;
         }
         const int v = suggestionVoice(i);

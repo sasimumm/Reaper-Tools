@@ -9,8 +9,8 @@ void nudgeSelected(int steps, int semitones);
 const std::vector<Segment> &suggestions();
 int suggestionVoice(size_t i);
 bool suggestionHidden(
-    size_t i); // its voice is hidden in the toolbar: not drawn, hovered or accepted
-bool covered(const Segment &sg);
+    size_t i);          // its voice is hidden in the toolbar: not drawn, hovered or accepted
+bool covered(size_t i); // suggestion i is covered by a drawn note
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1);
 int suggestionAt(int x, int y);
 int firstSelected();

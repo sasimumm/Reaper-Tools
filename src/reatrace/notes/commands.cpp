@@ -73,22 +73,51 @@ void quantiseSelected() {
 // --- contour and suggestions -------------------------------------------------------------
 
 // Suggestions can overlap (harmonies), so one is hidden only by a drawn note in any voice at nearly
-// the same pitch (within a semitone, for corrected pitches) over a third of its length.
-bool covered(const Segment &sg) {
-    const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
-    for (const Note &n : g_session.ed.notes) {
-        if (coversSuggestion(n, a, b, sg.pitch)) {
-            return true;
+// the same pitch (within a semitone, for corrected pitches) over a third of its length. Worked out
+// for all suggestions at once, with the notes bucketed by pitch, and kept until the notes, the
+// suggestions or the item position change; while a note is dragged (not committed yet), each step.
+bool covered(size_t i) {
+    static std::vector<char> flags;
+    static int notesVersion = -1, valVersion = -1, suggestFrom = -1, moves = -1;
+    static size_t count = 0;
+    static double audioPos = 0;
+    const std::vector<Segment> &sug = suggestions();
+    const int drag = g_session.ed.active() ? g_session.ed.moves : -1;
+    if (moves != drag || notesVersion != g_session.notesVersion ||
+        valVersion != g_analysis.valVersion || suggestFrom != g_settings.suggestFrom ||
+        count != sug.size() || audioPos != g_session.audioPos) {
+        moves = drag, notesVersion = g_session.notesVersion, valVersion = g_analysis.valVersion,
+        suggestFrom = g_settings.suggestFrom, count = sug.size(), audioPos = g_session.audioPos;
+        std::vector<const Note *> byPitch[128];
+        auto add = [&](const std::vector<Note> &notes) {
+            for (const Note &n : notes) {
+                if (n.pitch >= 0 && n.pitch < 128) {
+                    byPitch[n.pitch].push_back(&n);
+                }
+            }
+        };
+        add(g_session.ed.notes);
+        for (int v = 0; v < WINDOW_VOICES; v++) {
+            if (v != g_session.voice) {
+                add(g_session.others[v].notes);
+            }
         }
-    }
-    for (int v = 0; v < WINDOW_VOICES; v++) {
-        for (const Note &n : g_session.others[v].notes) {
-            if (v != g_session.voice && coversSuggestion(n, a, b, sg.pitch)) {
-                return true;
+        flags.assign(sug.size(), 0);
+        for (size_t k = 0; k < sug.size(); k++) {
+            const Segment &sg = sug[k];
+            const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
+            for (int q = std::max(0, (int)ceil(sg.pitch - 1));
+                 q <= std::min(127, (int)floor(sg.pitch + 1)) && !flags[k]; q++) {
+                for (const Note *n : byPitch[q]) {
+                    if (coversSuggestion(*n, a, b, sg.pitch)) {
+                        flags[k] = 1;
+                        break;
+                    }
+                }
             }
         }
     }
-    return false;
+    return i < flags.size() && flags[i];
 }
 
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
@@ -113,7 +142,7 @@ int suggestionAt(int x, int y) {
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         segmentRect(sug[i], &x0, &y0, &x1, &y1);
         if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !suggestionHidden(i) &&
-            !covered(sug[i])) {
+            !covered(i)) {
             return (int)i;
         }
     }
@@ -174,7 +203,7 @@ void acceptVisibleSuggestions() {
         const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
         const int v = suggestionVoice(i);
         if (v < 0 || suggestionHidden(i) || b < g_ui.view.t(n.l) || a > g_ui.view.t(n.r) ||
-            covered(sg)) {
+            covered(i)) {
             continue;
         }
         byVoice[v].push_back({a, b, (int)lround(sg.pitch), false, -1});

@@ -46,6 +46,7 @@ class NoteEditor {
     std::function<double(double)> snap = [](double t) { return t; };
     double minLen = 0.05; // seconds
     int velocity = 96;
+    int moves = 0; // counts mouse moves, so caches of the notes can tell a drag step happened
 
     Hit hitTest(const ViewMap &v, double x, double y, int *noteIndex) const;
     void mouseDown(const ViewMap &v, double x, double y, int mods);
