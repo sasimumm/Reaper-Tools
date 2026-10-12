@@ -44,7 +44,8 @@ the other), so either can be installed alone.
 
 ## ReaTrace
 
-Select an audio item and run **ReaTrace: Open spectrogram editor for selected item**. Notes go
+Right-click an audio item and choose **Open in ReaTrace** (or Extensions › ReaTrace, or the action
+**ReaTrace: Open spectrogram editor for selected item**). Notes go
 into a MIDI item on a "ReaTrace notes" track (with ReaSynth) below the audio track, so they are
 saved with the project, can be undone, and can also be edited in REAPER's MIDI editor.
 
@@ -120,8 +121,9 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 
 ## ReaChords
 
-**ReaChords: Insert chord item** adds a chord item on the selected track (over the time selection,
-else four bars from the edit cursor). Double-click in it to type a chord (Enter saves, Esc cancels,
+**Insert › New Chords Item** (also Extensions › ReaChords, or the action **ReaChords: Insert chord
+item**) adds a chord item on the selected track, over the time selection, else four bars from the
+edit cursor. Double-click in it to type a chord (Enter saves, Esc cancels,
 empty deletes); drag the lines between chords. Chords are kept in quarter notes from the item's
 start, so they follow tempo changes.
 

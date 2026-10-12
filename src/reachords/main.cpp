@@ -11,6 +11,7 @@
 
 #define REAPERAPI_IMPLEMENT
 #define REAPERAPI_MINIMAL
+#define REAPERAPI_WANT_AddExtensionsMainMenu
 #define REAPERAPI_WANT_AddMediaItemToTrack
 #define REAPERAPI_WANT_AddTakeToMediaItem
 #define REAPERAPI_WANT_CountMediaItems

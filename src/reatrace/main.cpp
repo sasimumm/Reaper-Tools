@@ -12,6 +12,7 @@
 
 #define REAPERAPI_IMPLEMENT
 #define REAPERAPI_MINIMAL
+#define REAPERAPI_WANT_AddExtensionsMainMenu
 #define REAPERAPI_WANT_CountTrackMediaItems
 #define REAPERAPI_WANT_CreateNewMIDIItemInProj
 #define REAPERAPI_WANT_CreateTakeAudioAccessor
@@ -105,6 +106,7 @@
 #include "reaper_plugin_functions.h"
 
 #include "shared/guard.h"
+#include "shared/menu.h"
 #include "ui/window.h"
 
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
@@ -273,6 +275,24 @@ static void timer() {
     guarded("timer", [] { Window_Timer(); });
 }
 
+// A ReaTrace submenu in the Extensions menu, and "Open in ReaTrace" in the item context menu (a
+// right-click selects the item first, so the action opens that one).
+static void menuHook(const char *menuidstr, void *menu, int flag) {
+    guarded("menu", [&] {
+        if (flag != 0 || !menuidstr) {
+            return;
+        }
+        HMENU m = static_cast<HMENU>(menu);
+        const std::string_view id = menuidstr;
+        if (id == MENU_EXTENSIONS) {
+            addMenuSubmenu(m, "ReaTrace", "Open spectrogram editor for selected item", g_cmdOpen);
+        } else if (id == MENU_ITEM_CONTEXT) {
+            addMenuSeparator(m);
+            insertMenuCommand(m, -1, "Open in ReaTrace", g_cmdOpen);
+        }
+    });
+}
+
 static accelerator_register_t g_accel = {translateAccel, true, NULL};
 
 // Called with rec on load and with NULL on unload; returns 1 if loaded.
@@ -297,5 +317,7 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     rec->Register("hookcommand2", reinterpret_cast<void *>(onAction));
     rec->Register("accelerator", &g_accel);
     rec->Register("timer", reinterpret_cast<void *>(timer));
+    rec->Register("hookcustommenu", reinterpret_cast<void *>(menuHook));
+    AddExtensionsMainMenu();
     return 1;
 }

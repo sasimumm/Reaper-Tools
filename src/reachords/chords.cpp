@@ -16,6 +16,7 @@
 
 #include "reaper_plugin_functions.h"
 #include "shared/guard.h"
+#include "shared/menu.h"
 #undef min
 #undef max
 
@@ -673,11 +674,30 @@ static void insertItem() {
     UpdateArrange();
 }
 
-// Registers the source type and the insert action.
+// "New Chords Item" in the Insert menu after "New MIDI item", and a ReaChords submenu in the
+// Extensions menu.
+static void menuHook(const char *menuidstr, void *menu, int flag) {
+    guarded("menu", [&] {
+        if (flag != 0 || !menuidstr || !g_cmdInsert) {
+            return;
+        }
+        HMENU m = static_cast<HMENU>(menu);
+        const std::string_view id = menuidstr;
+        if (id == MENU_INSERT) {
+            insertMenuCommandAfter(m, CMD_INSERT_MIDI_ITEM, "New Chords Item", g_cmdInsert);
+        } else if (id == MENU_EXTENSIONS) {
+            addMenuSubmenu(m, "ReaChords", "New Chords Item", g_cmdInsert);
+        }
+    });
+}
+
+// Registers the source type, the insert action and its menu entries.
 void Chords_Register(reaper_plugin_info_t *rec) {
     rec->Register("pcmsrc", &g_reg);
     custom_action_register_t a = {0, "REACHORDS_INSERT", "ReaChords: Insert chord item", NULL};
     g_cmdInsert = rec->Register("custom_action", &a);
+    rec->Register("hookcustommenu", reinterpret_cast<void *>(menuHook));
+    AddExtensionsMainMenu();
 }
 
 bool Chords_OnAction(int command) {
