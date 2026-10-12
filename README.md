@@ -5,23 +5,16 @@ REAPER extension for transcribing audio (mainly vocals) by drawing notes on a sp
 ## Build (macOS)
 
     git submodule update --init
-    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build --target deploy   # copies reaper_reatrace.dylib and reaper_reachords.dylib to UserPlugins
-    ./build/nsgt_test && ./build/editor_test && ./build/notesync_test && ./build/model_test && ./build/contour_test && ./build/estimate_test && ./build/isolate_test
+    make deploy   # builds; copies reaper_reatrace.dylib and reaper_reachords.dylib to UserPlugins
+    make test     # the self-checks
 
-Checks while developing:
+`make help` lists the rest (they wrap the CMake invocations, in `build/`):
 
 - Our sources build with `-Wall -Wextra -Wshadow -Wconversion` as errors (`-DREATRACE_WERROR=OFF` to relax),
   and libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string` indexing, also in the plugin.
-- Sanitized self-checks, in their own build directories:
-
-      cmake -S . -B build-asan -DREATRACE_SANITIZE=address,undefined && cmake --build build-asan
-      cmake -S . -B build-tsan -DREATRACE_SANITIZE=thread && cmake --build build-tsan
-      ./build-asan/estimate_test   # and the other *_test programs
-
-- clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`): `cmake --build build --target lint`
-- clang-format (also from Homebrew's `llvm`; style in `.clang-format`): `cmake --build build --target format`,
-  or `format-check` to only report differences.
+- `make asan`, `make tsan`: the self-checks with sanitizers, in `build-asan/` and `build-tsan/`.
+- `make lint`: clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`).
+- `make format`, `make format-check`: clang-format (also Homebrew's `llvm`; style in `.clang-format`).
 
 The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it as
 `UserPlugins/reatrace/nmp.mlmodelc`.
