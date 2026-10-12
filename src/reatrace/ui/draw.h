@@ -2,6 +2,18 @@
 #pragma once
 
 #include "state.h"
+#include "ui/theme.h"
+
+// A backbuffer pixel: 0xAARRGGBB, always opaque.
+inline unsigned int opaque(Colour c) { return 0xff000000 | c; }
+
+// col over the pixel d with alpha a (0..256). Red and blue are blended together, green apart:
+// two multiplies per channel pair.
+inline unsigned int blend(unsigned int d, Colour col, int a) {
+    const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
+    return opaque(((((d & 0xff00ff) * ia + (col & 0xff00ff) * ua) >> 8) & 0xff00ff) |
+                  ((((d & 0xff00) * ia + (col & 0xff00) * ua) >> 8) & 0xff00));
+}
 
 // Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
 struct Canvas {
@@ -19,19 +31,14 @@ struct Canvas {
         }
         if (a >= 256) {
             for (int y = y0; y < y1; y++) {
-                std::fill(px + (size_t)y * w + x0, px + (size_t)y * w + x1, 0xff000000 | col);
+                std::fill(px + (size_t)y * w + x0, px + (size_t)y * w + x1, opaque(col));
             }
             return;
         }
-        // red and blue blended together, green apart: two multiplies per channel pair
-        const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
-        const unsigned int rb = (col & 0xff00ff) * ua, g = (col & 0xff00) * ua;
         for (int y = y0; y < y1; y++) {
             unsigned int *p = px + (size_t)y * w;
             for (int x = x0; x < x1; x++) {
-                const unsigned int d = p[x];
-                p[x] = 0xff000000 | ((((d & 0xff00ff) * ia + rb) >> 8) & 0xff00ff) |
-                       ((((d & 0xff00) * ia + g) >> 8) & 0xff00);
+                p[x] = blend(p[x], col, a);
             }
         }
     }

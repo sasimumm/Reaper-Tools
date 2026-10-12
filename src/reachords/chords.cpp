@@ -24,6 +24,11 @@ static LICE_pixel rgba(int r, int g, int b, int a = 255) {
     return (LICE_pixel)((b & 0xff) | ((g & 0xff) << 8) | ((r & 0xff) << 16) | ((a & 0xff) << 24));
 }
 
+// The chord item's colours.
+static const LICE_pixel C_CHORD = rgba(50, 58, 75), C_CHORD_ALT = rgba(60, 70, 90); // alternating
+static const LICE_pixel C_CHORD_LINE = rgba(200, 200, 220); // the line at each chord's start
+static const LICE_pixel C_CHORD_TEXT = rgba(240, 240, 240); // chord names
+
 static void beginEditAtClick(MediaItem *item, double clickTime,
                              const REAPER_inline_positioninfo *pi);
 
@@ -290,7 +295,7 @@ class ChordSource : public PCM_source {
                                           DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
                                           DEFAULT_QUALITY, DEFAULT_PITCH, "Helvetica"),
                                0);
-            LICE__SetTextColor(f, rgba(240, 240, 240));
+            LICE__SetTextColor(f, C_CHORD_TEXT);
         }
         return f;
     }
@@ -324,10 +329,9 @@ class ChordSource : public PCM_source {
             if (x1 < 0 || x0 > pi->width) {
                 continue;
             }
-            LICE_FillRect(bm, x0, y0, x1 - x0, h, i % 2 ? rgba(60, 70, 90) : rgba(50, 58, 75), 1.0f,
-                          0);
-            LICE_Line(bm, (float)x0, (float)y0, (float)x0, (float)(y0 + h), rgba(200, 200, 220),
-                      1.0f, 0, false);
+            LICE_FillRect(bm, x0, y0, x1 - x0, h, i % 2 ? C_CHORD_ALT : C_CHORD, 1.0f, 0);
+            LICE_Line(bm, (float)x0, (float)y0, (float)x0, (float)(y0 + h), C_CHORD_LINE, 1.0f, 0,
+                      false);
             // the name starts at the chord, or at the item's left edge for a chord started before
             const int l = std::max(x0, 0) + 6, r = std::min(x1, pi->width) - 4;
             RECT rc = {l, y0, std::max(l, r), y0 + h};

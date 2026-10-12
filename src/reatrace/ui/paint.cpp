@@ -28,12 +28,8 @@ static LayerKey g_layerKey;
 
 static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
-// Black-key rows darkened as Canvas::fill(.., g_theme.shadow, 40) would, baked into the layer.
-static unsigned int shadeBlack(unsigned int c) {
-    const unsigned int k = 256 - 40;
-    return 0xff000000 | ((((c & 0xff00ff) * k) >> 8) & 0xff00ff) |
-           ((((c & 0xff00) * k) >> 8) & 0xff00);
-}
+// Black-key rows shaded as Canvas::fill(.., g_theme.shadow, 40) would, baked into the layer.
+static unsigned int shadeBlack(unsigned int c) { return blend(c, g_theme.shadow, 40); }
 
 // Renders the note area at device resolution: g_scale pixels per point, in column stripes on
 // several threads. Black-key rows are shaded; with Explain, energy on drawn notes and their
@@ -48,7 +44,7 @@ static void renderLayer(const Rect &n) {
     g_layer.resize((size_t)w * h);
     for (int y = 0; y < h; y++) {
         std::fill_n(&g_layer[(size_t)y * w], w,
-                    black[y] ? shadeBlack(g_theme.area) : 0xff000000 | g_theme.area);
+                    black[y] ? shadeBlack(g_theme.area) : opaque(g_theme.area));
     }
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
@@ -127,7 +123,7 @@ static void renderLayer(const Rect &n) {
                 if (!dim.empty() && dim[at]) {
                     m = (unsigned char)(m * EXPLAIN_DIM);
                 }
-                const unsigned int c = 0xff000000 | g_analysis.lut[m];
+                const unsigned int c = opaque(g_analysis.lut[m]);
                 g_layer[at] = black[y] ? shadeBlack(c) : c;
             }
         }
@@ -152,7 +148,7 @@ static double overviewY(const Rect &o, double pitch) {
 }
 
 static void renderOverview(int w, int h) {
-    g_ovLayer.assign((size_t)w * h, 0xff000000 | g_theme.area);
+    g_ovLayer.assign((size_t)w * h, opaque(g_theme.area));
     g_ovW = w, g_ovH = h, g_ovVersion = g_analysis.valVersion, g_ovPos = g_session.audioPos,
     g_ovLen = g_session.audioLen;
     const Spectrogram &s = *g_analysis.spec;
@@ -178,7 +174,7 @@ static void renderOverview(int w, int h) {
             for (int b = b0; b <= b1; b++) {
                 m = std::max(m, col[b]);
             }
-            g_ovLayer[(size_t)y * w + x] = 0xff000000 | g_analysis.lut[m];
+            g_ovLayer[(size_t)y * w + x] = opaque(g_analysis.lut[m]);
         }
     }
 }
@@ -803,7 +799,7 @@ void paint(HDC hdc) {
     }
     if (L.tooSmall) {
         for (size_t i = 0; i < (size_t)w * h; i++) {
-            fb[i] = 0xff000000 | g_theme.bg;
+            fb[i] = opaque(g_theme.bg);
         }
         StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S, SRCCOPY);
         return;
