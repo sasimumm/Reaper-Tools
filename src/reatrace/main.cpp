@@ -5,6 +5,7 @@
 // directly below the audio track, so they are saved with the project and can also be edited in
 // REAPER's MIDI editor.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <set>
@@ -135,17 +136,25 @@ static int voiceOfTrack(MediaTrack *tr) {
     return -1;
 }
 
+// The item overlapping [pos, pos + len) the most: notes items grow past their audio item's edges
+// (to fit the notes), so the first overlapping one can be a neighbour's.
 static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool midi) {
+    MediaItem *best = NULL;
+    double bestOverlap = 0;
     for (int i = 0; tr && i < CountTrackMediaItems(tr); i++) {
         MediaItem *it = GetTrackMediaItem(tr, i);
-        const double p = GetMediaItemInfo_Value(it, "D_POSITION"),
-                     l = GetMediaItemInfo_Value(it, "D_LENGTH");
+        const double p = GetMediaItemInfo_Value(it, "D_POSITION");
+        if (p >= pos + len) {
+            break; // a track's items are in position order
+        }
+        const double overlap =
+            (std::min)(p + GetMediaItemInfo_Value(it, "D_LENGTH"), pos + len) - (std::max)(p, pos);
         MediaItem_Take *tk = GetActiveTake(it);
-        if (tk && TakeIsMIDI(tk) == midi && p < pos + len && p + l > pos) {
-            return it;
+        if (overlap > bestOverlap && tk && TakeIsMIDI(tk) == midi) {
+            best = it, bestOverlap = overlap;
         }
     }
-    return NULL;
+    return best;
 }
 
 // The voice's track among the ReaTrace tracks directly below the audio track, created (after the
