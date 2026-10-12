@@ -69,6 +69,20 @@ static void fitItem() {
     redraw();
 }
 
+// The arrange view's time range, with fitItem's pitch range; the whole item when the arrange view
+// doesn't show any of it.
+static void matchArrange() {
+    double a = 0, b = 0;
+    GetSet_ArrangeView2(NULL, false, 0, 0, &a, &b);
+    fitItem();
+    if (b <= a || b <= g_session.audioPos || a >= g_session.audioPos + g_session.audioLen) {
+        return;
+    }
+    const Rect n = noteArea();
+    g_ui.view.pps = (n.r - n.l) / (b - a), g_ui.view.t0 = a;
+    redraw();
+}
+
 static void zoomToSelection() {
     double a = 1e30, b = -1e30;
     int lo = 128, hi = -1;
@@ -620,7 +634,7 @@ static void createWindow() {
     snprintf(title, sizeof(title), "ReaTrace - %s", take ? GetTakeName(take) : "");
     SetWindowText(g_ui.hwnd, title);
     ShowWindow(g_ui.hwnd, SW_SHOW);
-    fitItem();
+    matchArrange();
 }
 
 static void toggleDock() {
