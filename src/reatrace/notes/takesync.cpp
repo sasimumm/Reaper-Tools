@@ -107,7 +107,8 @@ static void fitItemToNotes(MediaItem_Take *take) {
     double a = pos, b = end;
     for (int i = 0; i < t.noteCount(); i++) {
         const Take::NoteEvent n = t.note(i);
-        a = std::min(a, t.toTime(n.start)), b = std::max(b, t.toTime(n.end));
+        a = std::min(a, t.toTime(n.start));
+        b = std::max(b, t.toTime(n.end));
     }
     if (a < pos || b > end) {
         MIDI_SetItemExtents(item, TimeMap2_timeToQN(NULL, a), TimeMap2_timeToQN(NULL, b));
@@ -146,7 +147,9 @@ void loadOtherVoices(bool force) {
         if (!force && item == o.item && snap == o.snapshot) {
             continue;
         }
-        o.item = item, o.snapshot = snap, o.notes.clear();
+        o.item = item;
+        o.snapshot = snap;
+        o.notes.clear();
         if (take) {
             ReaperTake t(take);
             o.notes = readNotes(t);

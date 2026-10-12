@@ -158,7 +158,8 @@ int main() {
         const std::vector<int> got = peaks(r, lo, n, 20, frames - 20, 1);
         double at = 0, sub = 0;
         for (int f = 20; f < frames - 20; f++) {
-            at += r[(size_t)f * n + 57 - lo], sub += r[(size_t)f * n + 45 - lo];
+            at += r[(size_t)f * n + 57 - lo];
+            sub += r[(size_t)f * n + 45 - lo];
         }
         printf("sacf A3 -> %d, sub-octave %.2f of it\n", got[0], sub / at);
         assert(got[0] == 57 && sub < 0.3 * at);

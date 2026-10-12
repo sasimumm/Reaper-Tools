@@ -35,7 +35,9 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
 
     double off[HARMONICS + 1], w[HARMONICS + 1], wsum = 0;
     for (int h = 1; h <= HARMONICS; h++) {
-        off[h] = bpo * log2((double)h), w[h] = pow(HARMONIC_DECAY, h - 1), wsum += w[h];
+        off[h] = bpo * log2((double)h);
+        w[h] = pow(HARMONIC_DECAY, h - 1);
+        wsum += w[h];
     }
 
     struct Cand {
@@ -47,7 +49,8 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
     for (int f = 0; f < s.frames; f++) {
         float peak = 0;
         for (int b = 0; b < s.bins; b++) {
-            c[b] = sqrtf(s.at(f, b)), peak = b >= k0 ? std::max(peak, c[b]) : peak;
+            c[b] = sqrtf(s.at(f, b));
+            peak = b >= k0 ? std::max(peak, c[b]) : peak;
         }
         level[f] = 40 * log10(std::max(peak, 1e-6f)); // c = sqrt(mag), so 40 log10 = dB of mag
         if (peak <= 0) {
@@ -117,7 +120,8 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
                     const double v =
                         cost[f - a - 1][i] + JUMP_COST * fabs(cf[j].pitch - cp[i].pitch);
                     if (v < best) {
-                        best = v, from[f - a][j] = (int)i;
+                        best = v;
+                        from[f - a][j] = (int)i;
                     }
                 }
                 cost[f - a][j] = best + emit;
@@ -126,7 +130,8 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
         int j =
             (int)(std::min_element(cost.back().begin(), cost.back().end()) - cost.back().begin());
         for (int f = b; f >= a; f--) {
-            out.pitch[f] = (float)cands[f][j].pitch, out.strength[f] = (float)cands[f][j].score;
+            out.pitch[f] = (float)cands[f][j].pitch;
+            out.strength[f] = (float)cands[f][j].score;
             j = from[f - a][j];
         }
         a = b + 1;
@@ -135,7 +140,8 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
 }
 
 bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
-    f0 = std::max(0, f0), f1 = std::min((int)c.pitch.size() - 1, f1);
+    f0 = std::max(0, f0);
+    f1 = std::min((int)c.pitch.size() - 1, f1);
     if (f1 < f0) {
         return false;
     }
@@ -169,10 +175,12 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         double sum = 0;
         int cnt = 0;
         for (int g = f; g >= std::max(0, f - half) && c.pitch[g] >= 0; g--) {
-            sum += c.pitch[g], cnt++;
+            sum += c.pitch[g];
+            cnt++;
         }
         for (int g = f + 1; g <= std::min(n - 1, f + half) && c.pitch[g] >= 0; g++) {
-            sum += c.pitch[g], cnt++;
+            sum += c.pitch[g];
+            cnt++;
         }
         smooth[f] = sum / cnt;
     }
@@ -198,7 +206,8 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
             start = -1;
         }
         if (v && start < 0) {
-            start = f, sum = 0;
+            start = f;
+            sum = 0;
         }
         if (v) {
             sum += smooth[f];
@@ -235,7 +244,8 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
                 break;
             }
         }
-        a.f1 = std::max(a.f0, cross - 1), b.f0 = cross;
+        a.f1 = std::max(a.f0, cross - 1);
+        b.f0 = cross;
     }
     // starts after silence: snap to a nearby onset
     if (onsets) {

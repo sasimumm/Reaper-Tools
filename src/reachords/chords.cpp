@@ -52,7 +52,8 @@ class ChordSource : public PCM_source {
     PCM_source *Duplicate() override {
         return guarded("chord item copy", (PCM_source *)NULL, [&] {
             auto *d = new ChordSource;
-            d->chords = chords, d->length = length;
+            d->chords = chords;
+            d->length = length;
             return (PCM_source *)d;
         });
     }
@@ -384,7 +385,8 @@ static void beginEdit(MediaItem *item, double qn) {
     const auto x = [&](double t) { return g_ce.originX + (t - g_ce.drawStart) * g_ce.pps; };
     const double t = src->timeOf(p, qn);
     const int x0 = (int)lround(x(t)), w = (int)std::clamp(x(next) - x(t) - 2, 60.0, 240.0);
-    g_ce.item = item, g_ce.qn = qn;
+    g_ce.item = item;
+    g_ce.qn = qn;
     if (!g_ce.hwnd) {
         SWELL_MakeSetCurParms(1, 1, 0, 0, arrangeHwnd(), false, false);
         g_ce.hwnd = SWELL_MakeEditField(1001, 0, 0, 90, 20, 0);
@@ -413,8 +415,10 @@ static void beginEditAtClick(MediaItem *item, double clickTime,
     POINT pt;
     GetCursorPos(&pt);
     ScreenToClient(arrangeHwnd(), &pt);
-    g_ce.originX = pt.x - pi->mouse_x, g_ce.originY = pt.y - pi->mouse_y - pi->draw_start_y;
-    g_ce.drawStart = pi->draw_start_time, g_ce.pps = pi->pixels_per_second;
+    g_ce.originX = pt.x - pi->mouse_x;
+    g_ce.originY = pt.y - pi->mouse_y - pi->draw_start_y;
+    g_ce.drawStart = pi->draw_start_time;
+    g_ce.pps = pi->pixels_per_second;
 
     double qn = TimeMap2_timeToQN(NULL, SnapToGrid(NULL, clickTime)) - p.qn0;
     for (const Chord &c : src->chords) {
@@ -552,7 +556,8 @@ static void insertItem() {
     TimeMap_QNToMeasures(NULL, qa, &ms, &me);
     const double bar = me - ms;
     if (b <= a) {
-        b = TimeMap2_QNToTime(NULL, qa + 4 * bar), a = TimeMap2_QNToTime(NULL, qa);
+        b = TimeMap2_QNToTime(NULL, qa + 4 * bar);
+        a = TimeMap2_QNToTime(NULL, qa);
     }
     Undo_BeginBlock2(NULL);
     MediaItem *it = AddMediaItemToTrack(tr);

@@ -33,10 +33,13 @@ struct Fx {
 
     Fx() {
         NSEEL_VM_SetCustomFuncThis(vm, this);
-        spl0 = NSEEL_VM_regvar(vm, "spl0"), spl1 = NSEEL_VM_regvar(vm, "spl1");
-        srate = NSEEL_VM_regvar(vm, "srate"), samplesblock = NSEEL_VM_regvar(vm, "samplesblock");
+        spl0 = NSEEL_VM_regvar(vm, "spl0");
+        spl1 = NSEEL_VM_regvar(vm, "spl1");
+        srate = NSEEL_VM_regvar(vm, "srate");
+        samplesblock = NSEEL_VM_regvar(vm, "samplesblock");
         playPos = NSEEL_VM_regvar(vm, "play_position");
-        *srate = SR, *samplesblock = BLOCK;
+        *srate = SR;
+        *samplesblock = BLOCK;
         const std::string src = isolateJSFX();
         // the header: "sliderN:default<...", then "@section" lines start the code sections
         std::string sections[4];
@@ -57,7 +60,8 @@ struct Fx {
             bool header = false;
             for (int s = 0; s < 4; s++) {
                 if (l == NAMES[s]) {
-                    cur = s, header = true;
+                    cur = s;
+                    header = true;
                 }
             }
             if (!header && cur >= 0) {
@@ -84,13 +88,15 @@ struct Fx {
     // parameters as ReaTrace sends them: width, background, then each voice's (time, pitch) changes
     using Changes = std::vector<std::pair<double, int>>;
     void set(double width, double bgDb, const std::vector<Changes> &voices) {
-        *sliders[0] = width, *sliders[1] = bgDb;
+        *sliders[0] = width;
+        *sliders[1] = bgDb;
         for (int v = 0; v < ISOLATE_VOICES; v++) {
             const Changes c = v < (int)voices.size() ? voices[(size_t)v] : Changes();
             const size_t at = (size_t)isolateParam(v);
             *sliders[at] = (double)c.size();
             for (size_t i = 0; i < c.size(); i++) {
-                *sliders[at + 1 + 2 * i] = c[i].first, *sliders[at + 2 + 2 * i] = c[i].second;
+                *sliders[at + 1 + 2 * i] = c[i].first;
+                *sliders[at + 2 + 2 * i] = c[i].second;
             }
         }
         NSEEL_code_execute(slider);
@@ -135,7 +141,8 @@ static std::vector<float> tone(double pitch, double seconds, double vibratoCents
 static double gainDb(const std::vector<float> &x, const std::vector<float> &y, double a, double b) {
     double ex = 0, ey = 0;
     for (size_t i = (size_t)(a * SR); i < (size_t)(b * SR) && i < x.size(); i++) {
-        ex += (double)x[i] * x[i], ey += (double)y[i] * y[i];
+        ex += (double)x[i] * x[i];
+        ey += (double)y[i] * y[i];
     }
     return 10 * log10(ey / ex);
 }

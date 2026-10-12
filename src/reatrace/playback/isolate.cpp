@@ -121,13 +121,15 @@ void updateIsolate() {
         }
     }
     std::vector<double> v((size_t)isolateParam(WINDOW_VOICES));
-    v[0] = g_settings.isolateWidth, v[1] = g_settings.isolateBackground;
+    v[0] = g_settings.isolateWidth;
+    v[1] = g_settings.isolateBackground;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
         const auto sched = pitchSchedule(spans[voice], now - 1, ISOLATE_CHANGES);
         size_t at = (size_t)isolateParam(voice);
         v[at++] = (double)sched.size();
         for (const auto &[t, p] : sched) {
-            v[at++] = t, v[at++] = p;
+            v[at++] = t;
+            v[at++] = p;
         }
     }
     for (size_t i = 0; i < v.size(); i++) {

@@ -334,11 +334,17 @@ static void changedSetting(const Widget &w) {
 
 static void applyPreset(int i) {
     if (i == 0) {
-        g_settings.channel = CH_CENTRE, g_settings.rp.subtractNoise = true, g_settings.np.fmin = 60,
-        g_settings.np.fmax = 5000, g_settings.np.gamma = 11;
+        g_settings.channel = CH_CENTRE;
+        g_settings.rp.subtractNoise = true;
+        g_settings.np.fmin = 60;
+        g_settings.np.fmax = 5000;
+        g_settings.np.gamma = 11;
     } else if (i == 1) {
-        g_settings.channel = CH_MIX, g_settings.rp.subtractNoise = false, g_settings.np.fmin = 60,
-        g_settings.np.fmax = 6000, g_settings.np.gamma = 11;
+        g_settings.channel = CH_MIX;
+        g_settings.rp.subtractNoise = false;
+        g_settings.np.fmin = 60;
+        g_settings.np.fmax = 6000;
+        g_settings.np.gamma = 11;
     } else if (i == 2) {
         g_settings.np.gamma = 25; // wider bands, shorter windows: sharper timing for fast runs
     }
@@ -402,7 +408,9 @@ static std::vector<MediaTrack *> voiceTracks() {
     if (change == GetProjectStateChangeCount(NULL) && audio == g_session.audio) {
         return out;
     }
-    change = GetProjectStateChangeCount(NULL), audio = g_session.audio, out.clear();
+    change = GetProjectStateChangeCount(NULL);
+    audio = g_session.audio;
+    out.clear();
     for (int v = 0; v < WINDOW_VOICES; v++) {
         if (MediaItem *it = VoiceItem(g_session.audio, v, false)) {
             out.push_back(GetMediaItem_Track(it));
@@ -473,7 +481,9 @@ void panelDoubleClick(int y) {
     const int i = widgetAt(y);
     std::vector<Widget> ws = widgets();
     if (i >= 0 && ws[i].type == W_SLIDER && *ws[i].value != sliderDefault(ws[i])) {
-        g_panelWidget = i, *ws[i].value = sliderDefault(ws[i]), changedSetting(ws[i]);
+        g_panelWidget = i;
+        *ws[i].value = sliderDefault(ws[i]);
+        changedSetting(ws[i]);
     }
 }
 
@@ -502,7 +512,8 @@ void panelMouse(int x, int y, bool down) {
     if (w.type == W_SLIDER) {
         const double v = sliderValue(w, (double)(x - p.l - 12) / (p.r - p.l - 24));
         if (v != *w.value) {
-            *w.value = v, changedSetting(w);
+            *w.value = v;
+            changedSetting(w);
         }
     } else if (down && w.type == W_TOGGLE) {
         *w.flag = !*w.flag;

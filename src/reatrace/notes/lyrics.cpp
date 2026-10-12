@@ -78,7 +78,8 @@ void beginLyric(int i) {
         o.sel = false;
     }
     g_session.ed.notes[i].sel = true;
-    g_editStart = nt.start, g_editPitch = nt.pitch;
+    g_editStart = nt.start;
+    g_editPitch = nt.pitch;
     if (!g_ui.edit) {
         SWELL_MakeSetCurParms(1, 1, 0, 0, g_ui.hwnd, false, false);
         g_ui.edit = SWELL_MakeEditField(1001, 0, 0, 90, 20, 0);
@@ -120,7 +121,8 @@ void endLyric(bool commit, int dir) {
     double nextStart = 0;
     int nextPitch = -1;
     if (next >= 0) {
-        nextStart = g_session.ed.notes[next].start, nextPitch = g_session.ed.notes[next].pitch;
+        nextStart = g_session.ed.notes[next].start;
+        nextPitch = g_session.ed.notes[next].pitch;
     }
     if (commit && text != g_session.ed.notes[i].lyric) {
         g_session.ed.notes[i].lyric = text;

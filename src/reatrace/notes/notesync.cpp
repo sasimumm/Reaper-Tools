@@ -32,7 +32,8 @@ std::vector<Note> readNotes(Take &take) {
                                    [&](size_t n, double p) { return startPPQ[n] <= p; });
         for (; it != byStart.end() && startPPQ[*it] < t.ppq + 0.5; ++it) {
             if (notes[*it].lyricIdx < 0) {
-                notes[*it].lyric = t.text, notes[*it].lyricIdx = i;
+                notes[*it].lyric = t.text;
+                notes[*it].lyricIdx = i;
                 break;
             }
         }
@@ -53,7 +54,8 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
     }
     for (const Note &n : edited) {
         if (!known(n, loaded)) {
-            c.data = true, c.lyrics |= !n.lyric.empty();
+            c.data = true;
+            c.lyrics |= !n.lyric.empty();
             continue;
         }
         const Note &o = loaded[(size_t)n.idx];

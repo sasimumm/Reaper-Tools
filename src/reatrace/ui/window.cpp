@@ -47,7 +47,8 @@ Rect panelArea() { return layout().panel; }
 
 void syncViewOrigin() {
     Rect n = noteArea();
-    g_ui.view.x0 = n.l, g_ui.view.y0 = n.t;
+    g_ui.view.x0 = n.l;
+    g_ui.view.y0 = n.t;
 }
 
 void redraw() {
@@ -79,7 +80,8 @@ static void matchArrange() {
         return;
     }
     const Rect n = noteArea();
-    g_ui.view.pps = (n.r - n.l) / (b - a), g_ui.view.t0 = a;
+    g_ui.view.pps = (n.r - n.l) / (b - a);
+    g_ui.view.t0 = a;
     redraw();
 }
 
@@ -88,7 +90,9 @@ static void zoomToSelection() {
     int lo = 128, hi = -1;
     for (const Note &nt : g_session.ed.notes) {
         if (nt.sel) {
-            a = std::min(a, nt.start), b = std::max(b, nt.end), lo = std::min(lo, nt.pitch),
+            a = std::min(a, nt.start);
+            b = std::max(b, nt.end);
+            lo = std::min(lo, nt.pitch);
             hi = std::max(hi, nt.pitch);
         }
     }
@@ -148,14 +152,19 @@ static void syncArrange() {
         return;
     }
     if (a != g_arrA || b != g_arrB) {
-        g_ui.view.pps = (n.r - n.l) / (b - a), g_ui.view.t0 = a;
+        g_ui.view.pps = (n.r - n.l) / (b - a);
+        g_ui.view.t0 = a;
         redraw();
     } else if (g_ui.view.t(n.l) != g_ourA || g_ui.view.t(n.r) != g_ourB) {
-        a = g_ui.view.t(n.l), b = g_ui.view.t(n.r);
+        a = g_ui.view.t(n.l);
+        b = g_ui.view.t(n.r);
         GetSet_ArrangeView2(NULL, true, 0, 0, &a, &b);
         GetSet_ArrangeView2(NULL, false, 0, 0, &a, &b); // read back what REAPER made of it
     }
-    g_arrA = a, g_arrB = b, g_ourA = g_ui.view.t(n.l), g_ourB = g_ui.view.t(n.r);
+    g_arrA = a;
+    g_arrB = b;
+    g_ourA = g_ui.view.t(n.l);
+    g_ourB = g_ui.view.t(n.r);
 }
 
 static void followPlayback() {
@@ -224,7 +233,8 @@ static bool onKey(int key) {
         g_ui.help = false;
     } else if (key == VK_ESCAPE) {
         if (g_session.ed.active()) {
-            g_session.ed.cancel(), g_drag = DRAG_NONE, ReleaseCapture();
+            g_session.ed.cancel(), g_drag = DRAG_NONE;
+            ReleaseCapture();
         } else if (g_session.ed.selectAll(false)) {
             commitNotes();
         }
@@ -244,7 +254,8 @@ static bool onKey(int key) {
     } else if (key == 'S' && !m) {
         g_ui.panel = !g_ui.panel;
     } else if (key == 'G' && !m) {
-        g_settings.snapMode = (g_settings.snapMode + 1) % 3, setupEditorSnap();
+        g_settings.snapMode = (g_settings.snapMode + 1) % 3;
+        setupEditorSnap();
     } else if (key == 'P' && !m) {
         g_settings.showContour = !g_settings.showContour;
     } else if (key == 'X' && !m) {
@@ -296,13 +307,17 @@ static bool onKey(int key) {
     } else if (key == 'Z' && !m) {
         zoomToSelection();
     } else if (key == ('[' | CHARKEY)) {
-        g_settings.rp.brightness = std::max(-1.0, g_settings.rp.brightness - 0.05), updateValues();
+        g_settings.rp.brightness = std::max(-1.0, g_settings.rp.brightness - 0.05);
+        updateValues();
     } else if (key == (']' | CHARKEY)) {
-        g_settings.rp.brightness = std::min(1.0, g_settings.rp.brightness + 0.05), updateValues();
+        g_settings.rp.brightness = std::min(1.0, g_settings.rp.brightness + 0.05);
+        updateValues();
     } else if (key == ('-' | CHARKEY)) {
-        g_settings.rp.contrast = std::max(0.1, g_settings.rp.contrast / 1.1), updateValues();
+        g_settings.rp.contrast = std::max(0.1, g_settings.rp.contrast / 1.1);
+        updateValues();
     } else if (key == ('=' | CHARKEY)) {
-        g_settings.rp.contrast = std::min(3.0, g_settings.rp.contrast * 1.1), updateValues();
+        g_settings.rp.contrast = std::min(3.0, g_settings.rp.contrast * 1.1);
+        updateValues();
     } else if (key == (',' | CHARKEY)) {
         adjustGamma(-1);
     } else if (key == ('.' | CHARKEY)) {
@@ -445,7 +460,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             return 0;
         }
         if (panelShown() && panelArea().in(x, y)) {
-            g_drag = DRAG_PANEL, panelMouse(x, y, true);
+            g_drag = DRAG_PANEL;
+            panelMouse(x, y, true);
         } else if (rulerArea().in(x, y) && (mods() & MOD_SHIFT)) {
             // shift+drag in the ruler: time selection, snapped like notes
             g_drag = DRAG_RULER_SELECT;
@@ -453,9 +469,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 (mods() & MOD_ALT) ? g_ui.view.t(x) : g_session.ed.snap(g_ui.view.t(x));
             setSelection(g_selectAnchor, g_selectAnchor);
         } else if (rulerArea().in(x, y)) {
-            g_drag = DRAG_RULER, SetEditCurPos(g_ui.view.t(x), false, true);
+            g_drag = DRAG_RULER;
+            SetEditCurPos(g_ui.view.t(x), false, true);
         } else if (overviewArea().in(x, y) && !(g_ui.foldedLanes & LANE_OVERVIEW)) {
-            g_drag = DRAG_OVERVIEW, centreOn(overviewTime(x));
+            g_drag = DRAG_OVERVIEW;
+            centreOn(overviewTime(x));
         } else if (lyricsArea().in(x, y) && !(g_ui.foldedLanes & LANE_LYRICS)) {
             beginLyric(lyricAt(x));
             return 0;
@@ -466,7 +484,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
                 acceptSuggestion(sug); // click a suggested note to make it a note
                 return 0;
             }
-            g_drag = DRAG_NOTES, g_session.ed.mouseDown(g_ui.view, x, y, mods());
+            g_drag = DRAG_NOTES;
+            g_session.ed.mouseDown(g_ui.view, x, y, mods());
             int hit = -1;
             if (g_session.ed.hitTest(g_ui.view, x, y, &hit) != NoteEditor::NONE) {
                 previewPitch(g_session.ed.notes[hit].pitch);
@@ -481,7 +500,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_MOUSEMOVE: {
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
-        g_ui.mouseX = x, g_ui.mouseY = y;
+        g_ui.mouseX = x;
+        g_ui.mouseY = y;
         if (g_drag == DRAG_NOTES) {
             g_session.ed.mouseMove(g_ui.view, x, y, mods()), previewDragged();
         } else if (g_drag == DRAG_RULER) {
@@ -521,7 +541,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         // double-click a note to type its lyric, a slider to reset it
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
         if (panelShown() && panelArea().in(x, y)) {
-            g_drag = DRAG_PANEL, panelDoubleClick(y); // mouse up recomputes the analysis if needed
+            g_drag = DRAG_PANEL;
+            panelDoubleClick(y); // mouse up recomputes the analysis if needed
             return 0;
         }
         int hit = -1;
@@ -599,7 +620,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             cancelJob(), clearCache();
         }
         releasePaintCache();
-        g_ui.hwnd = NULL, g_drag = DRAG_NONE;
+        g_ui.hwnd = NULL;
+        g_drag = DRAG_NONE;
         return 0;
     }
     return 0;
@@ -663,7 +685,8 @@ void Window_Open(MediaItem *audio, int voice) {
     Window_Close();
     clearCache();
     g_session = Session();
-    g_session.audio = audio, g_session.voice = g_ui.voicePick = voice;
+    g_session.audio = audio;
+    g_session.voice = g_ui.voicePick = voice;
     g_session.midi = VoiceItem(audio, voice, false);
     g_session.audioPos = GetMediaItemInfo_Value(audio, "D_POSITION");
     g_session.audioLen = GetMediaItemInfo_Value(audio, "D_LENGTH");
@@ -724,7 +747,9 @@ void Window_Timer() {
     if (const std::string id = audioIdentity(take); id != g_session.audioIdentity) {
         // another take or source: what is shown describes a different recording, so drop it now
         g_session.audioIdentity = id;
-        g_session.audioPos = pos, g_session.audioLen = len, g_session.audioOffs = offs,
+        g_session.audioPos = pos;
+        g_session.audioLen = len;
+        g_session.audioOffs = offs;
         g_session.audioRate = rate;
         cancelJob();
         clearAnalysis();
@@ -733,7 +758,9 @@ void Window_Timer() {
         requestAnalysis(false);
     } else if (pos != g_session.audioPos || len != g_session.audioLen ||
                offs != g_session.audioOffs || rate != g_session.audioRate) {
-        g_session.audioPos = pos, g_session.audioLen = len, g_session.audioOffs = offs,
+        g_session.audioPos = pos;
+        g_session.audioLen = len;
+        g_session.audioOffs = offs;
         g_session.audioRate = rate;
         s_changedAt = time_precise();
         redraw();
@@ -748,7 +775,8 @@ void Window_Timer() {
     static int s_checkedChange = -1;
     static double s_checkedAt = 0;
     if (!g_session.ed.active() && (change != s_checkedChange || time_precise() - s_checkedAt > 1)) {
-        s_checkedChange = change, s_checkedAt = time_precise();
+        s_checkedChange = change;
+        s_checkedAt = time_precise();
         if (notesStale()) {
             loadNotes(); // edited elsewhere, undo, item moved, tempo changed, ...
         }
@@ -766,6 +794,8 @@ void Window_Timer() {
         cursor != g_lastCursor || change != g_lastProjChange) {
         redraw();
     }
-    g_lastPlayState = state, g_lastPlayPos = playPos, g_lastCursor = cursor,
+    g_lastPlayState = state;
+    g_lastPlayPos = playPos;
+    g_lastCursor = cursor;
     g_lastProjChange = change;
 }

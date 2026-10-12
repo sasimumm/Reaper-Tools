@@ -56,7 +56,8 @@ static void renderLayer(const Rect &n) {
         if (a > b) {
             a = b = (int)lround(0.5 * (lo + hi));
         }
-        rowLo[y] = std::max(0, a), rowHi[y] = std::min(s.bins - 1, b);
+        rowLo[y] = std::max(0, a);
+        rowHi[y] = std::min(s.bins - 1, b);
     }
     // Explain: pixels whose row centre is within half a semitone of a sounding note's overtone
     std::vector<char> dim;
@@ -97,7 +98,8 @@ static void renderLayer(const Rect &n) {
             if (f0 > f1) {
                 f0 = f1 = (int)lround(0.5 * (fa + fb));
             }
-            f0 = std::max(f0, 0), f1 = std::min(f1, s.frames - 1);
+            f0 = std::max(f0, 0);
+            f1 = std::min(f1, s.frames - 1);
             if (f0 > f1) {
                 continue;
             }
@@ -146,7 +148,10 @@ static double overviewY(const Rect &o, double pitch) {
 
 static void renderOverview(int w, int h) {
     g_ovLayer.assign((size_t)w * h, opaque(g_theme.area));
-    g_ovW = w, g_ovH = h, g_ovVersion = g_analysis.valVersion, g_ovPos = g_session.audioPos,
+    g_ovW = w;
+    g_ovH = h;
+    g_ovVersion = g_analysis.valVersion;
+    g_ovPos = g_session.audioPos;
     g_ovLen = g_session.audioLen;
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
@@ -277,12 +282,17 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
     int xA = 0, xB = 0;
     if (dn >= 0) {
         const Note &nt = g_session.ed.notes[dn];
-        p0 = nt.pitch, tA = nt.start, tB = nt.end;
-        xA = (int)lround(g_ui.view.x(tA)), xB = std::max(xA + 40, (int)lround(g_ui.view.x(tB)));
+        p0 = nt.pitch;
+        tA = nt.start;
+        tB = nt.end;
+        xA = (int)lround(g_ui.view.x(tA));
+        xB = std::max(xA + 40, (int)lround(g_ui.view.x(tB)));
     } else {
-        p0 = g_ui.view.pitchAt(g_ui.mouseY), tA = g_ui.view.t(g_ui.mouseX) - 0.03,
+        p0 = g_ui.view.pitchAt(g_ui.mouseY);
+        tA = g_ui.view.t(g_ui.mouseX) - 0.03;
         tB = g_ui.view.t(g_ui.mouseX) + 0.03;
-        xA = g_ui.mouseX - 70, xB = g_ui.mouseX + 70;
+        xA = g_ui.mouseX - 70;
+        xB = g_ui.mouseX + 70;
     }
     const int a = (int)lround(g_settings.guideOpacity * 256),
               nh = (int)lround(g_settings.harmonics);
@@ -376,7 +386,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
         double lo = 1e9, hi = -1e9;
         auto add = [&](double p) {
             if (p >= 0) {
-                lo = std::min(lo, p), hi = std::max(hi, p);
+                lo = std::min(lo, p);
+                hi = std::max(hi, p);
             }
         };
         add(pitchAt(fa)), add(pitchAt(fb));
@@ -519,7 +530,8 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         const double t = g_ui.view.t(g_ui.mouseX), p = g_ui.view.p(g_ui.mouseY);
         const int ip = (int)floor(p + 0.5);
         pitchName(ip, buf, sizeof(buf)), col[0] = buf;
-        snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12)), col[1] = buf;
+        snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12));
+        col[1] = buf;
         const Spectrogram &sp = *g_analysis.spec;
         const int f = (int)lround((t - g_session.audioPos) * sp.frameRate());
         if (f >= 0 && f < sp.frames) {
@@ -537,11 +549,11 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
                 const int pp = (int)floor(peak + 0.5);
                 char name[16];
                 pitchName(pp, name, sizeof(name));
-                snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100),
-                    col[2] = buf;
+                snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100);
+                col[2] = buf;
                 const int bin = std::max(0, std::min(sp.bins - 1, (int)lround(sp.binOfPitch(p))));
-                snprintf(buf, sizeof(buf), "%4.0f dB", 20 * log10(std::max(1e-10f, sp.at(f, bin)))),
-                    col[3] = buf;
+                snprintf(buf, sizeof(buf), "%4.0f dB", 20 * log10(std::max(1e-10f, sp.at(f, bin))));
+                col[3] = buf;
             }
         }
         format_timestr_pos(t, buf, sizeof(buf), 0), col[4] = buf;
@@ -555,7 +567,8 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
                       f1 = (int)lround((hn.end - g_session.audioPos) * sp.frameRate());
             if (contourMedian(g_analysis.contour, f0, f1, (int)lround(0.05 * sp.frameRate()),
                               &sung)) {
-                snprintf(buf, sizeof(buf), "sung %+.0fc", (sung - hn.pitch) * 100), col[6] = buf;
+                snprintf(buf, sizeof(buf), "sung %+.0fc", (sung - hn.pitch) * 100);
+                col[6] = buf;
             }
         }
     }
@@ -742,13 +755,15 @@ static const std::vector<ChordSpan> &projectChords() {
     if (change == lastChange) {
         return spans;
     }
-    lastChange = change, spans.clear();
+    lastChange = change;
+    spans.clear();
     using GetChord = int (*)(int, double *, double *, char *, int);
     const auto get = (GetChord)plugin_getapi("ReaChords_GetChord");
     ChordSpan c;
     char name[256];
     for (int i = 0; get && get(i, &c.start, &c.end, name, sizeof(name)); i++) {
-        c.name = name, spans.push_back(c);
+        c.name = name;
+        spans.push_back(c);
     }
     return spans;
 }
@@ -768,7 +783,8 @@ void paint(HDC hdc) {
             SWELL_DeleteGfxContext(g_memdc);
         }
         g_memdc = SWELL_CreateMemContext(hdc, w, h);
-        g_memw = w, g_memh = h;
+        g_memw = w;
+        g_memh = h;
         if (g_font && g_fontScale != S) {
             DeleteObject(g_font), g_font = NULL;
         }
@@ -825,7 +841,8 @@ void paint(HDC hdc) {
     };
     if (!g_layerValid || !(key == g_layerKey)) {
         renderLayer(n);
-        g_layerKey = key, g_layerValid = true;
+        g_layerKey = key;
+        g_layerValid = true;
     }
     const int lw = (n.r - n.l) * S;
     for (int y = n.t * S; y < n.b * S; y++) {
@@ -1081,5 +1098,7 @@ void releasePaintCache() {
     if (g_memdc) {
         SWELL_DeleteGfxContext(g_memdc);
     }
-    g_memdc = NULL, g_memw = g_memh = 0, g_layerValid = false;
+    g_memdc = NULL;
+    g_memw = g_memh = 0;
+    g_layerValid = false;
 }

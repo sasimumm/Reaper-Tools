@@ -36,8 +36,10 @@ NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *n
 }
 
 void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
-    downX = curX = x, downY = curY = y;
-    changed = false, axis = AXIS_FREE;
+    downX = curX = x;
+    downY = curY = y;
+    changed = false;
+    axis = AXIS_FREE;
     orig = notes;
     int i = -1;
     Hit h = hitTest(v, x, y, &i);
@@ -60,11 +62,15 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
         changed = true;
         orig = notes;
     }
-    anchor = i, dragHit = h, mode = PENDING_DRAG;
+    anchor = i;
+    dragHit = h;
+    mode = PENDING_DRAG;
 }
 
 void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
-    curX = x, curY = y, moves++;
+    curX = x;
+    curY = y;
+    moves++;
     const bool past = fabs(x - downX) >= DRAG_THRESHOLD || fabs(y - downY) >= DRAG_THRESHOLD;
     auto sn = [&](double t) { return (mods & MOD_ALT) ? t : snap(t); };
 
@@ -134,7 +140,8 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
     }
     if (mode == PENDING_DRAW) { // click on empty space
         for (Note &n : notes) {
-            changed |= n.sel, n.sel = false;
+            changed |= n.sel;
+            n.sel = false;
         }
     } else if (mode == PENDING_DRAG) { // click on an already selected note: select just it
         for (size_t i = 0; i < notes.size(); i++) {
@@ -151,7 +158,8 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
             }
         }
     }
-    mode = IDLE, anchor = drawIndex = -1;
+    mode = IDLE;
+    anchor = drawIndex = -1;
     return changed;
 }
 
@@ -159,7 +167,8 @@ void NoteEditor::cancel() {
     if (mode != IDLE) {
         notes = orig;
     }
-    mode = IDLE, anchor = drawIndex = -1;
+    mode = IDLE;
+    anchor = drawIndex = -1;
 }
 
 bool NoteEditor::deleteSelected() {
@@ -179,7 +188,8 @@ bool NoteEditor::deleteSelected() {
 bool NoteEditor::selectAll(bool sel) {
     bool any = false;
     for (Note &n : notes) {
-        any |= n.sel != sel, n.sel = sel;
+        any |= n.sel != sel;
+        n.sel = sel;
     }
     return any;
 }
@@ -218,7 +228,10 @@ void NoteEditor::paste(const std::vector<Note> &clip, double at) {
         n.sel = false;
     }
     for (Note n : clip) {
-        n.start += at - first, n.end += at - first, n.sel = true, n.idx = n.lyricIdx = -1;
+        n.start += at - first;
+        n.end += at - first;
+        n.sel = true;
+        n.idx = n.lyricIdx = -1;
         notes.push_back(n);
     }
 }
@@ -230,7 +243,8 @@ bool NoteEditor::duplicateSelected() {
     }
     double a = clip[0].start, b = clip[0].end;
     for (const Note &n : clip) {
-        a = std::min(a, n.start), b = std::max(b, n.end);
+        a = std::min(a, n.start);
+        b = std::max(b, n.end);
     }
     paste(clip, b);
     return true;
@@ -243,7 +257,10 @@ bool NoteEditor::nudgeSelected(const std::function<double(double)> &move, int se
         if (!n.sel) {
             continue;
         }
-        n.start = move(n.start), n.end = move(n.end), n.pitch += semitones, any = true;
+        n.start = move(n.start);
+        n.end = move(n.end);
+        n.pitch += semitones;
+        any = true;
         if (n.pitch < 0 || n.pitch > 127 || n.start < 0) {
             return false;
         }
@@ -313,8 +330,10 @@ bool NoteEditor::marquee(double r[4]) const {
     if (mode != MARQUEE) {
         return false;
     }
-    r[0] = std::min(downX, curX), r[1] = std::min(downY, curY);
-    r[2] = std::max(downX, curX), r[3] = std::max(downY, curY);
+    r[0] = std::min(downX, curX);
+    r[1] = std::min(downY, curY);
+    r[2] = std::max(downX, curX);
+    r[3] = std::max(downY, curY);
     return true;
 }
 

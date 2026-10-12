@@ -10,7 +10,7 @@ set(WDL ${CMAKE_SOURCE_DIR}/vendor/WDL/WDL)
 
 # Warnings on our own sources only (vendor code and SDK headers are left alone: they are SYSTEM includes).
 option(REATRACE_WERROR "Treat warnings in ReaTrace's own sources as errors" ON)
-set(REATRACE_WARNINGS -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Wimplicit-fallthrough)
+set(REATRACE_WARNINGS -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -Wimplicit-fallthrough -Wcomma)
 if(REATRACE_WERROR)
   list(APPEND REATRACE_WARNINGS -Werror)
 endif()

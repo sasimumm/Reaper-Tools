@@ -141,7 +141,8 @@ int main() {
     {
         FakeTake t = song();
         const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
-            e[1].start = 2.5, e[1].end = 3;
+            e[1].start = 2.5;
+            e[1].end = 3;
         });
         assert(c.data && c.lyrics);
         assert(n.size() == 3 && n[2].pitch == 62 && n[2].start == 2.5 && n[2].lyric == "lo");
@@ -205,7 +206,8 @@ int main() {
         // an action inserted a note during a drag: index 1 is now a different note
         t = song();
         snap = snapshotOf(t);
-        loaded = readNotes(t), edited = loaded;
+        loaded = readNotes(t);
+        edited = loaded;
         t.insertNote({480, 700, 70, false}, 96);
         t.sort();
         edited[1].pitch = 63;
@@ -216,7 +218,8 @@ int main() {
         // unchanged: written
         t = song();
         snap = snapshotOf(t);
-        loaded = readNotes(t), edited = loaded;
+        loaded = readNotes(t);
+        edited = loaded;
         edited[0].pitch = 61;
         assert(writeNotes(t, snap, loaded, edited, {}, 96) && readNotes(t)[0].pitch == 61);
     }

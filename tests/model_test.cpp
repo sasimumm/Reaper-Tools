@@ -11,8 +11,13 @@ int main() {
     // settings round-trip through the project's text format
     {
         Settings a;
-        a.np.gamma = 25, a.rp.contrast = 1.75, a.channel = CH_CENTRE, a.ghosts = false;
-        a.snapMode = SNAP_GRID, a.guideOpacity = 0.4, a.estimateVote = false;
+        a.np.gamma = 25;
+        a.rp.contrast = 1.75;
+        a.channel = CH_CENTRE;
+        a.ghosts = false;
+        a.snapMode = SNAP_GRID;
+        a.guideOpacity = 0.4;
+        a.estimateVote = false;
         Settings b;
         decodeSettings(encodeSettings(a).c_str(), b);
         assert(encodeSettings(b) == encodeSettings(a));

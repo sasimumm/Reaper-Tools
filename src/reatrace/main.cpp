@@ -152,7 +152,8 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
             (std::min)(p + GetMediaItemInfo_Value(it, "D_LENGTH"), pos + len) - (std::max)(p, pos);
         MediaItem_Take *tk = GetActiveTake(it);
         if (overlap > bestOverlap && tk && TakeIsMIDI(tk) == midi) {
-            best = it, bestOverlap = overlap;
+            best = it;
+            bestOverlap = overlap;
         }
     }
     return best;

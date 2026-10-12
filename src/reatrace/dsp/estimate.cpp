@@ -112,7 +112,8 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         for (int b = 0; b < B; b++) {
             sum += V(f, b);
         }
-        mean += sum, pen[f] = (float)(LAM * (sum + eps) / B * 50);
+        mean += sum;
+        pen[f] = (float)(LAM * (sum + eps) / B * 50);
     }
     mean /= (double)F * B;
 
@@ -127,7 +128,8 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 for (int h = 0; h < NH; h++) {
                     v += pp[h] * A[(size_t)reg(p) * NH + h];
                 }
-                W[(size_t)b * K + p] = (float)v, sum += v;
+                W[(size_t)b * K + p] = (float)v;
+                sum += v;
             }
             norm[p] = (float)(sum + eps);
             for (int b = 0; b < B; b++) {
@@ -191,7 +193,8 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 }
                 const bool solo = best / (sum + eps) >= SOLO;
                 for (int p = 0; p < P; p++) {
-                    Hm[(size_t)f * P + p] = solo ? h[p] : 0, hsum[p] += solo ? h[p] : 0;
+                    Hm[(size_t)f * P + p] = solo ? h[p] : 0;
+                    hsum[p] += solo ? h[p] : 0;
                 }
             }
             cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, B, P, fc, 1.0f, WH.data(), B,
@@ -203,8 +206,8 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 const float *pp = &part[((size_t)b * P + p) * NH];
                 const double rh = RH[(size_t)b * P + p] / norm[p], hn = hsum[p] / norm[p];
                 for (int h = 0; h < NH; h++) {
-                    nr[(size_t)reg(p) * NH + h] += pp[h] * rh,
-                        dr[(size_t)reg(p) * NH + h] += pp[h] * hn;
+                    nr[(size_t)reg(p) * NH + h] += pp[h] * rh;
+                    dr[(size_t)reg(p) * NH + h] += pp[h] * hn;
                 }
             }
         }
@@ -291,11 +294,13 @@ static void butterBandpass(double lo, double hi, Biquad out[2]) {
     C poles[4];
     for (int i = 0; i < 2; i++) {
         const C pl = proto[i] * (bw / 2), r = std::sqrt(pl * pl - wo * wo);
-        poles[i] = pl + r, poles[2 + i] = pl - r;
+        poles[i] = pl + r;
+        poles[2 + i] = pl - r;
     }
     C den = 1;
     for (C &p : poles) {
-        den *= fs2 - p, p = (fs2 + p) / (fs2 - p);
+        den *= fs2 - p;
+        p = (fs2 + p) / (fs2 - p);
     }
     const double k =
         bw * bw * std::real(C(fs2 * fs2) / den); // zeros: two at s=0 (z=1), two at infinity (z=-1)
@@ -355,7 +360,8 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
         for (int l = 1; l < maxlag; l++) {
             const double m = 69 + 12 * log2((double)SR * SACF_UP / l / 440);
             if (fabs(m - k) <= 0.5) {
-                a = std::min(a, l), b = std::max(b, l);
+                a = std::min(a, l);
+                b = std::max(b, l);
             }
             if (fabs(m - k) < fabs(69 + 12 * log2((double)SR * SACF_UP / nearest / 440) - k)) {
                 nearest = l;
@@ -364,7 +370,8 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
         if (a > b) {
             a = b = nearest;
         }
-        la[k - lo] = a, lb[k - lo] = b;
+        la[k - lo] = a;
+        lb[k - lo] = b;
     }
     std::vector<float> hann(SACF_NFFT);
     for (int i = 0; i < SACF_NFFT; i++) {
@@ -406,7 +413,7 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                     WDL_real_fft(buf.data(), SACF_NFFT, 0);
                     const WDL_FFT_COMPLEX *X = (const WDL_FFT_COMPLEX *)buf.data();
                     // |X|^K = (|X|^2)^(K/2), vectorised
-                    pw[0] = X[0].re * X[0].re,
+                    pw[0] = X[0].re * X[0].re;
                     pw[SACF_NFFT / 2] = X[0].im * X[0].im; // Nyquist is packed into bin 0
                     for (int k = 1; k < SACF_NFFT / 2; k++) {
                         pw[k] = X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im;
@@ -562,7 +569,8 @@ struct Partials {
         for (int i = 0; i < RA_NFFT; i++) {
             const long long j = (long long)f * HOP - RA_NFFT / 2 + i;
             const float v = j >= 0 && j < (long long)y.size() ? y[j] : 0;
-            a[i] = v * win[i], b[i] = v * dwin[i];
+            a[i] = v * win[i];
+            b[i] = v * dwin[i];
         }
         WDL_real_fft(a.data(), RA_NFFT, 0);
         WDL_real_fft(b.data(), RA_NFFT, 0);
@@ -632,7 +640,8 @@ static double evenSurplus(const std::vector<double> &amps) {
     for (int h : {2, 4, 6, 8}) {
         if (h < (int)amps.size() && std::isfinite(amps[h - 2]) && std::isfinite(amps[h - 1]) &&
             std::isfinite(amps[h])) {
-            sum += amps[h - 1] - 0.5 * (amps[h - 2] + amps[h]), n++;
+            sum += amps[h - 1] - 0.5 * (amps[h - 2] + amps[h]);
+            n++;
         }
     }
     return n ? sum / n : NAN;
@@ -671,9 +680,12 @@ static bool detrend(const std::vector<double> &x, std::vector<double> &out) {
         const double u = i - c;
         double p = 1;
         for (int k = 0; k < 5; k++) {
-            S[k] += p, p *= u;
+            S[k] += p;
+            p *= u;
         }
-        T[0] += v[i], T[1] += v[i] * u, T[2] += v[i] * u * u;
+        T[0] += v[i];
+        T[1] += v[i] * u;
+        T[2] += v[i] * u * u;
     }
     double A[3][4] = {{S[0], S[1], S[2], T[0]}, {S[1], S[2], S[3], T[1]}, {S[2], S[3], S[4], T[2]}};
     for (int i = 0; i < 3; i++) {
@@ -721,12 +733,14 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
     const int n = (int)a.size();
     double ma = 0, mb = 0;
     for (int i = 0; i < n; i++) {
-        ma += a[i] / n, mb += b[i] / n;
+        ma += a[i] / n;
+        mb += b[i] / n;
     }
     double sab = 0, saa = 0, sbb = 0;
     for (int i = 0; i < n; i++) {
-        sab += (a[i] - ma) * (b[i] - mb), saa += (a[i] - ma) * (a[i] - ma),
-            sbb += (b[i] - mb) * (b[i] - mb);
+        sab += (a[i] - ma) * (b[i] - mb);
+        saa += (a[i] - ma) * (a[i] - ma);
+        sbb += (b[i] - mb) * (b[i] - mb);
     }
     if (sqrt(saa / n) < 1e-7 || sqrt(sbb / n) < 1e-7) {
         return NAN;
@@ -825,9 +839,14 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
 
 static Spectrogram axisFromC2(int bpo, int frames) {
     Spectrogram s;
-    s.p.sampleRate = SR, s.p.fmin = hzOf(36), s.p.fmax = hzOf(36) * 128, s.p.binsPerOctave = bpo,
-    s.p.hop = HOP, s.p.gamma = 0;
-    s.bins = bpo * 7, s.frames = frames;
+    s.p.sampleRate = SR;
+    s.p.fmin = hzOf(36);
+    s.p.fmax = hzOf(36) * 128;
+    s.p.binsPerOctave = bpo;
+    s.p.hop = HOP;
+    s.p.gamma = 0;
+    s.bins = bpo * 7;
+    s.frames = frames;
     s.mag.assign((size_t)s.bins * frames, 0);
     return s;
 }
@@ -867,14 +886,16 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
         maxL = std::max(maxL, L);
         Bin &bn = bins[b];
         const double reach = 4.0 * N / L; // main lobe and the first sidelobes
-        bn.k0 = std::max(1, (int)floor(c - reach)),
+        bn.k0 = std::max(1, (int)floor(c - reach));
         bn.k1 = std::min(N / 2 - 1, (int)ceil(c + reach));
         for (int k = bn.k0; k <= bn.k1; k++) {
             bn.w.push_back((float)hannSpectrum((k - c) * L / N));
         }
-        bn.M = N / HOP, bn.logM = LOG2N - 8;
+        bn.M = N / HOP;
+        bn.logM = LOG2N - 8;
         while (bn.M < bn.k1 - bn.k0 + 1) {
-            bn.M *= 2, bn.logM++;
+            bn.M *= 2;
+            bn.logM++;
         }
         bn.step = bn.M * HOP / N;
         bn.scale =
@@ -900,7 +921,8 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
             std::fill(sre.begin(), sre.begin() + bn.M, 0.0f),
                 std::fill(sim.begin(), sim.begin() + bn.M, 0.0f);
             for (int k = bn.k0; k <= bn.k1; k++) {
-                sre[k - bn.k0] = re[k] * bn.w[k - bn.k0], sim[k - bn.k0] = im[k] * bn.w[k - bn.k0];
+                sre[k - bn.k0] = re[k] * bn.w[k - bn.k0];
+                sim[k - bn.k0] = im[k] * bn.w[k - bn.k0];
             }
             vDSP_fft_zip(setup, &Y, 1, bn.logM, kFFTDirection_Inverse);
             for (int i = 0; i < nf; i++) {
@@ -951,14 +973,16 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
         WDL_real_fft(buf.data(), NF, 0);
         const WDL_FFT_COMPLEX *X = (const WDL_FFT_COMPLEX *)buf.data();
         // (|X|/2)^g: numpy's |stft| is half of WDL's; as power^(g/2), vectorised
-        Z[0] = 0.25f * X[0].re * X[0].re, Z[NF / 2] = 0.25f * X[0].im * X[0].im;
+        Z[0] = 0.25f * X[0].re * X[0].re;
+        Z[NF / 2] = 0.25f * X[0].im * X[0].im;
         for (int k = 1; k < NF / 2; k++) {
             Z[k] = 0.25f * (X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im);
         }
         vvpowf(Z.data(), gs.data(), Z.data(), &nz);
         std::fill(ceps.begin(), ceps.end(), 0);
         WDL_FFT_COMPLEX *Y = (WDL_FFT_COMPLEX *)ceps.data();
-        Y[0].re = Z[0], Y[0].im = Z[NF / 2];
+        Y[0].re = Z[0];
+        Y[0].im = Z[NF / 2];
         for (int k = 1; k < NF / 2; k++) {
             Y[perm[k]].re = Z[k];
         }
@@ -1009,7 +1033,8 @@ static void vote(std::vector<NoteEstimate> &raw,
             for (const NoteEstimate &e : v) {
                 if (e.pitch == pitch) {
                     for (int f = e.f0; f < std::min(F, e.f1); f++) {
-                        cov[f] = 1, str[f] += e.strength / (float)voters.size();
+                        cov[f] = 1;
+                        str[f] += e.strength / (float)voters.size();
                     }
                 }
             }
@@ -1105,7 +1130,8 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         // the SACF fails on different notes than the NMF: add what it finds confidently
         const Activity sa = activity(sroll, F, n, gp, ep.sacfAbs, ep.rel, ep.oct);
         for (size_t i = 0; i < act.on.size(); i++) {
-            act.on[i] |= sa.on[i], act.hold[i] |= sa.hold[i];
+            act.on[i] |= sa.on[i];
+            act.hold[i] |= sa.hold[i];
             act.S[i] =
                 std::max(act.S[i], sa.S[i] * (float)(ep.abs / ep.sacfAbs)); // on the NMF's scale
         }
@@ -1310,7 +1336,8 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
         }
         for (int v = 0; v < nv; v++) {
             if (current[v] >= 0 && notes[current[v]].f1 <= t) {
-                silentFrom[v] = notes[current[v]].f1, current[v] = -1;
+                silentFrom[v] = notes[current[v]].f1;
+                current[v] = -1;
             }
         }
         std::vector<int> free;
@@ -1382,14 +1409,18 @@ std::vector<int> assignVoices(const std::vector<NoteEstimate> &notes, double fra
                                 AGE * silent;
                     }
                     if (cost < bestCost) {
-                        bestCost = cost, best = combo, bestNotes = sub;
+                        bestCost = cost;
+                        best = combo;
+                        bestNotes = sub;
                     }
                 }
             }
         }
         for (size_t i = 0; i < best.size(); i++) {
             const int v = best[i], n = bestNotes[i];
-            strandOf[n] = v, current[v] = n, last[v] = notes[n].pitch;
+            strandOf[n] = v;
+            current[v] = n;
+            last[v] = notes[n].pitch;
         }
     }
 

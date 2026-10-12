@@ -109,7 +109,8 @@ bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)>
             e = std::max(n.end - n.start + s, s + minLen);
         }
         any |= s != n.start || e != n.end;
-        n.start = s, n.end = e;
+        n.start = s;
+        n.end = e;
     }
     return any;
 }

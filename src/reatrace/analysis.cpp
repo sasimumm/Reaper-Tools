@@ -120,8 +120,8 @@ static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<f
         GetAudioAccessorSamples(acc, (int)sr, nch, (double)pos / sr, m,
                                 buf.data()); // time relative to item start
         for (int i = 0; i < m; i++) {
-            left[pos + i] = (float)buf[(size_t)i * nch],
-                       right[pos + i] = (float)buf[(size_t)i * nch + (nch - 1)];
+            left[pos + i] = (float)buf[(size_t)i * nch];
+            right[pos + i] = (float)buf[(size_t)i * nch + (nch - 1)];
         }
     }
     DestroyAudioAccessor(acc);
@@ -290,7 +290,10 @@ struct Job {
             // (not its noise: the main thread may be rewriting that one's; install() recomputes it)
             const Spectrogram &mid = *raw[CH_MIX];
             spec = std::make_shared<Spectrogram>();
-            spec->p = mid.p, spec->bins = mid.bins, spec->frames = mid.frames, spec->mag = mid.mag;
+            spec->p = mid.p;
+            spec->bins = mid.bins;
+            spec->frames = mid.frames;
+            spec->mag = mid.mag;
             if (raw[CH_SIDE]->mag.size() == spec->mag.size()) {
                 for (size_t i = 0; i < spec->mag.size(); i++) {
                     spec->mag[i] = std::max(0.0f, spec->mag[i] - raw[CH_SIDE]->mag[i]);
@@ -318,9 +321,11 @@ void cancelJob() {
 
 static void install(const ChannelCache &c, const Estimate &e) {
     g_analysis.spec = c.spec ? c.spec : std::make_shared<Spectrogram>();
-    g_analysis.contour = c.vocal.contour, g_analysis.segments = c.vocal.segments,
+    g_analysis.contour = c.vocal.contour;
+    g_analysis.segments = c.vocal.segments;
     g_analysis.onsets = c.vocal.onsets;
-    g_analysis.estimated = e.estimated, g_analysis.estimatedVoice = e.estimatedVoice,
+    g_analysis.estimated = e.estimated;
+    g_analysis.estimatedVoice = e.estimatedVoice;
     g_analysis.estimateNote = e.note;
     g_analysis.snapTimes.clear();
     for (int f : g_analysis.onsets) {
@@ -373,8 +378,12 @@ void requestAnalysis(bool autoCalibrateAfter) {
     }
 
     std::unique_ptr<Job> job(new Job);
-    job->key = key, job->estKey = estKey, job->channel = ch, job->modelPath = basicPitchModel();
-    job->needSpec = !haveSpec, job->needEstimate = !haveEstimate;
+    job->key = key;
+    job->estKey = estKey;
+    job->channel = ch;
+    job->modelPath = basicPitchModel();
+    job->needSpec = !haveSpec;
+    job->needEstimate = !haveEstimate;
     if (job->needSpec) {
         const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
         for (int r : rawCh) {
@@ -389,7 +398,8 @@ void requestAnalysis(bool autoCalibrateAfter) {
         }
         if (ch == CH_CENTRE && cached(CH_CENTRE, key)) { // only the vocal analysis is missing
             job->need[CH_MIX] = job->need[CH_SIDE] = false;
-            job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = nullptr;
+            job->raw[CH_MIX] = g_cache[CH_CENTRE].spec;
+            job->raw[CH_SIDE] = nullptr;
         }
     }
     if (job->needEstimate || job->need[0] || job->need[1] || job->need[2] || job->need[3]) {
@@ -424,15 +434,22 @@ void pollJob() {
             if (j.need[r] && r != j.channel) {
                 ChannelCache &c = g_cache[r];
                 c = ChannelCache();
-                c.valid = true, c.key = j.key, c.spec = std::move(j.raw[r]);
+                c.valid = true;
+                c.key = j.key;
+                c.spec = std::move(j.raw[r]);
             }
         }
         ChannelCache &c = g_cache[j.channel];
-        c.valid = true, c.key = j.key, c.spec = std::move(j.spec), c.vocal = std::move(j.vocal),
+        c.valid = true;
+        c.key = j.key;
+        c.spec = std::move(j.spec);
+        c.vocal = std::move(j.vocal);
         c.vocalValid = true;
     }
     if (j.needEstimate) {
-        g_estimate.valid = true, g_estimate.key = j.estKey, g_estimate.est = std::move(j.est);
+        g_estimate.valid = true;
+        g_estimate.key = j.estKey;
+        g_estimate.est = std::move(j.est);
     }
     const int ch = j.channel;
     g_job.reset();

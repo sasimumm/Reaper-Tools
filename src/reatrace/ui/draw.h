@@ -13,8 +13,10 @@ struct Canvas {
 
     void fill(int x0, int y0, int x1, int y1, RGB col, int a = 256) {
         const int s = scale;
-        x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
-        x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
+        x0 = std::max(std::max(x0, clip.l) * s, 0);
+        y0 = std::max(std::max(y0, clip.t) * s, 0);
+        x1 = std::min(std::min(x1, clip.r) * s, w);
+        y1 = std::min(std::min(y1, clip.b) * s, h);
         if (x0 >= x1) {
             return;
         }

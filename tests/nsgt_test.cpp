@@ -31,7 +31,8 @@ int main() {
         const int a4 = (int)lround(s.binOfPitch(69));
         double lo = 1e9, hi = 0;
         for (int f = 20; f < s.frames - 20; f++) {
-            lo = fmin(lo, s.at(f, a4)), hi = fmax(hi, s.at(f, a4));
+            lo = fmin(lo, s.at(f, a4));
+            hi = fmax(hi, s.at(f, a4));
             for (int b = 0; b < s.bins; b++) {
                 assert(s.at(f, b) <= s.at(f, a4) + 1e-6);
             }
@@ -65,7 +66,11 @@ int main() {
     // Nonsense parameters (from user settings) are clamped instead of breaking the indexing.
     {
         NSGTParams bad;
-        bad.fmin = 0, bad.fmax = -1, bad.hop = 1000, bad.binsPerOctave = 100000, bad.gamma = -5,
+        bad.fmin = 0;
+        bad.fmax = -1;
+        bad.hop = 1000;
+        bad.binsPerOctave = 100000;
+        bad.gamma = -5;
         bad.sampleRate = 1;
         std::vector<float> x(50000, 0.1f);
         Spectrogram s = computeNSGT(bad, (long long)x.size(), [&](long long, int n, float *out) {
@@ -93,7 +98,8 @@ int main() {
         autoCalibrate(s, rp);
         std::vector<unsigned char> val;
         for (int mode = 0; mode < 3; mode++) {
-            rp.peaksOnly = mode >= 1, rp.subtractNoise = mode >= 2;
+            rp.peaksOnly = mode >= 1;
+            rp.subtractNoise = mode >= 2;
             t0 = std::chrono::steady_clock::now();
             renderValues(s, rp, val);
             ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0)

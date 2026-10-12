@@ -216,7 +216,10 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
             selectVoice(it->arg);
         }
         break;
-    case SNAP: g_settings.snapMode = it->arg, setupEditorSnap(); break;
+    case SNAP:
+        g_settings.snapMode = it->arg;
+        setupEditorSnap();
+        break;
     case SUGGEST: g_settings.suggest = !g_settings.suggest; break;
     case SUGGEST_FROM: g_settings.suggestFrom = it->arg; break;
     case CONTOUR: g_settings.showContour = !g_settings.showContour; break;

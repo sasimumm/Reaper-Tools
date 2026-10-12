@@ -82,7 +82,8 @@ void previewPitch(int pitch) {
         return;
     }
     if (!slot->init) {
-        pthread_mutex_init(&slot->reg.mutex, NULL), slot->init = true;
+        pthread_mutex_init(&slot->reg.mutex, NULL);
+        slot->init = true;
     }
     slot->reg.src = PCM_Source_CreateFromFile(path);
     if (!slot->reg.src) {
@@ -90,7 +91,9 @@ void previewPitch(int pitch) {
     }
     slot->reg.m_out_chan = -1; // -1: play through preview_track
     slot->reg.preview_track = GetMediaItem_Track(g_session.midi);
-    slot->reg.curpos = 0, slot->reg.loop = false, slot->reg.volume = 1;
+    slot->reg.curpos = 0;
+    slot->reg.loop = false;
+    slot->reg.volume = 1;
     slot->playing = PlayTrackPreview2Ex(NULL, &slot->reg, 0, 0) != 0;
     slot->started = time_precise();
     if (!slot->playing) {

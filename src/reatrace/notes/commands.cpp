@@ -86,8 +86,12 @@ bool covered(size_t i) {
     if (moves != drag || notesVersion != g_session.notesVersion ||
         valVersion != g_analysis.valVersion || suggestFrom != g_settings.suggestFrom ||
         count != sug.size() || audioPos != g_session.audioPos) {
-        moves = drag, notesVersion = g_session.notesVersion, valVersion = g_analysis.valVersion,
-        suggestFrom = g_settings.suggestFrom, count = sug.size(), audioPos = g_session.audioPos;
+        moves = drag;
+        notesVersion = g_session.notesVersion;
+        valVersion = g_analysis.valVersion;
+        suggestFrom = g_settings.suggestFrom;
+        count = sug.size();
+        audioPos = g_session.audioPos;
         std::vector<const Note *> byPitch[128];
         auto add = [&](const std::vector<Note> &notes) {
             for (const Note &n : notes) {
@@ -122,9 +126,9 @@ bool covered(size_t i) {
 
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
     const int p = (int)lround(sg.pitch);
-    *x0 = (int)lround(g_ui.view.x(frameTime(sg.f0))),
+    *x0 = (int)lround(g_ui.view.x(frameTime(sg.f0)));
     *x1 = std::max(*x0 + 2, (int)lround(g_ui.view.x(frameTime(sg.f1 + 1))));
-    *y0 = (int)lround(g_ui.view.y(p + 0.5)),
+    *y0 = (int)lround(g_ui.view.y(p + 0.5));
     *y1 = std::max(*y0 + 3, (int)lround(g_ui.view.y(p - 0.5)));
 }
 
@@ -164,7 +168,8 @@ static double snapToOnsets(double t) {
     auto it = std::lower_bound(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end(), t);
     double best = t, dist = ONSET_SNAP_RANGE;
     if (it != g_analysis.snapTimes.end() && *it - t <= dist) {
-        best = *it, dist = *it - t;
+        best = *it;
+        dist = *it - t;
     }
     if (it != g_analysis.snapTimes.begin() && t - *(it - 1) < dist) {
         best = *(it - 1);
@@ -254,7 +259,8 @@ void copyNotes(bool cut) {
     if (clip.empty()) {
         return;
     }
-    g_noteClip = clip, g_noteClipText = clipboardText();
+    g_noteClip = std::move(clip);
+    g_noteClipText = clipboardText();
     if (cut && g_session.ed.deleteSelected()) {
         commitNotes();
     }
@@ -285,7 +291,8 @@ void loopPlay() {
     double a = 1e30, b = -1e30;
     for (const Note &nt : g_session.ed.notes) {
         if (nt.sel) {
-            a = std::min(a, nt.start), b = std::max(b, nt.end);
+            a = std::min(a, nt.start);
+            b = std::max(b, nt.end);
         }
     }
     if (b > a) {
