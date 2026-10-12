@@ -1,7 +1,6 @@
 #include "paint.h"
 
 #include "analysis.h"
-#include "chords.h"
 #include "commands.h"
 #include "draw.h"
 #include "lyrics.h"
@@ -744,6 +743,30 @@ unsigned laneLabelAt(int x, int y, const Layout &L) {
     return 0;
 }
 
+// The chord items' chords, from the ReaChords extension when it is installed (looked up on use:
+// it may load after this one). Read again after each project change.
+struct ChordSpan {
+    double start = 0, end = 0;
+    std::string name;
+};
+static const std::vector<ChordSpan> &projectChords() {
+    static std::vector<ChordSpan> spans;
+    static int lastChange = -1;
+    const int change = GetProjectStateChangeCount(NULL);
+    if (change == lastChange) {
+        return spans;
+    }
+    lastChange = change, spans.clear();
+    using GetChord = int (*)(int, double *, double *, char *, int);
+    const auto get = (GetChord)plugin_getapi("ReaChords_GetChord");
+    ChordSpan c;
+    char name[256];
+    for (int i = 0; get && get(i, &c.start, &c.end, name, sizeof(name)); i++) {
+        c.name = name, spans.push_back(c);
+    }
+    return spans;
+}
+
 void paint(HDC hdc) {
     const Layout L = layout(); // once per frame, so every area agrees
     const Rect c = L.client;
@@ -958,12 +981,12 @@ void paint(HDC hdc) {
     cv.clip = {0, rt, KB_W, ru.b};
     cv.fill(0, rt, KB_W, ru.b, g_theme.button);
 
-    // chords lane: the chord items' chords, edited in the arrange view
+    // chords lane: the chord items' chords (from the ReaChords extension), edited in the arrange view
     if (!(g_ui.foldedLanes & LANE_CHORDS)) {
         const Rect ch = L.chords;
         cv.clip = ch;
         cv.fill(ch.l, ch.t, ch.r, ch.b, g_theme.ruler);
-        for (const ChordSpan &span : Chords_Spans()) {
+        for (const ChordSpan &span : projectChords()) {
             const int xa = (int)lround(g_ui.view.x(span.start)),
                       xb = (int)lround(g_ui.view.x(span.end));
             if (xb < ch.l || xa > ch.r) {

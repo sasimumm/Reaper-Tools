@@ -14,7 +14,7 @@ set(REATRACE_WARNINGS -Wall -Wextra -Wshadow -Wconversion -Wno-sign-conversion -
 if(REATRACE_WERROR)
   list(APPEND REATRACE_WARNINGS -Werror)
 endif()
-file(GLOB REATRACE_SOURCES ${CMAKE_SOURCE_DIR}/src/*.cpp ${CMAKE_SOURCE_DIR}/src/*.mm ${CMAKE_SOURCE_DIR}/tests/*.cpp)
+file(GLOB REATRACE_SOURCES ${CMAKE_SOURCE_DIR}/src/*.cpp ${CMAKE_SOURCE_DIR}/src/reachords/*.cpp ${CMAKE_SOURCE_DIR}/src/*.mm ${CMAKE_SOURCE_DIR}/tests/*.cpp)
 set_source_files_properties(${REATRACE_SOURCES} PROPERTIES COMPILE_OPTIONS "${REATRACE_WARNINGS}")
 
 if(NOT APPLE)
@@ -23,7 +23,6 @@ endif()
 
 add_library(reaper_reatrace MODULE
   src/main.cpp
-  src/chords.cpp
   src/nsgt.cpp
   src/editor.cpp
   src/window.cpp
@@ -52,6 +51,17 @@ target_include_directories(reaper_reatrace SYSTEM PRIVATE vendor/reaper-sdk/sdk 
 target_compile_definitions(reaper_reatrace PRIVATE SWELL_PROVIDED_BY_APP)
 target_link_libraries(reaper_reatrace PRIVATE "-framework Cocoa" "-framework CoreML" "-framework Accelerate")
 
+# ReaChords: chord items, a separate extension; ReaTrace's chords lane reads them through its API.
+add_library(reaper_reachords MODULE
+  src/reachords/main.cpp
+  src/reachords/chords.cpp
+  ${WDL}/swell/swell-modstub.mm
+)
+set_target_properties(reaper_reachords PROPERTIES PREFIX "" SUFFIX ".dylib")
+target_include_directories(reaper_reachords SYSTEM PRIVATE vendor/reaper-sdk/sdk ${WDL})
+target_compile_definitions(reaper_reachords PRIVATE SWELL_PROVIDED_BY_APP)
+target_link_libraries(reaper_reachords PRIVATE "-framework Cocoa")
+
 # basic-pitch's CoreML model, compiled; installed as UserPlugins/reatrace/nmp.mlmodelc
 set(BASIC_PITCH_MODEL ${CMAKE_BINARY_DIR}/nmp.mlmodelc)
 add_custom_command(OUTPUT ${BASIC_PITCH_MODEL}/coremldata.bin
@@ -62,11 +72,11 @@ add_custom_target(basic_pitch_model ALL DEPENDS ${BASIC_PITCH_MODEL}/coremldata.
 
 set(USERPLUGINS "$ENV{HOME}/Library/Application Support/REAPER/UserPlugins")
 add_custom_target(deploy
-  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:reaper_reatrace> ${USERPLUGINS}/
+  COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:reaper_reatrace> $<TARGET_FILE:reaper_reachords> ${USERPLUGINS}/
   COMMAND ${CMAKE_COMMAND} -E remove_directory ${USERPLUGINS}/reatrace/nmp.mlmodelc
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${BASIC_PITCH_MODEL} ${USERPLUGINS}/reatrace/nmp.mlmodelc
   COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/LICENSE ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/NOTICE ${USERPLUGINS}/reatrace/
-  DEPENDS reaper_reatrace basic_pitch_model
+  DEPENDS reaper_reatrace reaper_reachords basic_pitch_model
   COMMENT "Copying to REAPER UserPlugins (restart REAPER to load)")
 
 add_executable(nsgt_test tests/nsgt_test.cpp src/nsgt.cpp ${WDL}/fft.c)
@@ -130,7 +140,7 @@ endif()
 # clang-format (from Homebrew's llvm; style in .clang-format) over our sources and headers
 find_program(CLANG_FORMAT clang-format HINTS /opt/homebrew/opt/llvm/bin /usr/local/opt/llvm/bin)
 if(CLANG_FORMAT)
-  file(GLOB REATRACE_HEADERS ${CMAKE_SOURCE_DIR}/src/*.h)
+  file(GLOB REATRACE_HEADERS ${CMAKE_SOURCE_DIR}/src/*.h ${CMAKE_SOURCE_DIR}/src/reachords/*.h)
   add_custom_target(format
     COMMAND ${CLANG_FORMAT} -i ${REATRACE_SOURCES} ${REATRACE_HEADERS}
     COMMENT "clang-format" VERBATIM)

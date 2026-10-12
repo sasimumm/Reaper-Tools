@@ -9,7 +9,7 @@
 #include <string>
 #include <vector>
 
-#include "guard.h"
+#include "../guard.h"
 #include "reaper_plugin_functions.h"
 #undef min
 #undef max
@@ -17,7 +17,8 @@
 // Chords are stored in quarter notes from the source start, so they follow tempo changes. The
 // source start's project time is the item position minus its (rate-scaled) start offset.
 
-static const char *const SOURCE_TYPE = "REATRACE_CHORDS";
+static const char *const SOURCE_TYPE = "REACHORDS";
+static const char *const OLD_SOURCE_TYPE = "REATRACE_CHORDS"; // from when this was part of ReaTrace
 
 static LICE_pixel rgba(int r, int g, int b, int a = 255) {
     return (LICE_pixel)((b & 0xff) | ((g & 0xff) << 8) | ((r & 0xff) << 16) | ((a & 0xff) << 24));
@@ -226,7 +227,7 @@ class ChordSource : public PCM_source {
 
     void endDrag() {
         if (m_drag >= 0 && chords[(size_t)m_drag].qn != m_dragFrom) {
-            Undo_OnStateChange("ReaTrace: move chord change");
+            Undo_OnStateChange("ReaChords: move chord change");
         }
         m_drag = -1;
         UpdateArrange();
@@ -439,7 +440,7 @@ static void endEdit(bool commit) {
     name.erase(0, name.find_first_not_of(" \t"));
     name.erase(name.find_last_not_of(" \t") + 1);
     if (src->setChord(g_ce.qn, name)) {
-        Undo_OnStateChange("ReaTrace: edit chord");
+        Undo_OnStateChange("ReaChords: edit chord");
         UpdateArrange();
     }
 }
@@ -475,7 +476,7 @@ void Chords_Timer() {
     endEdit(true); // clicking elsewhere finishes the chord
 }
 
-// --- the project's chords, for the ReaTrace window ---------------------------------
+// --- the project's chords, for other extensions (ReaTrace's chords lane) ---------------
 
 const std::vector<ChordSpan> &Chords_Spans() {
     // all items are scanned again after each project change; fine for typical project sizes
@@ -513,7 +514,9 @@ const std::vector<ChordSpan> &Chords_Spans() {
 
 static PCM_source *createFromType(const char *type, int) {
     return guarded("creating a chord item", (PCM_source *)NULL, [&] {
-        return !strcmp(type, SOURCE_TYPE) ? (PCM_source *)new ChordSource : NULL;
+        return !strcmp(type, SOURCE_TYPE) || !strcmp(type, OLD_SOURCE_TYPE)
+                   ? (PCM_source *)new ChordSource
+                   : NULL;
     });
 }
 static PCM_source *createFromFile(const char *, int) { return NULL; }
@@ -532,7 +535,7 @@ static int g_cmdInsert;
 static void insertItem() {
     MediaTrack *tr = GetSelectedTrack(NULL, 0);
     if (!tr) {
-        ShowMessageBox("Select a track first.", "ReaTrace", 0);
+        ShowMessageBox("Select a track first.", "ReaChords", 0);
         return;
     }
     double a = 0, b = 0;
@@ -560,13 +563,13 @@ static void insertItem() {
     SetMediaItemTake_Source(tk, src);
     char name[] = "Chords";
     GetSetMediaItemTakeInfo_String(tk, "P_NAME", name, true);
-    Undo_EndBlock2(NULL, "ReaTrace: insert chord item", -1);
+    Undo_EndBlock2(NULL, "ReaChords: insert chord item", -1);
     UpdateArrange();
 }
 
 void Chords_Register(reaper_plugin_info_t *rec) {
     rec->Register("pcmsrc", &g_reg);
-    custom_action_register_t a = {0, "REATRACE_INSERT_CHORDS", "ReaTrace: Insert chord item", NULL};
+    custom_action_register_t a = {0, "REACHORDS_INSERT", "ReaChords: Insert chord item", NULL};
     g_cmdInsert = rec->Register("custom_action", &a);
 }
 

@@ -7,8 +7,8 @@ See `docs/piano-roll.md` for the full feature plan.
 
     git submodule update --init
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-    cmake --build build --target deploy   # copies reaper_reatrace.dylib to UserPlugins
-    ./build/nsgt_test && ./build/editor_test && ./build/notesync_test && ./build/model_test && ./build/contour_test && ./build/estimate_test
+    cmake --build build --target deploy   # copies reaper_reatrace.dylib and reaper_reachords.dylib to UserPlugins
+    ./build/nsgt_test && ./build/editor_test && ./build/notesync_test && ./build/model_test && ./build/contour_test && ./build/estimate_test && ./build/isolate_test
 
 Checks while developing:
 
@@ -44,6 +44,14 @@ selection", SWS tempo tools); the grid follows the project tempo map.
 
 Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's notation
 editor and lyrics view.
+
+## ReaChords
+
+A second, separate extension (`src/reachords/`, `reaper_reachords.dylib`): chord items, a track of
+chord names drawn and edited in the arrange view. **ReaChords: Insert chord item** adds one on the
+selected track; double-click types a chord, drag the lines between chords. Chords are kept in
+quarter notes, so they follow tempo. ReaTrace's chords lane shows them when ReaChords is installed
+(read through REAPER's API: `ReaChords_GetChord`); each works without the other.
 
 ## Use
 
