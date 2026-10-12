@@ -1,7 +1,6 @@
 # ReaTrace
 
 REAPER extension for transcribing audio (mainly vocals) by drawing notes on a spectrogram.
-See `docs/piano-roll.md` for the full feature plan.
 
 ## Build (macOS)
 
