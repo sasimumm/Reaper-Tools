@@ -150,7 +150,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
     const Rect tb = L.toolbar;
     cv.clip = tb;
     cv.fill(tb.l, tb.t, tb.r, tb.b, g_theme.panel);
-    cv.fill(tb.l, tb.b - 1, tb.r, tb.b, C_SEPARATOR);
+    cv.fill(tb.l, tb.b - 1, tb.r, tb.b, g_theme.separator);
     const std::vector<Item> all = items(L);
     const Item *hover = itemAt(g_ui.mouseX, g_ui.mouseY, all);
     for (const Item &it : all) {
@@ -159,7 +159,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         switch (it.kind) {
         case LABEL: text(dc, it.label, r.l, r.t, r.r, r.b, g_theme.dim, DT_LEFT); break;
         case VOICE: {
-            const unsigned int col = VOICE_COLOURS[it.arg];
+            const unsigned int col = g_theme.voices[it.arg];
             const bool hidden = g_ui.hiddenVoices >> it.arg & 1;
             cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
             if (on) {
@@ -183,7 +183,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             if (!it.last) {
                 cv.fill(r.r - 1, r.t, r.r, r.b, g_theme.panel);
             }
-            text(dc, it.label, r.l, r.t, r.r, r.b, on ? C_ON_TEXT : g_theme.dim, DT_CENTER);
+            text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.onText : g_theme.dim, DT_CENTER);
             break;
         default: // toggles and buttons
             if (on || hov) {

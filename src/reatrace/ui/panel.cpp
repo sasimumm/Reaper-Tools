@@ -543,7 +543,7 @@ void drawPanel(Canvas &cv, HDC dc) {
     }
     cv.clip = p; // scrolled widgets stay out of the toolbar and the status line
     cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
-    cv.fill(p.l, p.t, p.l + 1, p.b, C_SEPARATOR);
+    cv.fill(p.l, p.t, p.l + 1, p.b, g_theme.separator);
     std::vector<Widget> ws = widgets();
     int top = panelArea().t + 8 - g_panelScroll;
     char buf[64];
@@ -564,12 +564,13 @@ void drawPanel(Canvas &cv, HDC dc) {
                       bx = l + (int)lround((r - l) *
                                            std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
             cv.fill(l, by + 3, r, by + 7, g_theme.track);
-            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? C_DIRTY : C_ACCENT);
+            cv.fill(l, by + 3, bx, by + 7,
+                    w.analysis && g_ui.analysisDirty ? g_theme.dirty : g_theme.accent);
             cv.fill(bx - 3, by, bx + 3, by + 10, g_theme.text);
         } else if (w.type == W_TOGGLE) {
             cv.frame(l, top + 5, l + 12, top + 17, g_theme.text);
             if (*w.flag) {
-                cv.fill(l + 3, top + 8, l + 9, top + 14, C_ACCENT);
+                cv.fill(l + 3, top + 8, l + 9, top + 14, g_theme.accent);
             }
             text(dc, w.label, l + 18, top, r, top + 22, g_theme.text, DT_LEFT);
         } else if (w.type == W_CHOICE || w.type == W_BUTTONS) {
@@ -578,9 +579,9 @@ void drawPanel(Canvas &cv, HDC dc) {
                 const int bl = l + (r - l) * i / w.optionCount,
                           br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
-                cv.fill(bl, top + 18, br - 2, top + 40, on ? C_ACCENT : g_theme.button);
+                cv.fill(bl, top + 18, br - 2, top + 40, on ? g_theme.accent : g_theme.button);
                 text(dc, w.options[i], bl, top + 18, br - 2, top + 40,
-                     on ? C_ON_TEXT : g_theme.text, DT_CENTER);
+                     on ? g_theme.onText : g_theme.text, DT_CENTER);
             }
         } else {
             cv.fill(l, top + 2, r, top + h - 2, g_theme.button);

@@ -28,7 +28,7 @@ static LayerKey g_layerKey;
 
 static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
-// Black-key rows darkened as Canvas::fill(.., C_SHADOW, 40) would, baked into the layer.
+// Black-key rows darkened as Canvas::fill(.., g_theme.shadow, 40) would, baked into the layer.
 static unsigned int shadeBlack(unsigned int c) {
     const unsigned int k = 256 - 40;
     return 0xff000000 | ((((c & 0xff00ff) * k) >> 8) & 0xff00ff) |
@@ -48,7 +48,7 @@ static void renderLayer(const Rect &n) {
     g_layer.resize((size_t)w * h);
     for (int y = 0; y < h; y++) {
         std::fill_n(&g_layer[(size_t)y * w], w,
-                    black[y] ? shadeBlack(C_AREA) : 0xff000000 | C_AREA);
+                    black[y] ? shadeBlack(g_theme.area) : 0xff000000 | g_theme.area);
     }
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
@@ -152,7 +152,7 @@ static double overviewY(const Rect &o, double pitch) {
 }
 
 static void renderOverview(int w, int h) {
-    g_ovLayer.assign((size_t)w * h, 0xff000000 | C_AREA);
+    g_ovLayer.assign((size_t)w * h, 0xff000000 | g_theme.area);
     g_ovW = w, g_ovH = h, g_ovVersion = g_analysis.valVersion, g_ovPos = g_session.audioPos,
     g_ovLen = g_session.audioLen;
     const Spectrogram &s = *g_analysis.spec;
@@ -265,7 +265,8 @@ static void drawGhosts(Canvas &cv) {
             const double y = g_ui.view.y(overtonePitch(nt.pitch, h)),
                          hh = std::max(1.0, g_ui.view.rowH * 0.3);
             const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 1;
-            cv.roundedFrame(x0, y0, x1, y1, VOICE_COLOURS[g_session.voice], 1, a / (h - 1) + a / 2);
+            cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[g_session.voice], 1,
+                            a / (h - 1) + a / 2);
         }
     }
 }
@@ -299,7 +300,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
             continue;
         }
         const int t = GUIDE_THICKNESS + (h == 1 ? 1 : 0);
-        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, VOICE_COLOURS[g_session.voice], h == 1 ? 256 : a);
+        cv.fill(xA, y - t / 2, xB, y - t / 2 + t, g_theme.voices[g_session.voice],
+                h == 1 ? 256 : a);
         snprintf(buf, sizeof(buf), "%d", h);
         text(dc, buf, xB + 3, y - 8, xB + 30, y + 8, g_theme.text, DT_LEFT);
     }
@@ -318,10 +320,11 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         const bool strong = rel > -12;
         for (int x = xA; x < xB; x += 8) {
             cv.fill(x, y - GUIDE_THICKNESS / 2, x + 4, y - GUIDE_THICKNESS / 2 + GUIDE_THICKNESS,
-                    strong ? C_WARN : C_TICK, strong ? 256 : a);
+                    strong ? g_theme.warn : g_theme.tick, strong ? 256 : a);
         }
         snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
-        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? C_WARN : C_TICK, DT_LEFT);
+        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? g_theme.warn : g_theme.tick,
+             DT_LEFT);
     }
 }
 
@@ -340,11 +343,11 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         const int v = suggestionVoice(i);
         // dashed in the colour of the voice A puts it in (not a note yet), on a dark outline and
         // a tint so it stands out from bright energy
-        const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;
+        const unsigned int col = v >= 0 ? g_theme.voices[v] : g_theme.crowded;
         const int a = v >= 0 ? 256 : 180, t = y1 - y0 >= 8 ? 2 : 1; // dash thickness
         cv.rounded(x0, y0, x1, y1, col, v >= 0 ? 60 : 30);
-        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, C_SHADOW, 1, 170);
-        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, C_SHADOW, 1, 110);
+        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.shadow, 1, 170);
+        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, g_theme.shadow, 1, 110);
         for (int x = x0 + 1; x < x1 - 1; x += 8) {
             cv.fill(x, y0, std::min(x + 5, x1 - 1), y0 + t, col, a),
                 cv.fill(x, y1 - t, std::min(x + 5, x1 - 1), y1, col, a);
@@ -397,8 +400,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
         }
         prev = pitchAt(fb) >= 0 ? pitchAt(fb) : hi;
         const int y0 = (int)lround(g_ui.view.y(hi)), y1 = (int)lround(g_ui.view.y(lo));
-        cv.fill(x, y0 - 2, x + 1, y1 + 3, C_SHADOW, 150);
-        cv.fill(x, y0 - 1, x + 1, y1 + 2, C_CONTOUR);
+        cv.fill(x, y0 - 2, x + 1, y1 + 3, g_theme.shadow, 150);
+        cv.fill(x, y0 - 1, x + 1, y1 + 2, g_theme.contour);
     }
 }
 
@@ -514,7 +517,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     cv.fill(0, n.b, n.l, s.t, g_theme.button);
     cv.clip = s;
     cv.fill(s.l, s.t, s.r, s.b, g_theme.ruler);
-    cv.fill(s.l, s.t, s.r, s.t + 1, C_SEPARATOR);
+    cv.fill(s.l, s.t, s.r, s.t + 1, g_theme.separator);
     char buf[160];
     static const int COLS[] = {44, 84, 112, 64, 92, 76, 100}; // widths, points
     std::string col[7];
@@ -577,7 +580,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     int right = c.r - 8;
     if (const int pm = analysisProgress(); pm >= 0) {
         cv.fill(right - 60, s.t + 10, right, s.b - 10, g_theme.button);
-        cv.fill(right - 60, s.t + 10, right - 60 + 60 * pm / 1000, s.b - 10, C_ACCENT);
+        cv.fill(right - 60, s.t + 10, right - 60 + 60 * pm / 1000, s.b - 10, g_theme.accent);
         right -= 66;
         snprintf(buf, sizeof(buf), "analysing %d%%", pm / 10);
         text(dc, buf, right - 90, s.t, right, s.b, g_theme.dim, DT_RIGHT);
@@ -586,12 +589,12 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         const std::string &note =
             g_analysis.error.empty() ? g_analysis.estimateNote : g_analysis.error;
         if (!note.empty()) {
-            text(dc, note.c_str(), x, s.t, right, s.b, C_WARN, DT_RIGHT);
+            text(dc, note.c_str(), x, s.t, right, s.b, g_theme.warn, DT_RIGHT);
             right -= 8 + 6 * (int)note.size();
         }
     }
     right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[g_session.voice],
-                 VOICE_COLOURS[g_session.voice], C_ON_TEXT) -
+                 g_theme.voices[g_session.voice], g_theme.onText) -
             6;
     right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[std::clamp(g_settings.snapMode, 0, 2)],
                  g_theme.button, g_theme.dim) -
@@ -608,7 +611,7 @@ static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
     const int cx = (n.l + n.r) / 2, cy = (n.t + n.b) / 2;
     auto banner = [&](const char *msg, int y) {
         const int w = 24 + 7 * (int)strlen(msg);
-        cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, C_SHADOW, 150);
+        cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.shadow, 150);
         text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
     };
     char buf[300];
@@ -672,14 +675,14 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
     };
     const Rect c = L.client, n = L.notes;
     cv.clip = c;
-    cv.fill(0, n.t, c.r, c.b, C_SCRIM, 215);
+    cv.fill(0, n.t, c.r, c.b, g_theme.scrim, 215);
     const int cols = 3, colW = std::min(300, (c.r - 80) / cols), x0 = (c.r - colW * cols) / 2;
     text(dc, "Shortcuts   (? or Esc to close)", x0, n.t + 14, x0 + colW * cols, n.t + 34,
          g_theme.text, DT_LEFT);
     for (int g = 0; g < 6; g++) {
         const int gx = x0 + (g % cols) * colW;
         int y = n.t + 46 + (g / cols) * 170;
-        text(dc, GROUPS[g].title, gx, y, gx + colW, y + 18, C_ACCENT, DT_LEFT);
+        text(dc, GROUPS[g].title, gx, y, gx + colW, y + 18, g_theme.accent, DT_LEFT);
         y += 20;
         for (const Row &r : GROUPS[g].rows) {
             text(dc, r.what, gx, y, gx + colW - 10, y + 16, g_theme.text, DT_LEFT);
@@ -712,7 +715,7 @@ static void drawLaneLabels(Canvas &cv, HDC dc, const Layout &L) {
             text(dc, lane.label, 6, lr.t, KB_W - 4, lr.b, hov ? g_theme.text : g_theme.dim,
                  DT_LEFT);
         }
-        cv.fill(0, lr.t, L.notes.r, lr.t + 1, C_SEPARATOR);
+        cv.fill(0, lr.t, L.notes.r, lr.t + 1, g_theme.separator);
     }
 }
 
@@ -842,11 +845,11 @@ void paint(HDC hdc) {
     const int pLo = (int)floor(g_ui.view.p(n.b)), pHi = (int)ceil(g_ui.view.p(n.t));
     for (int p = pLo; p <= pHi; p++) {
         const int y = (int)lround(g_ui.view.y(p - 0.5)); // boundary below pitch p
-        cv.fill(n.l, y, n.r, y + 1, C_GRID, p % 12 == 0 ? 50 : 10);
+        cv.fill(n.l, y, n.r, y + 1, g_theme.grid, p % 12 == 0 ? 50 : 10);
     }
     std::vector<GridLine> grid = gridLines(n);
     for (const GridLine &g : grid) {
-        cv.fill(g.x, n.t, g.x + 1, n.b, C_GRID, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
+        cv.fill(g.x, n.t, g.x + 1, n.b, g_theme.grid, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
     }
 
     drawGhosts(cv);
@@ -865,15 +868,15 @@ void paint(HDC hdc) {
                           x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
                 const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
                           y1 = std::max(y0 + 3, (int)lround(g_ui.view.y(nt.pitch - 0.5)));
-                cv.rounded(x0, y0, x1, y1, VOICE_COLOURS[v], 70);
-                cv.roundedFrame(x0, y0, x1, y1, VOICE_COLOURS[v]);
+                cv.rounded(x0, y0, x1, y1, g_theme.voices[v], 70);
+                cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[v]);
             }
         }
     }
 
     // notes
     const int drawing = g_session.ed.drawing();
-    const unsigned int noteColour = VOICE_COLOURS[g_session.voice];
+    const unsigned int noteColour = g_theme.voices[g_session.voice];
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &nt = g_session.ed.notes[i];
         const int x0 = (int)lround(g_ui.view.x(nt.start)),
@@ -883,9 +886,9 @@ void paint(HDC hdc) {
         // solid with a darker edge; selected ones get a light outline, so lyrics stay readable
         const bool sel = nt.sel || (int)i == drawing;
         cv.rounded(x0, y0, x1, y1, noteColour, 245);
-        cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, C_SHADOW, 0.55));
+        cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, g_theme.shadow, 0.55));
         if (sel) {
-            cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, C_OUTLINE, y1 - y0 > 6 ? 2 : 1);
+            cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.outline, y1 - y0 > 6 ? 2 : 1);
         }
     }
     // lyrics: inside the note when it is tall enough, else just below it
@@ -903,16 +906,16 @@ void paint(HDC hdc) {
         }
         if (y1 - y0 >= 12) {
             text(dc, nt.lyric.c_str(), l, std::max(y0, n.t), std::min(x1 - 1, n.r),
-                 std::min(y1, n.b), mix(noteColour, C_SHADOW, 0.85), DT_LEFT);
+                 std::min(y1, n.b), mix(noteColour, g_theme.shadow, 0.85), DT_LEFT);
         } else if (y1 + 14 <= n.b) {
-            text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, C_HIGHLIGHT, DT_LEFT);
+            text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, g_theme.highlight, DT_LEFT);
         }
     }
 
     double mr[4];
     if (g_session.ed.marquee(mr)) {
-        cv.fill((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], C_HIGHLIGHT, 30);
-        cv.frame((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], C_HIGHLIGHT);
+        cv.fill((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], g_theme.highlight, 30);
+        cv.frame((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], g_theme.highlight);
     }
 
     // keyboard
@@ -924,28 +927,28 @@ void paint(HDC hdc) {
     for (int p = pLo; p <= pHi; p++) {
         const int y0 = (int)lround(g_ui.view.y(p + 0.5)), y1 = (int)lround(g_ui.view.y(p - 0.5));
         cv.fill(0, y0, n.l, y1,
-                p == hoverPitch ? C_ACCENT
-                : isBlack(p)    ? C_KEY_BLACK
-                                : C_KEY_WHITE);
-        cv.fill(0, y1 - 1, n.l, y1, C_KEY_EDGE);
+                p == hoverPitch ? g_theme.accent
+                : isBlack(p)    ? g_theme.keyBlack
+                                : g_theme.keyWhite);
+        cv.fill(0, y1 - 1, n.l, y1, g_theme.keyEdge);
         if (p % 12 == 0 && y1 - y0 >= 8) {
             pitchName(p, buf, sizeof(buf));
-            text(dc, buf, 2, y0, n.l - 4, y1, C_KEY_TEXT, DT_RIGHT);
+            text(dc, buf, 2, y0, n.l - 4, y1, g_theme.keyText, DT_RIGHT);
         }
     }
-    cv.fill(n.l - 1, n.t, n.l, n.b, C_SEPARATOR);
+    cv.fill(n.l - 1, n.t, n.l, n.b, g_theme.separator);
 
     // ruler: bars on top, seconds below
     const int rt = ru.t; // under the toolbar
     cv.clip = {0, rt, ru.r, ru.b};
     cv.fill(0, rt, ru.r, ru.b, g_theme.ruler);
-    cv.fill(0, ru.b - 1, ru.r, ru.b, C_SEPARATOR);
+    cv.fill(0, ru.b - 1, ru.r, ru.b, g_theme.separator);
     int lastLabel = -1000;
     for (const GridLine &g : grid) {
         if (g.level > 1) {
             continue;
         }
-        cv.fill(g.x, rt + (g.level == 0 ? 0 : 8), g.x + 1, rt + 14, C_TICK);
+        cv.fill(g.x, rt + (g.level == 0 ? 0 : 8), g.x + 1, rt + 14, g_theme.tick);
         if (g.level == 0 && g.x - lastLabel >= 36) {
             snprintf(buf, sizeof(buf), "%d", g.measure + 1);
             text(dc, buf, g.x + 3, rt, g.x + 60, rt + 14, g_theme.text, DT_LEFT);
@@ -963,13 +966,13 @@ void paint(HDC hdc) {
          (double)k * secStep <= g_ui.view.t(n.r); k++) {
         const double t = (double)k * secStep;
         const int x = (int)lround(g_ui.view.x(t));
-        cv.fill(x, rt + 22, x + 1, ru.b - 1, C_TICK_MINOR);
+        cv.fill(x, rt + 22, x + 1, ru.b - 1, g_theme.tickMinor);
         format_timestr_pos(t, buf, sizeof(buf), 0);
         monoText(dc, buf, x + 3, rt + 14, x + 90, ru.b - 1, g_theme.dim, DT_LEFT);
     }
     for (int f : g_analysis.onsets) {
         const int ox = (int)lround(g_ui.view.x(frameTime(f)));
-        cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, C_WARN);
+        cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, g_theme.warn);
     }
     cv.clip = {0, rt, KB_W, ru.b};
     cv.fill(0, rt, KB_W, ru.b, g_theme.button);
@@ -985,11 +988,11 @@ void paint(HDC hdc) {
             if (xb < ch.l || xa > ch.r) {
                 continue;
             }
-            cv.fill(xa, ch.t, xa + 1, ch.b, C_TICK);
+            cv.fill(xa, ch.t, xa + 1, ch.b, g_theme.tick);
             text(dc, span.name.c_str(), std::max(xa + 3, ch.l), ch.t, std::min(xb - 1, ch.r), ch.b,
                  g_theme.text, DT_LEFT);
         }
-        cv.fill(ch.l, ch.b - 1, ch.r, ch.b, C_SEPARATOR);
+        cv.fill(ch.l, ch.b - 1, ch.r, ch.b, g_theme.separator);
     }
 
     // time selection
@@ -998,17 +1001,17 @@ void paint(HDC hdc) {
     GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
     if (selB > selA) {
         const int xa = (int)lround(g_ui.view.x(selA)), xb = (int)lround(g_ui.view.x(selB));
-        cv.fill(xa, ru.t, xb, n.b, C_HIGHLIGHT, 22);
-        cv.fill(xa, ru.t, xa + 1, n.b, C_HIGHLIGHT, 90),
-            cv.fill(xb, ru.t, xb + 1, n.b, C_HIGHLIGHT, 90);
+        cv.fill(xa, ru.t, xb, n.b, g_theme.highlight, 22);
+        cv.fill(xa, ru.t, xa + 1, n.b, g_theme.highlight, 90),
+            cv.fill(xb, ru.t, xb + 1, n.b, g_theme.highlight, 90);
     }
 
     // cursors
     int x = (int)lround(g_ui.view.x(GetCursorPosition()));
-    cv.fill(x, ru.t, x + 1, n.b, C_EDIT_CURSOR);
+    cv.fill(x, ru.t, x + 1, n.b, g_theme.editCursor);
     if (GetPlayState() & 1) {
         x = (int)lround(g_ui.view.x(GetPlayPosition2()));
-        cv.fill(x, ru.t, x + 1, n.b, C_PLAY_CURSOR);
+        cv.fill(x, ru.t, x + 1, n.b, g_theme.playCursor);
     }
 
     // lyrics lane: the visible lyric line as text, each syllable at its note's start
@@ -1028,7 +1031,7 @@ void paint(HDC hdc) {
             }
             cv.fill(sx, ly.t, sx + 1, ly.t + 4, noteColour);
             text(dc, nt.lyric.c_str(), std::max(sx + 2, ly.l), ly.t, std::min(next - 1, ly.r), ly.b,
-                 nt.sel ? C_HIGHLIGHT : g_theme.text, DT_LEFT);
+                 nt.sel ? g_theme.highlight : g_theme.text, DT_LEFT);
         }
     }
 
@@ -1054,9 +1057,10 @@ void paint(HDC hdc) {
         }
         const int va = (int)lround(overviewX(o, g_ui.view.t(n.l))),
                   vb = std::max(va + 2, (int)lround(overviewX(o, g_ui.view.t(n.r))));
-        cv.fill(o.l, o.t, va, o.b, C_SHADOW, 120), cv.fill(vb, o.t, o.r, o.b, C_SHADOW, 120);
-        cv.frame(va, o.t, vb, o.b, C_HIGHLIGHT);
-        cv.fill(o.l, o.t, o.r, o.t + 1, C_SEPARATOR);
+        cv.fill(o.l, o.t, va, o.b, g_theme.shadow, 120),
+            cv.fill(vb, o.t, o.r, o.b, g_theme.shadow, 120);
+        cv.frame(va, o.t, vb, o.b, g_theme.highlight);
+        cv.fill(o.l, o.t, o.r, o.t + 1, g_theme.separator);
     }
 
     drawEmptyStates(cv, dc, n);
