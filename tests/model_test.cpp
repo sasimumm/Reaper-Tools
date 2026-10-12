@@ -99,5 +99,12 @@ int main() {
         const Layout tiny = computeLayout(-5, 3, true);
         assert(tiny.tooSmall && tiny.client.r == 0);
     }
+    // follow playback: pages when the cursor leaves the view, not when it was already outside
+    {
+        assert(followPage(10, 4, 13, 13.5) == 10);     // still inside
+        assert(followPage(10, 4, 13.9, 14.1) == 13.9); // off the right edge: lands 1/20 in
+        assert(followPage(10, 4, 13.9, 2) == 1.8);     // loop back to before the view
+        assert(followPage(10, 4, 20, 20.1) == 10);     // scrolled away from the cursor
+    }
     printf("ok\n");
 }

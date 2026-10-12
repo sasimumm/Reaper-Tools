@@ -34,6 +34,7 @@ struct Settings {
     bool audition = true;     // play a note through the notes track when clicked or drawn
     bool followTheme = true;  // else the built-in dark colours
     bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
+    bool followPlay = true;   // page the view along with the play cursor
 };
 
 // --- layout, in points ------------------------------------------------------------------
@@ -78,3 +79,8 @@ bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)>
 // Whether a drawn note hides a suggestion at [start, end) and `pitch`: within a semitone (for
 // corrected pitches) over a third of the suggestion's length.
 bool coversSuggestion(const Note &n, double start, double end, double pitch);
+
+// Follow playback: the view's new left edge when the play cursor went from `prev` (inside the view
+// [t0, t0 + width)) to `now` outside it, else t0. The cursor lands a twentieth of the way in.
+// A cursor already outside on the previous tick (the view scrolled away) is left alone.
+double followPage(double t0, double width, double prev, double now);

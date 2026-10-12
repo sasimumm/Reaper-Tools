@@ -48,7 +48,7 @@ Guiding principles (several learned the hard way in DrawScore):
 | NAV-1 | P0 | ✅ | Horizontal zoom around the mouse and horizontal scroll. Mapped for trackpads: scroll pans pitch, horizontal or shift+scroll pans time, cmd+scroll or pinch zooms time. |
 | NAV-2 | P0 | ◐ | Vertical zoom and scroll: alt+scroll and alt+pinch zoom pitch. Directional pinch isn't possible: macOS only reports the zoom amount, not its direction. |
 | NAV-3 | P0 | ✅ | Zoom to fit the item (F); zoom to selection (Z). |
-| NAV-4 | P1 | — | Follow playback (page or continuous scroll), toggleable. |
+| NAV-4 | P1 | ✅ | Follow playback, toggled with T or the toolbar's Follow (on by default): when the play cursor leaves the view (off the right edge, or a loop jumping back) the view pages so it sits a twentieth of the way in. Not while dragging, and not if you scrolled away from the cursor. Paging only; no continuous scroll. |
 | NAV-5 | P1 | ✅ | Keep the view in sync with REAPER's arrange view (optional link, L or the panel). Time range only: when linked, the window starts by following the arrange view, then whichever side scrolls or zooms moves the other. |
 | NAV-6 | P1 | — | Trackpad pan with inertia (DrawScore: ×0.95 per frame, stop below 0.5 px/s). |
 | NAV-7 | P2 | ✅ | Mini overview of the whole item with the visible range: a strip above the status line with the spectrogram's vocal range (E2 … C6) and the active voice's notes; click or drag it to scroll there. |

@@ -16,6 +16,7 @@ enum Kind {
     EXPLAIN,
     LISTEN,
     SPEED,
+    FOLLOW,
     HELP,
     PANEL
 };
@@ -99,6 +100,8 @@ std::vector<Item> items(const Layout &L) {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"
     };
     segment(SPEED, SPEEDS, SPEED_TIPS, 3);
+    gap();
+    add(FOLLOW, 0, "Follow", "Page the view along with playback (T)", textWidth("Follow") + 16);
     // right-aligned
     const int r = L.toolbar.r - 8;
     out.push_back({{r - 64, t, r, b}, PANEL, 0, "Panel", "Settings panel (S)", true, true});
@@ -117,6 +120,7 @@ bool isOn(const Item &it) {
     case EXPLAIN: return g_settings.explain;
     case LISTEN: return it.arg == listenMode();
     case SPEED: return it.arg == speedIndex();
+    case FOLLOW: return g_settings.followPlay;
     case HELP: return g_ui.help;
     case PANEL: return g_ui.panel;
     case LABEL: return false;
@@ -212,6 +216,7 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
     case EXPLAIN: g_settings.explain = !g_settings.explain; break;
     case LISTEN: setListen(it->arg); break;
     case SPEED: setSpeed(it->arg); break;
+    case FOLLOW: g_settings.followPlay = !g_settings.followPlay; break;
     case HELP: g_ui.help = !g_ui.help; break;
     case PANEL: g_ui.panel = !g_ui.panel; break;
     case LABEL: break;

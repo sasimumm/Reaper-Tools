@@ -143,6 +143,26 @@ static void syncArrange() {
     g_arrA = a, g_arrB = b, g_ourA = g_ui.view.t(n.l), g_ourB = g_ui.view.t(n.r);
 }
 
+static void followPlayback() {
+    static double s_prev = -1; // play position last tick, -1 when stopped
+    const double now = GetPlayPosition2();
+    if (!(GetPlayState() & 1)) {
+        s_prev = -1;
+        return;
+    }
+    if (g_settings.followPlay && g_drag == DRAG_NONE && s_prev >= 0) {
+        syncViewOrigin();
+        const Rect n = noteArea();
+        const double t0 = g_ui.view.t(n.l),
+                     page = followPage(t0, (n.r - n.l) / g_ui.view.pps, s_prev, now);
+        if (page != t0) {
+            g_ui.view.t0 += page - t0;
+            redraw();
+        }
+    }
+    s_prev = now;
+}
+
 void selectVoice(int v) {
     if (v < 0 || v >= WINDOW_VOICES || v == g_session.voice) {
         return;
@@ -222,6 +242,8 @@ static bool onKey(int key) {
         g_ui.dockPending = true;
     } else if (key == 'L' && !m) {
         g_settings.linkArrange = !g_settings.linkArrange;
+    } else if (key == 'T' && !m) {
+        g_settings.followPlay = !g_settings.followPlay;
     } else if (key == 'N' && !m) {
         g_settings.suggest = !g_settings.suggest;
     } else if (key == 'A' && !m) {
@@ -302,6 +324,7 @@ static bool isOurKey(int key, int flags) {
     case 'N':
     case 'Q':
     case 'L':
+    case 'T':
     case 'K':
     case 'J':
     case 'R':
@@ -652,6 +675,7 @@ void Window_Timer() {
     }
     pollJob();
     syncArrange();
+    followPlayback();
     if (g_drag == DRAG_NONE) {
         saveItemSettings();
     }

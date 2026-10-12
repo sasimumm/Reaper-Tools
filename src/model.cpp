@@ -43,6 +43,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "audition", .b = &s.audition},
         {.name = "theme", .b = &s.followTheme},
         {.name = "linkarrange", .b = &s.linkArrange},
+        {.name = "followplay", .b = &s.followPlay},
         {.name = "snap", .i = &s.snapMode, .lo = 0, .hi = SNAP_GRID},
         {.name = "quantise", .d = &s.quantStrength, .lo = 0, .hi = 1},
     };
@@ -108,6 +109,11 @@ bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)>
         n.start = s, n.end = e;
     }
     return any;
+}
+
+double followPage(double t0, double width, double prev, double now) {
+    const auto in = [&](double t) { return t >= t0 && t < t0 + width; };
+    return in(prev) && !in(now) ? now - width / 20 : t0;
 }
 
 bool coversSuggestion(const Note &n, double start, double end, double pitch) {
