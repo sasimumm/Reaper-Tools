@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../src/notesync.h"
+#include "notes/notesync.h"
 
 // A take like REAPER's: indices stay put until sort(), inserted events are appended, sort() orders
 // notes by start then pitch and text events by position. 960 PPQ per second.

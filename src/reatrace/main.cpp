@@ -102,8 +102,8 @@
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
 
-#include "guard.h"
-#include "window.h"
+#include "shared/guard.h"
+#include "ui/window.h"
 
 // Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
 // "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")

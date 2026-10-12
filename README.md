@@ -45,6 +45,19 @@ selection", SWS tempo tools); the grid follows the project tempo map.
 Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's notation
 editor and lyrics view.
 
+## Layout
+
+- `src/reatrace/`: the ReaTrace extension. `main.cpp` (entry point, voice tracks), `state.h`
+  (the session's shared state), `model.*` (settings, layout and other REAPER-free logic),
+  `analysis.*` and `settings.*` (the analysis job and per-item settings), and:
+  - `dsp/`: spectrogram (NSGT), pitch contour, note estimator, basic-pitch; REAPER-free
+  - `notes/`: note editing (`editor`, REAPER-free), notes <-> MIDI take sync, lyrics, commands
+  - `playback/`: previews and the isolate filter
+  - `ui/`: the window, painting, panel and toolbar
+- `src/reachords/`: the ReaChords extension (chord items)
+- `src/shared/`: code both extensions use (`guard.h`: exceptions never reach REAPER)
+- `tests/`: self-check programs (`build/*_test`); includes are relative to `src/reatrace` and `src`
+
 ## ReaChords
 
 A second, separate extension (`src/reachords/`, `reaper_reachords.dylib`): chord items, a track of

@@ -1,6 +1,6 @@
-#include "takesync.h"
+#include "notes/takesync.h"
 
-#include "notesync.h"
+#include "notes/notesync.h"
 
 static std::vector<Note> g_loaded; // notes as read from the take, by take index
 

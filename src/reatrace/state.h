@@ -2,7 +2,7 @@
 // are in its own header (analysis.h, paint.h, panel.h, ...).
 #pragma once
 
-#include "window.h"
+#include "ui/window.h"
 
 #include <algorithm>
 #include <cmath>
@@ -16,11 +16,11 @@
 #undef min
 #undef max
 
-#include "contour.h"
-#include "editor.h"
+#include "dsp/contour.h"
+#include "dsp/nsgt.h"
 #include "model.h"
-#include "notesync.h"
-#include "nsgt.h"
+#include "notes/editor.h"
+#include "notes/notesync.h"
 
 // --- state ---------------------------------------------------------------------
 

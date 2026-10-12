@@ -47,8 +47,8 @@
 #include "reaper_plugin.h"
 #include "reaper_plugin_functions.h"
 
-#include "../guard.h"
 #include "chords.h"
+#include "shared/guard.h"
 
 void ReportFailure(const char *where, const char *what) {
     static std::set<std::string> reported; // a failure in the timer would otherwise repeat

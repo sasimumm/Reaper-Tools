@@ -1,4 +1,4 @@
-#include "notesync.h"
+#include "notes/notesync.h"
 
 #include <algorithm>
 #include <cmath>

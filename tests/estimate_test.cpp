@@ -7,8 +7,8 @@
 #include <cstdlib>
 #include <vector>
 
-#include "../src/estimate.h"
-#include "../src/parallel.h"
+#include "dsp/estimate.h"
+#include "dsp/parallel.h"
 
 #include <atomic>
 #include <stdexcept>

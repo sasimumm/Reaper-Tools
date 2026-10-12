@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <vector>
 
-#include "../src/nsgt.h"
+#include "dsp/nsgt.h"
 
 static Spectrogram analyze(const std::vector<float> &x) {
     return computeNSGT(NSGTParams(), (long long)x.size(), [&](long long start, int n, float *out) {

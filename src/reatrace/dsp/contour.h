@@ -3,7 +3,7 @@
 
 #include <vector>
 
-#include "nsgt.h"
+#include "dsp/nsgt.h"
 
 struct Contour {
     std::vector<float> pitch;    // per frame, continuous MIDI pitch; < 0 where unvoiced

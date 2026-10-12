@@ -1,7 +1,7 @@
-#include "panel.h"
+#include "ui/panel.h"
 
 #include "analysis.h"
-#include "commands.h"
+#include "notes/commands.h"
 #include "settings.h"
 
 static const char *const CHANNELS[] = {

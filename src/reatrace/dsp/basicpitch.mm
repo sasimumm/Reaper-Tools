@@ -1,4 +1,4 @@
-#include "basicpitch.h"
+#include "dsp/basicpitch.h"
 
 #import <CoreML/CoreML.h>
 

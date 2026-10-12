@@ -1,8 +1,8 @@
-#include "toolbar.h"
+#include "ui/toolbar.h"
 
-#include "commands.h"
-#include "isolate.h"
-#include "panel.h"
+#include "notes/commands.h"
+#include "playback/isolate.h"
+#include "ui/panel.h"
 
 namespace {
 

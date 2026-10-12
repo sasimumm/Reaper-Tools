@@ -8,9 +8,9 @@
 #include <utility>
 #include <vector>
 
-#include "../src/isolate.h"
 #include "eel2/ns-eel-int.h" // NSEEL_PProc_THIS
 #include "eel2/ns-eel.h"
+#include "playback/isolate.h"
 
 // EEL2 asks its host for a lock around its global tables; single-threaded here
 extern "C" void NSEEL_HOSTSTUB_EnterMutex() {}

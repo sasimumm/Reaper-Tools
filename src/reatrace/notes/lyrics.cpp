@@ -1,6 +1,6 @@
-#include "lyrics.h"
+#include "notes/lyrics.h"
 
-#include "takesync.h"
+#include "notes/takesync.h"
 
 static double g_editStart;
 static int g_editPitch;

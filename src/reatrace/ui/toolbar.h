@@ -2,7 +2,7 @@
 // plus the shortcut sheet and the settings panel.
 #pragma once
 
-#include "draw.h"
+#include "ui/draw.h"
 
 void drawToolbar(Canvas &cv, HDC dc, const Layout &L);
 void toolbarClick(int x, int y, int mods, const Layout &L);

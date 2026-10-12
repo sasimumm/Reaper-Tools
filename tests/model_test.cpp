@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../src/model.h"
+#include "model.h"
 
 int main() {
     // settings round-trip through the project's text format

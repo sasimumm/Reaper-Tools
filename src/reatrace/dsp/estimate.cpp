@@ -1,4 +1,4 @@
-#include "estimate.h"
+#include "dsp/estimate.h"
 
 #define ACCELERATE_NEW_LAPACK
 #include <Accelerate/Accelerate.h>
@@ -9,8 +9,8 @@
 #include <complex>
 #include <thread>
 
+#include "dsp/parallel.h"
 #include "fft.h"
-#include "parallel.h"
 
 static const int SR = 22050, HOP = 256;
 

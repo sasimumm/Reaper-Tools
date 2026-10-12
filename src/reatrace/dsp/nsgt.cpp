@@ -1,4 +1,4 @@
-#include "nsgt.h"
+#include "dsp/nsgt.h"
 
 #include <algorithm>
 #include <climits>

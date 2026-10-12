@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "../src/editor.h"
+#include "notes/editor.h"
 
 static bool near(double a, double b) { return fabs(a - b) < 1e-9; }
 

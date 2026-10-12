@@ -4,7 +4,7 @@
 #include <memory>
 #include <thread>
 
-#include "estimate.h"
+#include "dsp/estimate.h"
 
 // --- spectrogram ---------------------------------------------------------------
 

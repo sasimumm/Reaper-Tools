@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "editor.h"
-#include "nsgt.h"
+#include "dsp/nsgt.h"
+#include "notes/editor.h"
 
 // Snapping: onsets (and note changes in the pitch contour) by default, since recordings are
 // usually free tempo and the grid means nothing until a tempo map is fitted.

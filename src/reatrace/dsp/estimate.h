@@ -7,8 +7,8 @@
 #include <functional>
 #include <vector>
 
-#include "basicpitch.h"
-#include "nsgt.h"
+#include "dsp/basicpitch.h"
+#include "dsp/nsgt.h"
 
 struct NoteEstimate {
     int f0, f1; // frames [f0, f1)

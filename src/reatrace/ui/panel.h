@@ -1,8 +1,8 @@
 // The settings panel: widgets, presets, playback speed and the audio/notes balance.
 #pragma once
 
-#include "draw.h"
 #include "state.h"
+#include "ui/draw.h"
 
 void scrollPanel(int dy);
 void swapListen();

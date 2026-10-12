@@ -1,11 +1,11 @@
-#include "isolate.h"
+#include "playback/isolate.h"
 
 #include <fstream>
 #include <sstream>
 
 #include "analysis.h"
-#include "commands.h"
-#include "guard.h"
+#include "notes/commands.h"
+#include "shared/guard.h"
 #include "state.h"
 
 static const char *const FX_NAME = "JS:ReaTrace/isolate.jsfx";

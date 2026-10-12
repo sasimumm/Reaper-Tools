@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "editor.h"
+#include "notes/editor.h"
 
 // A MIDI take's notes and text events, by index. Positions are in PPQ (MIDI ticks); toTime/toPPQ
 // convert to and from project seconds.

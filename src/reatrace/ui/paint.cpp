@@ -1,11 +1,11 @@
-#include "paint.h"
+#include "ui/paint.h"
 
 #include "analysis.h"
-#include "commands.h"
-#include "draw.h"
-#include "lyrics.h"
-#include "panel.h"
-#include "toolbar.h"
+#include "notes/commands.h"
+#include "notes/lyrics.h"
+#include "ui/draw.h"
+#include "ui/panel.h"
+#include "ui/toolbar.h"
 
 static const int GUIDE_THICKNESS = 3; // overtone hover marks, pixels
 

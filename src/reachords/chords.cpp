@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-#include "../guard.h"
 #include "reaper_plugin_functions.h"
+#include "shared/guard.h"
 #undef min
 #undef max
 

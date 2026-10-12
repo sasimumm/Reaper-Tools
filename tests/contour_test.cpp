@@ -5,7 +5,7 @@
 #include <cstdlib>
 #include <vector>
 
-#include "../src/contour.h"
+#include "dsp/contour.h"
 
 // A sung-like tone: 12 harmonics with a "formant" making the 3rd louder than the fundamental.
 static void tone(std::vector<float> &x, double sr, double t0, double t1, double pitch,
