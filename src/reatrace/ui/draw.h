@@ -1,16 +1,7 @@
-// Drawing into the window's backbuffer, and the colours (paint.cpp and panel.cpp).
+// Drawing into the window's backbuffer (paint.cpp and panel.cpp).
 #pragma once
 
 #include "state.h"
-
-// Colours that follow REAPER's theme (paint.cpp's applyTheme), 0xRRGGBB.
-struct Theme {
-    unsigned int bg = 0, ruler = 0, text = 0, dim = 0, panel = 0, button = 0, track = 0;
-    unsigned int on = 0; // toolbar toggles that are on and chosen segments
-};
-inline Theme g_theme;
-// C_ACCENT marks UI state (active toggles, hover, progress) and is never a voice's colour.
-static const unsigned int C_EDIT_CURSOR = 0xff6b5b, C_PLAY_CURSOR = 0xffffff, C_ACCENT = 0xa9b4ff;
 
 // Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
 struct Canvas {

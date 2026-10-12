@@ -3,6 +3,7 @@
 #include "notes/commands.h"
 #include "playback/isolate.h"
 #include "ui/panel.h"
+#include "ui/theme.h"
 
 namespace {
 
@@ -31,7 +32,6 @@ struct Item {
     bool first, last; // ends of a segmented group
 };
 
-const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0xe69f00, 0x56b4e9, 0xcc79a7, 0x009e73};
 const char *const VOICE_LABELS[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
 
 int textWidth(const char *s) { return 7 * (int)strlen(s); } // 12 px Helvetica, roughly
@@ -183,7 +183,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             if (!it.last) {
                 cv.fill(r.r - 1, r.t, r.r, r.b, g_theme.panel);
             }
-            text(dc, it.label, r.l, r.t, r.r, r.b, on ? 0x14161c : g_theme.dim, DT_CENTER);
+            text(dc, it.label, r.l, r.t, r.r, r.b, on ? C_ON_TEXT : g_theme.dim, DT_CENTER);
             break;
         default: // toggles and buttons
             if (on || hov) {

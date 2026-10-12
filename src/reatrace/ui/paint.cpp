@@ -6,18 +6,11 @@
 #include "notes/lyrics.h"
 #include "ui/draw.h"
 #include "ui/panel.h"
+#include "ui/theme.h"
 #include "ui/toolbar.h"
 
 static const int GUIDE_THICKNESS = 3; // overtone hover marks, pixels
 
-// Colours, 0xRRGGBB.
-// The note area stays dark under the spectrogram; the rest follows REAPER's theme (applyTheme).
-static const unsigned int C_AREA = 0x1b1b1b;
-// Voices in the Okabe-Ito palette (colour-blind safe), readable over the graphite spectrogram.
-static const unsigned int VOICE_COLOURS[WINDOW_VOICES] = {0xe69f00, 0x56b4e9, 0xcc79a7, 0x009e73};
-static const unsigned int C_CONTOUR = 0xf0e442; // yellow: never white like the play cursor
-static const unsigned int C_OUTLINE = 0xf4f6ff; // selected notes
-static const unsigned int C_CROWDED = 0x8b91a3; // suggestions with no voice left
 static const double EXPLAIN_DIM = 0.25;
 // Drawing happens in device pixels: g_scale per point (2 on Retina). Layout stays in points.
 static HDC g_memdc;
@@ -32,29 +25,6 @@ struct LayerKey {
     bool operator==(const LayerKey &) const = default;
 };
 static LayerKey g_layerKey;
-
-static unsigned int mix(unsigned int a, unsigned int b, double f) {
-    unsigned int out = 0;
-    for (int sh = 0; sh < 24; sh += 8) {
-        out |= (unsigned int)lround(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh;
-    }
-    return out;
-}
-
-// Theme colours by their reaper.ini keys, falling back to the built-in dark colours.
-static void applyTheme() {
-    auto col = [](const char *key, unsigned int dflt) -> unsigned int {
-        const int c = g_settings.followTheme ? GetThemeColor(key, 0) : -1;
-        return c < 0 ? dflt
-                     : ((c & 255) << 16) | (c & 0xff00) | ((c >> 16) & 255); // COLORREF is 0xBBGGRR
-    };
-    g_theme.bg = col("col_main_bg2", 0x1b1b1b), g_theme.panel = col("col_main_bg", 0x222222);
-    g_theme.ruler = col("col_tl_bg", 0x262626), g_theme.text = col("col_main_text2", 0xd0d0d0);
-    g_theme.on = col("col_toolbar_text_on", C_ACCENT);
-    g_theme.dim = mix(g_theme.text, g_theme.panel, 0.4),
-    g_theme.button = mix(g_theme.panel, g_theme.text, 0.1),
-    g_theme.track = mix(g_theme.panel, g_theme.text, 0.2);
-}
 
 static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
@@ -348,10 +318,10 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         const bool strong = rel > -12;
         for (int x = xA; x < xB; x += 8) {
             cv.fill(x, y - GUIDE_THICKNESS / 2, x + 4, y - GUIDE_THICKNESS / 2 + GUIDE_THICKNESS,
-                    strong ? 0xffa040 : 0xa0a0a0, strong ? 256 : a);
+                    strong ? C_WARN : 0xa0a0a0, strong ? 256 : a);
         }
         snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
-        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? 0xffa040 : 0xa0a0a0, DT_LEFT);
+        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? C_WARN : 0xa0a0a0, DT_LEFT);
     }
 }
 
@@ -616,12 +586,12 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         const std::string &note =
             g_analysis.error.empty() ? g_analysis.estimateNote : g_analysis.error;
         if (!note.empty()) {
-            text(dc, note.c_str(), x, s.t, right, s.b, 0xffa040, DT_RIGHT);
+            text(dc, note.c_str(), x, s.t, right, s.b, C_WARN, DT_RIGHT);
             right -= 8 + 6 * (int)note.size();
         }
     }
     right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[g_session.voice],
-                 VOICE_COLOURS[g_session.voice], 0x14161c) -
+                 VOICE_COLOURS[g_session.voice], C_ON_TEXT) -
             6;
     right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[std::clamp(g_settings.snapMode, 0, 2)],
                  g_theme.button, g_theme.dim) -
@@ -953,11 +923,14 @@ void paint(HDC hdc) {
                                : -1;
     for (int p = pLo; p <= pHi; p++) {
         const int y0 = (int)lround(g_ui.view.y(p + 0.5)), y1 = (int)lround(g_ui.view.y(p - 0.5));
-        cv.fill(0, y0, n.l, y1, p == hoverPitch ? C_ACCENT : isBlack(p) ? 0x303030 : 0xd8d8d8);
-        cv.fill(0, y1 - 1, n.l, y1, 0x888888);
+        cv.fill(0, y0, n.l, y1,
+                p == hoverPitch ? C_ACCENT
+                : isBlack(p)    ? C_KEY_BLACK
+                                : C_KEY_WHITE);
+        cv.fill(0, y1 - 1, n.l, y1, C_KEY_EDGE);
         if (p % 12 == 0 && y1 - y0 >= 8) {
             pitchName(p, buf, sizeof(buf));
-            text(dc, buf, 2, y0, n.l - 4, y1, 0x202020, DT_RIGHT);
+            text(dc, buf, 2, y0, n.l - 4, y1, C_KEY_TEXT, DT_RIGHT);
         }
     }
     cv.fill(n.l - 1, n.t, n.l, n.b, 0x000000);
@@ -996,7 +969,7 @@ void paint(HDC hdc) {
     }
     for (int f : g_analysis.onsets) {
         const int ox = (int)lround(g_ui.view.x(frameTime(f)));
-        cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, 0xffa040);
+        cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, C_WARN);
     }
     cv.clip = {0, rt, KB_W, ru.b};
     cv.fill(0, rt, KB_W, ru.b, g_theme.button);

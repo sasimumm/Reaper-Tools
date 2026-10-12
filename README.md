@@ -66,7 +66,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 state), `model.*` (settings, layout and other REAPER-free logic), `analysis.*` and `settings.*`
 (the analysis job and per-item settings), and `dsp/` (spectrogram, pitch contour, note
 estimator, basic-pitch; REAPER-free), `notes/` (editing, notes <-> MIDI take sync, lyrics,
-commands), `playback/` (previews, the isolate filter), `ui/` (window, painting, panel, toolbar).
+commands), `playback/` (previews, the isolate filter), `ui/` (window, painting, panel, toolbar, theme colours).
 The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it
 as `UserPlugins/reatrace/nmp.mlmodelc`.
 

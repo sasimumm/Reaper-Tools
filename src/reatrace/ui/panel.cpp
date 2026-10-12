@@ -3,6 +3,7 @@
 #include "analysis.h"
 #include "notes/commands.h"
 #include "settings.h"
+#include "ui/theme.h"
 
 static const char *const CHANNELS[] = {
     "Mix", "Left", "Right", "Side", "Centre"
@@ -563,7 +564,7 @@ void drawPanel(Canvas &cv, HDC dc) {
                       bx = l + (int)lround((r - l) *
                                            std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
             cv.fill(l, by + 3, r, by + 7, g_theme.track);
-            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? 0xc0a040 : C_ACCENT);
+            cv.fill(l, by + 3, bx, by + 7, w.analysis && g_ui.analysisDirty ? C_DIRTY : C_ACCENT);
             cv.fill(bx - 3, by, bx + 3, by + 10, g_theme.text);
         } else if (w.type == W_TOGGLE) {
             cv.frame(l, top + 5, l + 12, top + 17, g_theme.text);
@@ -578,8 +579,8 @@ void drawPanel(Canvas &cv, HDC dc) {
                           br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
                 cv.fill(bl, top + 18, br - 2, top + 40, on ? C_ACCENT : g_theme.button);
-                text(dc, w.options[i], bl, top + 18, br - 2, top + 40, on ? 0x14161c : g_theme.text,
-                     DT_CENTER);
+                text(dc, w.options[i], bl, top + 18, br - 2, top + 40,
+                     on ? C_ON_TEXT : g_theme.text, DT_CENTER);
             }
         } else {
             cv.fill(l, top + 2, r, top + h - 2, g_theme.button);
