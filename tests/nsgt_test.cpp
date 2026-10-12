@@ -34,7 +34,7 @@ int main() {
             lo = fmin(lo, s.at(f, a4));
             hi = fmax(hi, s.at(f, a4));
             for (int b = 0; b < s.bins; b++) {
-                assert(s.at(f, b) <= s.at(f, a4) + 1e-6);
+                assert(static_cast<double>(s.at(f, b)) <= static_cast<double>(s.at(f, a4)) + 1e-6);
             }
         }
         printf("sine: bins=%d frames=%d A4 bin=%d magnitude %.4f..%.4f\n", s.bins, s.frames, a4, lo,

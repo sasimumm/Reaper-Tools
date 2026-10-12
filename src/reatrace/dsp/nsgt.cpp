@@ -145,7 +145,7 @@ void estimateNoise(Spectrogram &s, double fraction) {
     for (int f = 0; f < s.frames; f++) {
         double e = 0;
         for (int b = 0; b < s.bins; b++) {
-            e += (double)s.at(f, b) * s.at(f, b);
+            e += (double)s.at(f, b) * static_cast<double>(s.at(f, b));
         }
         energy[f] = {e, f};
     }
@@ -195,7 +195,7 @@ static float displayMag(const Spectrogram &s, const RenderParams &rp, int f, int
 
 double cellValue(const Spectrogram &s, const RenderParams &rp, int f, int b) {
     const float m = displayMag(s, rp, f, b);
-    const double db = std::max(20.0 * log10(std::max(m, 1e-10f)), rp.dbFloor);
+    const double db = std::max(20.0 * static_cast<double>(log10(std::max(m, 1e-10f))), rp.dbFloor);
     double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
     v = std::max(0.0, std::min(1.0, v));
     if (rp.peaksOnly && b > 0 && b + 1 < s.bins &&
@@ -215,7 +215,8 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
             (unsigned int)(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
         float m = 0;
         memcpy(&m, &bits, 4);
-        const double db = std::max(20.0 * log10(std::max(m, 1e-10f)), rp.dbFloor);
+        const double db =
+            std::max(20.0 * static_cast<double>(log10(std::max(m, 1e-10f))), rp.dbFloor);
         double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
         lut[i] = (unsigned char)lround(std::max(0.0, std::min(1.0, v)) * 255);
     }
@@ -271,7 +272,8 @@ void makeColormap(double bias, unsigned int lut[256], int colormap) {
         const double fr = t - k;
         unsigned int c = 0;
         for (int ch = 0; ch < 3; ch++) {
-            double v = ramp[k][ch] + (ramp[k + 1][ch] - ramp[k][ch]) * fr;
+            double v = static_cast<double>(ramp[k][ch]) +
+                       static_cast<double>(ramp[k + 1][ch] - ramp[k][ch]) * fr;
             c = (c << 8) | (unsigned int)std::max(0.0, std::min(255.0, v * 255));
         }
         lut[i] = c;

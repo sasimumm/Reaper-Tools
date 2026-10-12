@@ -108,7 +108,7 @@ struct Fx {
             *playPos = (double)b / SR;
             NSEEL_code_execute(block);
             for (size_t i = b; i < std::min(x.size(), b + BLOCK); i++) {
-                *spl0 = *spl1 = x[i];
+                *spl0 = *spl1 = static_cast<double>(x[i]);
                 NSEEL_code_execute(sample);
                 assert(*spl0 == *spl1);
                 y[i] = (float)*spl0;
@@ -141,8 +141,8 @@ static std::vector<float> tone(double pitch, double seconds, double vibratoCents
 static double gainDb(const std::vector<float> &x, const std::vector<float> &y, double a, double b) {
     double ex = 0, ey = 0;
     for (size_t i = (size_t)(a * SR); i < (size_t)(b * SR) && i < x.size(); i++) {
-        ex += (double)x[i] * x[i];
-        ey += (double)y[i] * y[i];
+        ex += (double)x[i] * static_cast<double>(x[i]);
+        ey += (double)y[i] * static_cast<double>(y[i]);
     }
     return 10 * log10(ey / ex);
 }

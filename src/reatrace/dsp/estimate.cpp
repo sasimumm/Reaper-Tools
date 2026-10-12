@@ -31,9 +31,11 @@ static void normaliseP99(std::vector<float> &roll, int n) {
     std::sort(mx.begin(), mx.end());
     const double pos = 0.99 * (F - 1);
     const int i = (int)pos;
-    const double v = std::max(1e-12, mx[i] + (i + 1 < F ? (mx[i + 1] - mx[i]) * (pos - i) : 0.0));
+    const double v =
+        std::max(1e-12, static_cast<double>(mx[i]) +
+                            (i + 1 < F ? static_cast<double>(mx[i + 1] - mx[i]) * (pos - i) : 0.0));
     for (float &x : roll) {
-        x = (float)(x / v);
+        x = (float)(static_cast<double>(x) / v);
     }
 }
 
@@ -84,10 +86,11 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         std::vector<float> col(B);
         double sum = 0;
         for (int b = 0; b < B; b++) {
-            sum += col[b] = (float)exp(-0.5 * ((b - c) / (bpo / 3.0)) * ((b - c) / (bpo / 3.0)));
+            sum += static_cast<double>(
+                col[b] = (float)exp(-0.5 * ((b - c) / (bpo / 3.0)) * ((b - c) / (bpo / 3.0))));
         }
         for (float &v : col) {
-            v = (float)(v / sum);
+            v = (float)(static_cast<double>(v) / sum);
         }
         noise.push_back(col);
     }
@@ -110,14 +113,15 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
     for (int f = 0; f < F; f++) {
         double sum = 0;
         for (int b = 0; b < B; b++) {
-            sum += V(f, b);
+            sum += static_cast<double>(V(f, b));
         }
         mean += sum;
-        pen[f] = (float)(LAM * (sum + eps) / B * 50);
+        pen[f] = (float)(LAM * (sum + static_cast<double>(eps)) / B * 50);
     }
     mean /= (double)F * B;
 
-    std::vector<float> H((size_t)F * K, (float)(mean + eps)), W((size_t)B * K), norm(P);
+    std::vector<float> H((size_t)F * K, (float)(mean + static_cast<double>(eps))), W((size_t)B * K),
+        norm(P);
     std::vector<float> WH((size_t)CHUNK * B), NUM((size_t)CHUNK * K);
     auto buildW = [&] {
         for (int p = 0; p < P; p++) {
@@ -126,12 +130,12 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 double v = 0;
                 const float *pp = &part[((size_t)b * P + p) * NH];
                 for (int h = 0; h < NH; h++) {
-                    v += pp[h] * A[(size_t)reg(p) * NH + h];
+                    v += static_cast<double>(pp[h]) * A[(size_t)reg(p) * NH + h];
                 }
                 W[(size_t)b * K + p] = (float)v;
                 sum += v;
             }
-            norm[p] = (float)(sum + eps);
+            norm[p] = (float)(sum + static_cast<double>(eps));
             for (int b = 0; b < B; b++) {
                 W[(size_t)b * K + p] /= norm[p];
             }
@@ -187,14 +191,15 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
                 const float *h = &H[(size_t)(c0 + f) * K];
                 double sum = 0, best = 0;
                 for (int p = 0; p < P; p++) {
-                    sum += h[p];
-                    best = std::max(best, (double)(p > 0 ? h[p - 1] : 0) + h[p] +
-                                              (p + 1 < P ? h[p + 1] : 0));
+                    sum += static_cast<double>(h[p]);
+                    best =
+                        std::max(best, (double)(p > 0 ? h[p - 1] : 0) + static_cast<double>(h[p]) +
+                                           (p + 1 < P ? static_cast<double>(h[p + 1]) : 0));
                 }
-                const bool solo = best / (sum + eps) >= SOLO;
+                const bool solo = best / (sum + static_cast<double>(eps)) >= SOLO;
                 for (int p = 0; p < P; p++) {
                     Hm[(size_t)f * P + p] = solo ? h[p] : 0;
-                    hsum[p] += solo ? h[p] : 0;
+                    hsum[p] += solo ? static_cast<double>(h[p]) : 0;
                 }
             }
             cblas_sgemm(CblasRowMajor, CblasTrans, CblasNoTrans, B, P, fc, 1.0f, WH.data(), B,
@@ -204,15 +209,16 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
         for (int p = 0; p < P; p++) {
             for (int b = 0; b < B; b++) {
                 const float *pp = &part[((size_t)b * P + p) * NH];
-                const double rh = RH[(size_t)b * P + p] / norm[p], hn = hsum[p] / norm[p];
+                const double rh = static_cast<double>(RH[(size_t)b * P + p] / norm[p]),
+                             hn = hsum[p] / static_cast<double>(norm[p]);
                 for (int h = 0; h < NH; h++) {
-                    nr[(size_t)reg(p) * NH + h] += pp[h] * rh;
-                    dr[(size_t)reg(p) * NH + h] += pp[h] * hn;
+                    nr[(size_t)reg(p) * NH + h] += static_cast<double>(pp[h]) * rh;
+                    dr[(size_t)reg(p) * NH + h] += static_cast<double>(pp[h]) * hn;
                 }
             }
         }
         for (size_t i = 0; i < A.size(); i++) {
-            A[i] *= (nr[i] + eps) / (dr[i] + eps);
+            A[i] *= (nr[i] + static_cast<double>(eps)) / (dr[i] + static_cast<double>(eps));
         }
         for (int r = 0; r < regions; r++) {
             const double a0 = std::max((double)eps, A[(size_t)r * NH]);
@@ -261,7 +267,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
             double sum = 0;
             for (int j = SUB * (m - pmin) - 1; j <= SUB * (m - pmin) + 1; j++) {
                 if (j >= 0 && j < P) {
-                    sum += H[(size_t)f * K + j];
+                    sum += static_cast<double>(H[(size_t)f * K + j]);
                 }
             }
             roll[(size_t)f * n + m - lo] = (float)sum;
@@ -315,7 +321,7 @@ static void biquadRun(const Biquad &q, float *x, int n, int step) {
     double z1 = 0, z2 = 0;
     for (int i = 0; i < n; i++) {
         float &v = x[(ptrdiff_t)i * step]; // signed: the backward pass steps by -1
-        const double in = v, y = q.b0 * in + z1;
+        const double in = static_cast<double>(v), y = q.b0 * in + z1;
         z1 = q.b1 * in - q.a1 * y + z2;
         z2 = q.b2 * in - q.a2 * y;
         v = (float)y;
@@ -516,10 +522,12 @@ static Activity activity(const std::vector<float> &roll, int F, int n,
             unsigned char *act = level ? &a.hold[(size_t)f * n] : &a.on[(size_t)f * n];
             for (int p = 0; p < n; p++) {
                 const bool peak = (p == 0 || S[p] >= S[p - 1]) && (p + 1 == n || S[p] >= S[p + 1]);
-                act[p] = peak && S[p] > absT * k && S[p] > rel * k * mx;
+                act[p] = peak && static_cast<double>(S[p]) > absT * k &&
+                         static_cast<double>(S[p]) > rel * k * static_cast<double>(mx);
             }
             for (int p = n - 1; p >= 12; p--) {
-                if (act[p] && act[p - 12] && S[p] < oct * S[p - 12]) {
+                if (act[p] && act[p - 12] &&
+                    static_cast<double>(S[p]) < oct * static_cast<double>(S[p - 12])) {
                     act[p] = 0; // the lower note's 2nd partial
                 }
             }
@@ -580,8 +588,10 @@ struct Partials {
         F[f].assign(RA_BINS, 0), M[f].assign(RA_BINS, 0);
         for (int k = 1; k < RA_BINS; k++) {
             // WDL's real FFT is twice numpy's; halve so the power threshold means the same
-            const std::complex<double> h(0.5 * X[perm[k]].re, 0.5 * X[perm[k]].im),
-                d(0.5 * D[perm[k]].re, 0.5 * D[perm[k]].im);
+            const std::complex<double> h(0.5 * static_cast<double>(X[perm[k]].re),
+                                         0.5 * static_cast<double>(X[perm[k]].im)),
+                d(0.5 * static_cast<double>(D[perm[k]].re),
+                  0.5 * static_cast<double>(D[perm[k]].im));
             const double mag = std::abs(h);
             M[f][k] = (float)mag;
             if (mag * mag < 1e-6) {
@@ -608,15 +618,16 @@ struct Partials {
                     best = k;
                 }
             }
-            const double fr = F[f][best];
+            const double fr = static_cast<double>(F[f][best]);
             const bool ok = fr > 0 && fabs(12 * log2(std::max(fr, 1e-3) / f0)) < tol;
-            t.push_back(ok ? log2(std::max(fr, 1e-3)) : NAN), m.push_back(log(M[f][best] + 1e-6));
+            t.push_back(ok ? log2(std::max(fr, 1e-3)) : static_cast<double>(NAN)),
+                m.push_back(log(static_cast<double>(M[f][best]) + 1e-6));
         }
     }
 
     // log mean magnitude of partials 1..nh (up to 5 kHz)
     std::vector<double> harmonicAmps(double f0, int a0, int b0, int nh = 10) {
-        std::vector<double> out(nh, NAN), t, m;
+        std::vector<double> out(nh, static_cast<double>(NAN)), t, m;
         for (int h = 1; h <= nh && h * f0 <= 5000; h++) {
             track(h * f0, a0, b0, t, m);
             double sum = 0;
@@ -644,7 +655,7 @@ static double evenSurplus(const std::vector<double> &amps) {
             n++;
         }
     }
-    return n ? sum / n : NAN;
+    return n ? sum / n : static_cast<double>(NAN);
 }
 
 // Gaps filled, a quadratic trend removed, smoothed over 3 frames; false if too little is voiced.
@@ -728,7 +739,7 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
     };
     std::vector<double> a, b;
     if (voiced(x) < 0.6 || voiced(y) < 0.6 || !detrend(x, a) || !detrend(y, b)) {
-        return NAN;
+        return static_cast<double>(NAN);
     }
     const int n = (int)a.size();
     double ma = 0, mb = 0;
@@ -743,7 +754,7 @@ static double trackCorr(const std::vector<double> &x, const std::vector<double> 
         sbb += (b[i] - mb) * (b[i] - mb);
     }
     if (sqrt(saa / n) < 1e-7 || sqrt(sbb / n) < 1e-7) {
-        return NAN;
+        return static_cast<double>(NAN);
     }
     return sab / sqrt(saa * sbb);
 }
@@ -791,7 +802,8 @@ static std::vector<NoteEstimate> octaveDoublings(const std::vector<NoteEstimate>
         std::vector<int> starts;
         for (int c = n.f0; c < n.f1; c += L) {
             const int a = c + 1, b = std::min(n.f1, c + L) - 1;
-            E.push_back(b > a ? evenSurplus(P.harmonicAmps(f0, a, std::max(b, a + 2))) : NAN);
+            E.push_back(b > a ? evenSurplus(P.harmonicAmps(f0, a, std::max(b, a + 2)))
+                              : static_cast<double>(NAN));
             starts.push_back(c);
         }
         for (size_t s = 0; s < E.size();) {
@@ -995,14 +1007,17 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo,
         for (int b = 0; b < s.bins; b++) {
             const double pos = specPos[b];
             const int k = std::min(NF / 2 - 1, (int)pos);
-            const double spec = Z[k] + (Z[k + 1] - Z[k]) * (pos - k);
+            const double spec =
+                static_cast<double>(Z[k]) + static_cast<double>(Z[k + 1] - Z[k]) * (pos - k);
             // cepstrum at quefrency SR/f (q = 1 .. NF/2-1; numpy's interp holds the end values outside)
             const double q = std::max(1.0, std::min(NF / 2.0 - 1, SR / cepsFreq[b]));
             const int qi = std::min(NF / 2 - 2, (int)q);
             // interpolated linearly in frequency, as transcribe does on the reversed 1/q axis
             const double fa = SR / (double)(qi + 1), fb = SR / (double)qi, fq = SR / q;
             const double cv =
-                fb > fa ? C[qi + 1] + (C[qi] - C[qi + 1]) * (fq - fa) / (fb - fa) : C[qi];
+                fb > fa ? static_cast<double>(C[qi + 1]) +
+                              static_cast<double>(C[qi] - C[qi + 1]) * (fq - fa) / (fb - fa)
+                        : static_cast<double>(C[qi]);
             out[b] = (float)(spec * cv);
         }
     }
@@ -1066,7 +1081,7 @@ static void vote(std::vector<NoteEstimate> &raw,
             } else if (b - f >= minLen) {
                 double sum = 0;
                 for (int g = f; g < b; g++) {
-                    sum += str[g];
+                    sum += static_cast<double>(str[g]);
                 }
                 raw.push_back({f, b, pitch, (float)(sum / (b - f))});
             }
@@ -1116,7 +1131,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                         m = std::max(m, bp->noteAt(g, midi));
                     }
                 }
-                gate[(size_t)f * n + p] = m > ep.gate;
+                gate[(size_t)f * n + p] = static_cast<double>(m) > ep.gate;
             }
         }
     }
@@ -1194,7 +1209,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
                 if (end - start >= minLen) {
                     double sum = 0;
                     for (int h = start; h < end; h++) {
-                        sum += a.S[(size_t)h * n + p];
+                        sum += static_cast<double>(a.S[(size_t)h * n + p]);
                     }
                     notes.push_back({start, end, lo + p, (float)(sum / (end - start))});
                 }

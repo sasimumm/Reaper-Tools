@@ -34,7 +34,7 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
         for (int h = 1; h <= 8; h++) {
             v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
         }
-        x[i] += (float)(amp * env * v);
+        x[i] += (float)(static_cast<double>(amp) * env * v);
     }
 }
 
@@ -53,7 +53,7 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
     std::vector<double> m(n, 0);
     for (int f = f0; f < f1; f++) {
         for (int p = 0; p < n; p++) {
-            m[p] += roll[(size_t)f * n + p];
+            m[p] += static_cast<double>(roll[(size_t)f * n + p]);
         }
     }
     std::vector<int> idx;
@@ -158,8 +158,8 @@ int main() {
         const std::vector<int> got = peaks(r, lo, n, 20, frames - 20, 1);
         double at = 0, sub = 0;
         for (int f = 20; f < frames - 20; f++) {
-            at += r[(size_t)f * n + 57 - lo];
-            sub += r[(size_t)f * n + 45 - lo];
+            at += static_cast<double>(r[(size_t)f * n + 57 - lo]);
+            sub += static_cast<double>(r[(size_t)f * n + 45 - lo]);
         }
         printf("sacf A3 -> %d, sub-octave %.2f of it\n", got[0], sub / at);
         assert(got[0] == 57 && sub < 0.3 * at);
@@ -178,7 +178,8 @@ int main() {
                 const int b = (int)lround(c.binOfPitch(57));
                 const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1),
                              L = scale * SR / (alpha * 220);
-                const double got = c.at(c.frames / 2, b), want = 0.25 * sqrt(L);
+                const double got = static_cast<double>(c.at(c.frames / 2, b)),
+                             want = 0.25 * sqrt(L);
                 int best = 0;
                 for (int k = 0; k < c.bins; k++) {
                     best = c.at(c.frames / 2, k) > c.at(c.frames / 2, best) ? k : best;
@@ -192,9 +193,9 @@ int main() {
         tone(y, 0, 2, 57);
         const Spectrogram c = computeCFP(y);
         const int f = c.frames / 2;
-        const double at = c.at(f, (int)lround(c.binOfPitch(57))),
-                     up = c.at(f, (int)lround(c.binOfPitch(69))),
-                     down = c.at(f, (int)lround(c.binOfPitch(45)));
+        const double at = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(57)))),
+                     up = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(69)))),
+                     down = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(45))));
         printf("cfp A3: octave above %.2f, below %.2f of it\n", up / at, down / at);
         assert(up < 0.5 * at && down < 0.5 * at);
     }
@@ -227,8 +228,9 @@ int main() {
         }
         const float note = bp.noteAt(expect + 20, c.second);
         printf("  %d at %.1f s: onset peak frame %d (expected %d, %.2f), note posterior %.2f\n",
-               c.second, c.first, best, expect, bp.onsetAt(best, c.second), note);
-        assert(abs(best - expect) <= 2 && note > 0.3);
+               c.second, c.first, best, expect, static_cast<double>(bp.onsetAt(best, c.second)),
+               static_cast<double>(note));
+        assert(abs(best - expect) <= 2 && static_cast<double>(note) > 0.3);
     }
 
     // the whole estimator on the same audio: each tone found once, at the right pitch and time
@@ -238,7 +240,8 @@ int main() {
         "estimate: %zu notes, %.0f ms\n", est.size(),
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
     for (const NoteEstimate &e : est) {
-        printf("  %d %.2f-%.2f s strength %.2f\n", e.pitch, e.f0 / fr, e.f1 / fr, e.strength);
+        printf("  %d %.2f-%.2f s strength %.2f\n", e.pitch, e.f0 / fr, e.f1 / fr,
+               static_cast<double>(e.strength));
     }
     for (auto c :
          {std::make_tuple(1.0, 2.0, 60), std::make_tuple(1.5, 2.5, 64),

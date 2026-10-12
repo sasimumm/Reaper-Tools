@@ -52,7 +52,8 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
             c[b] = sqrtf(s.at(f, b));
             peak = b >= k0 ? std::max(peak, c[b]) : peak;
         }
-        level[f] = 40 * log10(std::max(peak, 1e-6f)); // c = sqrt(mag), so 40 log10 = dB of mag
+        level[f] = static_cast<double>(
+            40 * log10(std::max(peak, 1e-6f))); // c = sqrt(mag), so 40 log10 = dB of mag
         if (peak <= 0) {
             continue;
         }
@@ -64,15 +65,18 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
                 if (i + 1 >= s.bins) {
                     break;
                 }
-                sum += w[h] * (c[i] + (c[i + 1] - c[i]) * (b - i));
+                sum += w[h] *
+                       (static_cast<double>(c[i]) + static_cast<double>(c[i + 1] - c[i]) * (b - i));
             }
-            score[k] = (float)(sum / (wsum * peak));
+            score[k] = (float)(sum / (wsum * static_cast<double>(peak)));
         }
         std::vector<Cand> &cf = cands[f];
         for (int k = k0 + 1; k < k1; k++) {
             if (score[k] >= score[k - 1] && score[k] > score[k + 1]) {
                 // parabolic interpolation for a fractional bin
-                const double a = score[k - 1], b = score[k], d = score[k + 1], den = a - 2 * b + d;
+                const double a = static_cast<double>(score[k - 1]),
+                             b = static_cast<double>(score[k]),
+                             d = static_cast<double>(score[k + 1]), den = a - 2 * b + d;
                 const double dk = den < 0 ? 0.5 * (a - d) / den : 0;
                 cf.push_back({pitchOfBin(s, k + dk), b});
             }
@@ -148,9 +152,9 @@ bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
     std::vector<double> all, late;
     for (int f = f0; f <= f1; f++) {
         if (c.pitch[f] >= 0) {
-            all.push_back(c.pitch[f]);
+            all.push_back(static_cast<double>(c.pitch[f]));
             if (f >= f0 + skip) {
-                late.push_back(c.pitch[f]);
+                late.push_back(static_cast<double>(c.pitch[f]));
             }
         }
     }
@@ -175,11 +179,11 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         double sum = 0;
         int cnt = 0;
         for (int g = f; g >= std::max(0, f - half) && c.pitch[g] >= 0; g--) {
-            sum += c.pitch[g];
+            sum += static_cast<double>(c.pitch[g]);
             cnt++;
         }
         for (int g = f + 1; g <= std::min(n - 1, f + half) && c.pitch[g] >= 0; g++) {
-            sum += c.pitch[g];
+            sum += static_cast<double>(c.pitch[g]);
             cnt++;
         }
         smooth[f] = sum / cnt;
@@ -239,7 +243,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         const double mid = 0.5 * (a.pitch + b.pitch);
         int cross = b.f0;
         for (int f = a.f1; f <= b.f0; f++) {
-            if ((c.pitch[f] - mid) * (b.pitch - a.pitch) >= 0) {
+            if ((static_cast<double>(c.pitch[f]) - mid) * (b.pitch - a.pitch) >= 0) {
                 cross = f;
                 break;
             }
@@ -274,7 +278,7 @@ std::vector<int> detectOnsets(const Spectrogram &s) {
         double sum = 0;
         for (int b = 0; b < s.bins; b++) {
             cur[b] = log1pf(100.0f * s.at(f, b));
-            sum += std::max(0.0f, cur[b] - prev[b]);
+            sum += static_cast<double>(std::max(0.0f, cur[b] - prev[b]));
         }
         if (f > 0) {
             flux[f] = sum;

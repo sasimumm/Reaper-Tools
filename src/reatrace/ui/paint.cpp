@@ -242,7 +242,7 @@ static double levelDb(double pitch, double a, double b) {
             m = std::max(m, s.at(f, k));
         }
     }
-    return 20 * log10(std::max(m, 1e-10f));
+    return static_cast<double>(20 * log10(std::max(m, 1e-10f)));
 }
 
 static double overtonePitch(double p, int h) { return p + 12 * log2((double)h); }
@@ -373,7 +373,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
         if (a < 0 || b >= (int)g_analysis.contour.pitch.size()) {
             return -1;
         }
-        const double pa = g_analysis.contour.pitch[a], pb = g_analysis.contour.pitch[b];
+        const double pa = static_cast<double>(g_analysis.contour.pitch[a]),
+                     pb = static_cast<double>(g_analysis.contour.pitch[b]);
         if (pa < 0 || pb < 0) {
             return pa >= 0 && f - a < 0.5 ? pa : pb >= 0 && f - a >= 0.5 ? pb : -1;
         }
@@ -392,8 +393,9 @@ static void drawContour(Canvas &cv, const Rect &n) {
         };
         add(pitchAt(fa)), add(pitchAt(fb));
         for (int f = (int)ceil(fa); f < fb; f++) {
-            add(f >= 0 && f < (int)g_analysis.contour.pitch.size() ? g_analysis.contour.pitch[f]
-                                                                   : -1);
+            add(f >= 0 && f < (int)g_analysis.contour.pitch.size()
+                    ? static_cast<double>(g_analysis.contour.pitch[f])
+                    : -1);
         }
         if (hi < 0) {
             prev = -1;
@@ -552,7 +554,8 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
                 snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100);
                 col[2] = buf;
                 const int bin = std::max(0, std::min(sp.bins - 1, (int)lround(sp.binOfPitch(p))));
-                snprintf(buf, sizeof(buf), "%4.0f dB", 20 * log10(std::max(1e-10f, sp.at(f, bin))));
+                snprintf(buf, sizeof(buf), "%4.0f dB",
+                         static_cast<double>(20 * log10(std::max(1e-10f, sp.at(f, bin)))));
                 col[3] = buf;
             }
         }
