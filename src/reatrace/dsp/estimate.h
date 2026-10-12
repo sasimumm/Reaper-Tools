@@ -33,12 +33,19 @@ struct EstimateParams {
 // The spectrogram the estimator expects (fixed, since the display's settings can change).
 NSGTParams estimateNSGTParams();
 
-// s: computed with estimateNSGTParams(); mono: the same channel at 22050 Hz; bp: basic-pitch on mono,
-// or null to run without the gate (more false notes). progress(fraction) returning false cancels.
+// s: computed with estimateNSGTParams(); mono: the same channel at 22050 Hz; basicPitch: gives
+// basic-pitch on mono, or null to run without the gate (more false notes). It is only called after
+// the main NMF, so basic-pitch can run alongside it. progress(fraction) returning false cancels.
 std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono,
-                                        const BasicPitch *bp,
+                                        const std::function<const BasicPitch *()> &basicPitch,
                                         const EstimateParams &ep = EstimateParams(),
                                         const std::function<bool(double)> &progress = nullptr);
+inline std::vector<NoteEstimate>
+estimateNotes(const Spectrogram &s, const std::vector<float> &mono, const BasicPitch *bp,
+              const EstimateParams &ep = EstimateParams(),
+              const std::function<bool(double)> &progress = nullptr) {
+    return estimateNotes(s, mono, [bp] { return bp; }, ep, progress);
+}
 
 // Voices for estimated notes (transcribe notes.voice_count / assign_voices): the most voices that
 // sound together in >= 0.3% of sung frames (up to maxVoices), as pitch-ordered strands that never

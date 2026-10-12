@@ -50,52 +50,57 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
         std::vector<float> buf(WINDOW);
         int f = 0;
         for (int w = 0; w < windows; w++) {
-            const long long start = (long long)w * WINDOW_HOP - OVERLAP / 2;
-            for (int i = 0; i < WINDOW; i++) {
-                const long long j = start + i;
-                buf[i] = j >= 0 && j < (long long)mono.size() ? mono[j] : 0;
-            }
-            MLMultiArray *in = [[MLMultiArray alloc] initWithDataPointer:buf.data()
-                                                                   shape:@[ @1, @(WINDOW), @1 ]
-                                                                dataType:MLMultiArrayDataTypeFloat32
-                                                                 strides:@[ @(WINDOW), @1, @1 ]
-                                                             deallocator:nil
-                                                                   error:&e];
-            if (!in) {
-                setError(error, "can't make the model input", e);
-                return false;
-            }
-            MLDictionaryFeatureProvider *features =
-                [[MLDictionaryFeatureProvider alloc] initWithDictionary:@{@"input_2" : in}
-                                                                  error:&e];
-            id<MLFeatureProvider> result =
-                features ? [model predictionFromFeatures:features error:&e] : nil;
-            MLMultiArray *note = [result featureValueForName:@"Identity_1"].multiArrayValue;
-            MLMultiArray *onset = [result featureValueForName:@"Identity_2"].multiArrayValue;
-            if (!note || !onset || note.dataType != MLMultiArrayDataTypeFloat32 ||
-                onset.dataType != MLMultiArrayDataTypeFloat32 || note.shape.count != 3 ||
-                note.shape[1].intValue != OUT_FRAMES ||
-                note.shape[2].intValue != BasicPitch::PITCHES || onset.shape.count != 3 ||
-                onset.shape[1].intValue != OUT_FRAMES ||
-                onset.shape[2].intValue != BasicPitch::PITCHES) {
-                setError(error, "unexpected basic-pitch output", e);
-                return false;
-            }
-            const float *np = (const float *)note.dataPointer,
-                        *op = (const float *)onset.dataPointer;
-            const long ns1 = note.strides[1].longValue, ns2 = note.strides[2].longValue;
-            const long os1 = onset.strides[1].longValue, os2 = onset.strides[2].longValue;
-            for (; f < out.frames && (long long)f * HOP < (long long)(w + 1) * WINDOW_HOP; f++) {
-                const int j =
-                    std::max(EDGE, std::min(OUT_FRAMES - EDGE - 1,
-                                            (int)lround(((double)f * HOP - (double)start) / HOP)));
-                for (int p = 0; p < BasicPitch::PITCHES; p++) {
-                    out.note[(size_t)f * BasicPitch::PITCHES + p] = np[j * ns1 + p * ns2];
-                    out.onset[(size_t)f * BasicPitch::PITCHES + p] = op[j * os1 + p * os2];
+            // each window's outputs are released here, not kept until all windows are done
+            @autoreleasepool {
+                const long long start = (long long)w * WINDOW_HOP - OVERLAP / 2;
+                for (int i = 0; i < WINDOW; i++) {
+                    const long long j = start + i;
+                    buf[i] = j >= 0 && j < (long long)mono.size() ? mono[j] : 0;
                 }
-            }
-            if (progress && !progress((double)(w + 1) / windows)) {
-                return false;
+                MLMultiArray *in =
+                    [[MLMultiArray alloc] initWithDataPointer:buf.data()
+                                                        shape:@[ @1, @(WINDOW), @1 ]
+                                                     dataType:MLMultiArrayDataTypeFloat32
+                                                      strides:@[ @(WINDOW), @1, @1 ]
+                                                  deallocator:nil
+                                                        error:&e];
+                if (!in) {
+                    setError(error, "can't make the model input", e);
+                    return false;
+                }
+                MLDictionaryFeatureProvider *features =
+                    [[MLDictionaryFeatureProvider alloc] initWithDictionary:@{@"input_2" : in}
+                                                                      error:&e];
+                id<MLFeatureProvider> result =
+                    features ? [model predictionFromFeatures:features error:&e] : nil;
+                MLMultiArray *note = [result featureValueForName:@"Identity_1"].multiArrayValue;
+                MLMultiArray *onset = [result featureValueForName:@"Identity_2"].multiArrayValue;
+                if (!note || !onset || note.dataType != MLMultiArrayDataTypeFloat32 ||
+                    onset.dataType != MLMultiArrayDataTypeFloat32 || note.shape.count != 3 ||
+                    note.shape[1].intValue != OUT_FRAMES ||
+                    note.shape[2].intValue != BasicPitch::PITCHES || onset.shape.count != 3 ||
+                    onset.shape[1].intValue != OUT_FRAMES ||
+                    onset.shape[2].intValue != BasicPitch::PITCHES) {
+                    setError(error, "unexpected basic-pitch output", e);
+                    return false;
+                }
+                const float *np = (const float *)note.dataPointer,
+                            *op = (const float *)onset.dataPointer;
+                const long ns1 = note.strides[1].longValue, ns2 = note.strides[2].longValue;
+                const long os1 = onset.strides[1].longValue, os2 = onset.strides[2].longValue;
+                for (; f < out.frames && (long long)f * HOP < (long long)(w + 1) * WINDOW_HOP;
+                     f++) {
+                    const int j = std::max(
+                        EDGE, std::min(OUT_FRAMES - EDGE - 1,
+                                       (int)lround(((double)f * HOP - (double)start) / HOP)));
+                    for (int p = 0; p < BasicPitch::PITCHES; p++) {
+                        out.note[(size_t)f * BasicPitch::PITCHES + p] = np[j * ns1 + p * ns2];
+                        out.onset[(size_t)f * BasicPitch::PITCHES + p] = op[j * os1 + p * os2];
+                    }
+                }
+                if (progress && !progress((double)(w + 1) / windows)) {
+                    return false;
+                }
             }
         }
         return true;

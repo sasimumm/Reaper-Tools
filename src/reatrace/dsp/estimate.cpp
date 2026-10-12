@@ -1051,7 +1051,8 @@ static void vote(std::vector<NoteEstimate> &raw,
 }
 
 std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<float> &mono,
-                                        const BasicPitch *bp, const EstimateParams &ep,
+                                        const std::function<const BasicPitch *()> &basicPitch,
+                                        const EstimateParams &ep,
                                         const std::function<bool(double)> &progress) {
     std::vector<NoteEstimate> out;
     const int lo = ep.lo, hi = ep.hi, n = hi - lo + 1, F = s.frames;
@@ -1075,6 +1076,7 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
         return out;
     }
 
+    const BasicPitch *bp = basicPitch ? basicPitch() : nullptr;
     std::vector<unsigned char> gate;
     if (bp && bp->frames > 0) {
         gate.assign((size_t)F * n, 0);
