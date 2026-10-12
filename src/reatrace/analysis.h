@@ -4,6 +4,7 @@
 #include "state.h"
 
 void updateValues();
+void updateColormap(); // the colour curve or map changed: only the 256 colours
 double frameTime(double f);
 void clearCache();
 void clearAnalysis(); // before analysing another item

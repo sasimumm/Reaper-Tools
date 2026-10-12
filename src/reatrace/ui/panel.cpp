@@ -322,7 +322,9 @@ static void changedSetting(const Widget &w) {
     if (w.value == &g_notesDb) {
         applyNotesVolume();
     }
-    if (isRenderParam(w.value)) {
+    if (w.value == &g_settings.rp.bias) {
+        updateColormap();
+    } else if (isRenderParam(w.value)) {
         updateValues();
     } else {
         redraw();
@@ -516,7 +518,9 @@ void panelMouse(int x, int y, bool down) {
             return;
         }
         *w.choice = i;
-        if (isRenderParam(w.choice)) {
+        if (w.choice == &g_settings.rp.colormap) {
+            updateColormap();
+        } else if (isRenderParam(w.choice)) {
             updateValues();
         } else if (w.analysis) {
             requestAnalysis(false);

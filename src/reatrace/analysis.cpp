@@ -15,6 +15,12 @@ void updateValues() {
     redraw();
 }
 
+void updateColormap() {
+    makeColormap(g_settings.rp.bias, g_analysis.lut, g_settings.rp.colormap);
+    g_analysis.valVersion++;
+    redraw();
+}
+
 double frameTime(double f) { return g_session.audioPos + f / g_analysis.spec->frameRate(); }
 
 // The samples analysed: the recording and the part of it the item plays. The item's position isn't
