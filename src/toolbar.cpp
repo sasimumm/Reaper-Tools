@@ -97,8 +97,10 @@ std::vector<Item> items(const Layout &L) {
     };
     add(LABEL, 0, "HEAR", "", 38);
     segment(LISTEN, HEAR, HEAR_TIPS, 3);
-    add(ISOLATE, 0, "Isolate", "Hear only the edited voice's pitch and overtones (I)",
-        textWidth("Isolate") + 16);
+    const char *isolate = g_settings.isolateAll ? "Isolate all" : "Isolate";
+    add(ISOLATE, 0, isolate,
+        "Hear only the edited voice's pitch and overtones (I)  ·  shift+I: all shown voices",
+        textWidth(isolate) + 16);
     static const char *const SPEEDS[] = {"100%", "75%", "50%"};
     static const char *const SPEED_TIPS[] = {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"

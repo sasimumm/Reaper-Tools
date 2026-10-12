@@ -46,6 +46,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "followplay", .b = &s.followPlay},
         {.name = "isolatewidth", .d = &s.isolateWidth, .lo = 20, .hi = 400},
         {.name = "isolatebg", .d = &s.isolateBackground, .lo = -60, .hi = 0},
+        {.name = "isolateall", .b = &s.isolateAll},
         {.name = "snap", .i = &s.snapMode, .lo = 0, .hi = SNAP_GRID},
         {.name = "quantise", .d = &s.quantStrength, .lo = 0, .hi = 1},
     };

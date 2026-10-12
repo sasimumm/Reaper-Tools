@@ -81,11 +81,17 @@ struct Fx {
         NSEEL_VM_free(vm);
     }
 
-    // parameters as ReaTrace sends them: width, background, then the (time, pitch) changes
-    void set(double width, double bgDb, const std::vector<std::pair<double, int>> &changes) {
-        *sliders[0] = width, *sliders[1] = bgDb, *sliders[2] = (double)changes.size();
-        for (size_t i = 0; i < changes.size(); i++) {
-            *sliders[3 + 2 * i] = changes[i].first, *sliders[4 + 2 * i] = changes[i].second;
+    // parameters as ReaTrace sends them: width, background, then each voice's (time, pitch) changes
+    using Changes = std::vector<std::pair<double, int>>;
+    void set(double width, double bgDb, const std::vector<Changes> &voices) {
+        *sliders[0] = width, *sliders[1] = bgDb;
+        for (int v = 0; v < ISOLATE_VOICES; v++) {
+            const Changes c = v < (int)voices.size() ? voices[(size_t)v] : Changes();
+            const size_t at = (size_t)isolateParam(v);
+            *sliders[at] = (double)c.size();
+            for (size_t i = 0; i < c.size(); i++) {
+                *sliders[at + 1 + 2 * i] = c[i].first, *sliders[at + 2 + 2 * i] = c[i].second;
+            }
         }
         NSEEL_code_execute(slider);
     }
@@ -148,11 +154,11 @@ int main() {
     // following A3: A3 (with vibrato) is kept, a note a semitone or a minor third away is not
     {
         Fx fx;
-        fx.set(100, -60, {{0, 57}});
+        fx.set(100, -60, {{{0, 57}}});
         const std::vector<float> a = tone(57, 1.5, 40), b = tone(58, 1.5), c = tone(60, 1.5);
         const double ka = gainDb(a, fx.run(a), 0.5, 1.5);
         Fx fb, fc;
-        fb.set(100, -60, {{0, 57}}), fc.set(100, -60, {{0, 57}});
+        fb.set(100, -60, {{{0, 57}}}), fc.set(100, -60, {{{0, 57}}});
         const double kb = gainDb(b, fb.run(b), 0.5, 1.5), kc = gainDb(c, fc.run(c), 0.5, 1.5);
         printf("isolate A3: A3 with vibrato %.1f dB, A#3 %.1f dB, C4 %.1f dB\n", ka, kb, kc);
         assert(ka > -2 && kb < -10 && kc < -10);
@@ -160,7 +166,7 @@ int main() {
     // a pitch change at 1 s: before it C4 is filtered out, after it (and the glide) C4 passes
     {
         Fx fx;
-        fx.set(100, -60, {{0, 57}, {1, 60}});
+        fx.set(100, -60, {{{0, 57}, {1, 60}}});
         const std::vector<float> c = tone(60, 2), y = fx.run(c);
         const double before = gainDb(c, y, 0.3, 0.95), after = gainDb(c, y, 1.1, 2);
         printf("isolate change at 1 s: C4 %.1f dB before, %.1f dB after\n", before, after);
@@ -169,7 +175,7 @@ int main() {
     // the background level: a tone between the bands comes through at about that level
     {
         Fx fx;
-        fx.set(100, -24, {{0, 57}});
+        fx.set(100, -24, {{{0, 57}}});
         std::vector<float> x((size_t)SR);
         for (size_t i = 0; i < x.size(); i++) {
             x[i] = (float)(0.3 * sin(2 * M_PI * hz(63) * (double)i / SR)); // a tritone above A3
@@ -177,6 +183,23 @@ int main() {
         const double g = gainDb(x, fx.run(x), 0.3, 1);
         printf("isolate background: %.1f dB\n", g);
         assert(fabs(g + 24) < 3);
+    }
+    // several voices: each one's note passes, another note doesn't, and a unison isn't louder
+    {
+        auto kept = [](const std::vector<Fx::Changes> &voices, double pitch) {
+            Fx fx;
+            fx.set(100, -60, voices);
+            const std::vector<float> x = tone(pitch, 1.5);
+            return gainDb(x, fx.run(x), 0.5, 1.5);
+        };
+        const std::vector<Fx::Changes> harmony = {{{0, 57}}, {}, {{0, 64}}}; // voices 1 and 3
+        const double a = kept(harmony, 57), e = kept(harmony, 64), d = kept(harmony, 62),
+                     unison = kept({{{0, 57}}, {{0, 57}}}, 57),
+                     octave = kept({{{0, 57}}, {{0, 45}}}, 57);
+        printf(
+            "isolate A3 + E4: A3 %.1f dB, E4 %.1f dB, D4 %.1f dB; unison %.1f dB, octave %.1f dB\n",
+            a, e, d, unison, octave);
+        assert(a > -2 && e > -2 && d < -8 && fabs(unison) < 1.5 && fabs(octave) < 1.5);
     }
     printf("ok\n");
 }

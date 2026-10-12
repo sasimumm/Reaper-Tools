@@ -36,6 +36,7 @@ struct Settings {
     bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
     bool followPlay = true;   // page the view along with the play cursor
     double isolateWidth = 100, isolateBackground = -24; // the isolate filter: cents, dB
+    bool isolateAll = false; // isolate every shown voice, not just the edited one
 };
 
 // --- layout, in points ------------------------------------------------------------------

@@ -70,29 +70,43 @@ void updateIsolate() {
     if (fx < 0) {
         return;
     }
-    // what is followed: the voice's notes, and its suggestions where nothing covers them
+    static_assert(ISOLATE_VOICES == WINDOW_VOICES);
+    // what is followed: each voice's notes, and its suggestions where nothing covers them
     const double now = (GetPlayState() & 1) ? GetPlayPosition2() : GetCursorPosition();
-    std::vector<Note> spans;
-    for (const Note &n : g_session.ed.notes) {
-        if (n.end > now - 1) {
-            spans.push_back(n);
+    std::vector<Note> spans[WINDOW_VOICES];
+    for (int voice = 0; voice < WINDOW_VOICES; voice++) {
+        const bool followed = voice == g_session.voice ||
+                              (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1));
+        if (!followed) {
+            continue;
+        }
+        for (const Note &n :
+             voice == g_session.voice ? g_session.ed.notes : g_session.others[voice].notes) {
+            if (n.end > now - 1) {
+                spans[voice].push_back(n);
+            }
         }
     }
     const std::vector<Segment> &sug = suggestions();
     for (size_t i = 0; i < sug.size(); i++) {
         const double a = frameTime(sug[i].f0), b = frameTime(sug[i].f1 + 1);
-        if (b > now - 1 && a < now + 60 && suggestionVoice(i) == g_session.voice &&
+        const int voice = suggestionVoice(i);
+        if (voice >= 0 && b > now - 1 && a < now + 60 &&
+            (voice == g_session.voice ||
+             (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1))) &&
             !covered(sug[i])) {
-            spans.push_back({a, b, (int)lround(sug[i].pitch), false, -1});
+            spans[voice].push_back({a, b, (int)lround(sug[i].pitch), false, -1});
         }
     }
-    const std::vector<std::pair<double, int>> sched =
-        pitchSchedule(spans, now - 1, ISOLATE_CHANGES);
-    std::vector<double> v = {
-        g_settings.isolateWidth, g_settings.isolateBackground, (double)sched.size()
-    };
-    for (const auto &[t, p] : sched) {
-        v.push_back(t), v.push_back(p);
+    std::vector<double> v((size_t)isolateParam(WINDOW_VOICES));
+    v[0] = g_settings.isolateWidth, v[1] = g_settings.isolateBackground;
+    for (int voice = 0; voice < WINDOW_VOICES; voice++) {
+        const auto sched = pitchSchedule(spans[voice], now - 1, ISOLATE_CHANGES);
+        size_t at = (size_t)isolateParam(voice);
+        v[at++] = (double)sched.size();
+        for (const auto &[t, p] : sched) {
+            v[at++] = t, v[at++] = p;
+        }
     }
     for (size_t i = 0; i < v.size(); i++) {
         if (i >= g_sent.size() || g_sent[i] != v[i]) {
