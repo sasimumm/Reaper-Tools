@@ -287,6 +287,9 @@ static void drawGhosts(Canvas &cv) {
     for (const Note &nt : g_session.ed.notes) {
         const int x0 = (int)lround(g_ui.view.x(nt.start)),
                   x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
+        if (x1 < cv.clip.l || x0 > cv.clip.r) {
+            continue;
+        }
         for (int h = 2; h <= n; h++) {
             const double y = g_ui.view.y(overtonePitch(nt.pitch, h)),
                          hh = std::max(1.0, g_ui.view.rowH * 0.3);
