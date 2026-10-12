@@ -1,68 +1,76 @@
-# ReaTrace
+# REAPER extensions
 
-REAPER extension for transcribing audio (mainly vocals) by drawing notes on a spectrogram.
+C++ extensions for [REAPER](https://www.reaper.fm), built from one repository. Each one is its own
+`reaper_<name>.dylib` in REAPER's UserPlugins folder and works without the others.
 
-## Build (macOS)
+| Extension | What it does |
+|---|---|
+| [ReaTrace](#reatrace) | Transcribe audio (mainly vocals, including harmonies) by drawing notes and lyrics on a spectrogram; the notes are MIDI items in the project. |
+| [ReaChords](#reachords) | Chord items: a track of chord names drawn and edited in the arrange view, following tempo. |
+
+macOS only so far.
+
+## Build and install
 
     git submodule update --init
-    make deploy   # builds; copies reaper_reatrace.dylib and reaper_reachords.dylib to UserPlugins
+    make deploy   # builds every extension and copies it to UserPlugins
     make test     # the self-checks
 
-`make help` lists the rest (they wrap the CMake invocations, in `build/`):
+Restart REAPER after deploying. `make help` lists the rest; they wrap the CMake invocations
+(in `build/`):
 
-- Our sources build with `-Wall -Wextra -Wshadow -Wconversion` as errors (`-DREATRACE_WERROR=OFF` to relax),
-  and libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string` indexing, also in the plugin.
 - `make asan`, `make tsan`: the self-checks with sanitizers, in `build-asan/` and `build-tsan/`.
 - `make lint`: clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`).
 - `make format`, `make format-check`: clang-format (also Homebrew's `llvm`; style in `.clang-format`).
 
-The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it as
-`UserPlugins/reatrace/nmp.mlmodelc`.
-
-Restart REAPER after deploying.
-
-Voices: the lead goes on "ReaTrace notes"; voices 2–4 (harmonies, backing) go on "ReaTrace
-voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
-
-Settings are remembered per audio item; "Save as default" makes the current ones the starting
-point for new items. Presets: "Vocal in mix" (centre channel, noise subtraction, 60 Hz–5 kHz),
-"Solo vocal", "Fast runs" (sharper timing). Scroll over the panel to see all settings.
-
-The settings panel also has the analysis channel (Centre = mid minus side, which helps pull a
-centre-panned lead vocal out of a mix) and playback speed (100/75/50 %, pitch preserved).
-
-Tempo mapping is left to REAPER's own tools (tempo markers, "create measure from time
-selection", SWS tempo tools); the grid follows the project tempo map.
-
-Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's notation
-editor and lyrics view.
+Our sources build with `-Wall -Wextra -Wshadow -Wconversion` as errors (`-DREATRACE_WERROR=OFF` to
+relax), and libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string` indexing,
+also in the extensions.
 
 ## Layout
 
-- `src/reatrace/`: the ReaTrace extension. `main.cpp` (entry point, voice tracks), `state.h`
-  (the session's shared state), `model.*` (settings, layout and other REAPER-free logic),
-  `analysis.*` and `settings.*` (the analysis job and per-item settings), and:
-  - `dsp/`: spectrogram (NSGT), pitch contour, note estimator, basic-pitch; REAPER-free
-  - `notes/`: note editing (`editor`, REAPER-free), notes <-> MIDI take sync, lyrics, commands
-  - `playback/`: previews and the isolate filter
-  - `ui/`: the window, painting, panel and toolbar
-- `src/reachords/`: the ReaChords extension (chord items)
-- `src/shared/`: code both extensions use (`guard.h`: exceptions never reach REAPER)
-- `tests/`: self-check programs (`build/*_test`); includes are relative to `src/reatrace` and `src`
+- `src/<extension>/`: one folder per extension, with its own `main.cpp` (the entry point and the
+  REAPER API functions it imports).
+- `src/shared/`: code the extensions share (`guard.h`: exceptions never reach REAPER).
+- `tests/`: self-check programs (`build/*_test`), for the parts that don't need REAPER.
+- `vendor/`: REAPER SDK, WDL, basic-pitch.
 
-## ReaChords
+To add an extension: a folder under `src/`, a `reaper_<name>` MODULE target in `CMakeLists.txt`
+(like `reaper_reachords`), and that target in the `deploy` copy. Extensions talk to each other only
+through REAPER's API table (`rec->Register("API_Name", fn)` on one side, `plugin_getapi("Name")` on
+the other), so either can be installed alone.
 
-A second, separate extension (`src/reachords/`, `reaper_reachords.dylib`): chord items, a track of
-chord names drawn and edited in the arrange view. **ReaChords: Insert chord item** adds one on the
-selected track; double-click types a chord, drag the lines between chords. Chords are kept in
-quarter notes, so they follow tempo. ReaTrace's chords lane shows them when ReaChords is installed
-(read through REAPER's API: `ReaChords_GetChord`); each works without the other.
-
-## Use
+## ReaTrace
 
 Select an audio item and run **ReaTrace: Open spectrogram editor for selected item**. Notes go
 into a MIDI item on a "ReaTrace notes" track (with ReaSynth) below the audio track, so they are
 saved with the project, can be undone, and can also be edited in REAPER's MIDI editor.
+
+- Voices: the lead goes on "ReaTrace notes"; voices 2–4 (harmonies, backing) go on "ReaTrace
+  voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
+- Suggestions come from a note estimator (harmonic-template NMF on the spectrogram, confirmed by
+  basic-pitch), assigned to voices; accept them one by one or all in view.
+- Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's
+  notation editor and lyrics view.
+- Settings are remembered per audio item; "Save as default" makes the current ones the starting
+  point for new items. Presets: "Vocal in mix" (centre channel, noise subtraction, 60 Hz–5 kHz),
+  "Solo vocal", "Fast runs" (sharper timing). The analysis channel "Centre" (mid minus side) helps
+  pull a centre-panned lead vocal out of a mix; playback can be slowed to 75/50 % with pitch kept.
+- Tempo mapping is left to REAPER's own tools (tempo markers, "create measure from time
+  selection", SWS tempo tools); the grid follows the project tempo map.
+- With ReaChords installed, the chord items' chords show in a lane under the ruler.
+
+### Code
+
+`src/reatrace/`: `main.cpp` (entry point, voice tracks), `state.h` (the session's shared
+state), `model.*` (settings, layout and other REAPER-free logic), `analysis.*` and `settings.*`
+(the analysis job and per-item settings), and `dsp/` (spectrogram, pitch contour, note
+estimator, basic-pitch; REAPER-free), `notes/` (editing, notes <-> MIDI take sync, lyrics,
+commands), `playback/` (previews, the isolate filter), `ui/` (window, painting, panel, toolbar).
+The build compiles basic-pitch's CoreML model (needs Xcode's `coremlcompiler`); deploy installs it
+as `UserPlugins/reatrace/nmp.mlmodelc`.
+
+### Keys and mouse
 
 | Input | Action |
 |---|---|
@@ -77,7 +85,7 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | cmd+scroll or pinch, alt+scroll | zoom time, zoom pitch |
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
-| P | pitch contour (white line: the sung pitch) |
+| P | pitch contour (yellow line: the sung pitch) |
 | N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice |
 | A | accept all suggested notes in view, each into the voice it is coloured as (voice tracks are created as needed; grey ones are left) |
 | cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |
@@ -102,11 +110,29 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
 | B | A/B: hear only the audio / only the notes (track mutes); the panel also has Both and the notes volume |
 | R | loop the selected notes' range (or the time selection) from its start; R again stops |
 | Q | quantise selected notes to the grid (strength in the panel) |
+| arrows, shift+up/down | nudge selected notes a grid step / a semitone / an octave (without a selection the arrows go to REAPER) |
+| T | follow playback: page the view along with the play cursor (on by default) |
+| I, shift+I | isolate: hear only the edited voice's pitch and overtones (a JSFX on the audio track); shift+I follows every shown voice |
+| double-click a panel slider | reset it to its default |
 | other keys | REAPER's own shortcuts (Space = play/stop, ...) |
+
+## ReaChords
+
+**ReaChords: Insert chord item** adds a chord item on the selected track (over the time selection,
+else four bars from the edit cursor). Double-click in it to type a chord (Enter saves, Esc cancels,
+empty deletes); drag the lines between chords. Chords are kept in quarter notes from the item's
+start, so they follow tempo changes.
+
+Other extensions read the project's chords through REAPER's API:
+`int ReaChords_GetChord(int index, double *start, double *end, char *name, int nameSize)` gives the
+index-th chord by start (project seconds, clipped to its item), 0 past the last one.
+
+`src/reachords/`: `main.cpp` (entry point, the exported API), `chords.*` (the chord item
+source, drawing and editing).
 
 ## Third-party
 
 - [basic-pitch](https://github.com/spotify/basic-pitch) by Spotify, Apache-2.0: its note model
   (`vendor/basic-pitch`, with LICENSE and NOTICE) confirms the note estimator's notes.
 - The note estimator follows the approach of the `transcribe` project (docs/NOTE-ESTIMATION.md there).
-- REAPER SDK and WDL/SWELL by Cockos.
+- REAPER SDK and WDL/SWELL/EEL2 by Cockos.
