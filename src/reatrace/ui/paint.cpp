@@ -26,11 +26,9 @@ static HFONT g_font, g_mono;
 static std::vector<unsigned int> g_layer; // rendered spectrogram for the note area
 struct LayerKey {
     double t0, pps, pitchTop, rowH;
+    double audioPos; // frames are mapped to time through the item's position
     int w, h, version, explain; // explain: 0 off, else notes version + harmonics
-    bool operator==(const LayerKey &o) const {
-        return t0 == o.t0 && pps == o.pps && pitchTop == o.pitchTop && rowH == o.rowH && w == o.w &&
-               h == o.h && version == o.version && explain == o.explain;
-    }
+    bool operator==(const LayerKey &) const = default;
 };
 static LayerKey g_layerKey;
 
@@ -829,6 +827,7 @@ void paint(HDC hdc) {
         g_ui.view.pps,
         g_ui.view.pitchTop,
         g_ui.view.rowH,
+        g_session.audioPos,
         (n.r - n.l) * S,
         (n.b - n.t) * S,
         g_analysis.valVersion,
