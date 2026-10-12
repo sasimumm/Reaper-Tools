@@ -179,7 +179,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         case LISTEN:
         case SPEED:
             // segments touch; the group gets one outline
-            cv.fill(r.l, r.t, r.r, r.b, on ? C_ACCENT : hov ? g_theme.track : g_theme.button);
+            cv.fill(r.l, r.t, r.r, r.b, on ? g_theme.on : hov ? g_theme.track : g_theme.button);
             if (!it.last) {
                 cv.fill(r.r - 1, r.t, r.r, r.b, g_theme.panel);
             }
@@ -187,12 +187,14 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             break;
         default: // toggles and buttons
             if (on || hov) {
-                cv.rounded(r.l, r.t, r.r, r.b, on ? g_theme.button : g_theme.track);
+                cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
             }
-            if (on && (it.kind == HELP || it.kind == PANEL)) {
-                cv.roundedFrame(r.l, r.t, r.r, r.b, C_ACCENT);
+            // an on toggle is tinted with the theme's toolbar-on colour, like REAPER's own
+            // toolbar, so it doesn't look like a segment that isn't chosen
+            if (on) {
+                cv.rounded(r.l, r.t, r.r, r.b, g_theme.on, 60);
             }
-            text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.text : g_theme.dim, DT_CENTER);
+            text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.on : g_theme.dim, DT_CENTER);
         }
     }
 }

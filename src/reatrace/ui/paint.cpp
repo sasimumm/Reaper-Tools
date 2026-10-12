@@ -50,6 +50,7 @@ static void applyTheme() {
     };
     g_theme.bg = col("col_main_bg2", 0x1b1b1b), g_theme.panel = col("col_main_bg", 0x222222);
     g_theme.ruler = col("col_tl_bg", 0x262626), g_theme.text = col("col_main_text2", 0xd0d0d0);
+    g_theme.on = col("col_toolbar_text_on", C_ACCENT);
     g_theme.dim = mix(g_theme.text, g_theme.panel, 0.4),
     g_theme.button = mix(g_theme.panel, g_theme.text, 0.1),
     g_theme.track = mix(g_theme.panel, g_theme.text, 0.2);
