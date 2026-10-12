@@ -59,6 +59,7 @@ std::vector<float> nmfRoll(const Spectrogram &s, int lo, int hi, bool adapt,
 // a power-compressed spectrum times the generalised cepstrum mapped to frequency.
 Spectrogram computeCQT(const std::vector<float> &mono, int binsPerOctave, double filterScale,
                        const std::function<bool(double)> &progress = nullptr);
-Spectrogram computeCFP(const std::vector<float> &mono, int binsPerOctave = 36);
+Spectrogram computeCFP(const std::vector<float> &mono, int binsPerOctave = 36,
+                       const std::function<bool(double)> &progress = nullptr);
 std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, int hi,
                             const std::function<bool(double)> &progress = nullptr);

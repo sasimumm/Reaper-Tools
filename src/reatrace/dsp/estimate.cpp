@@ -908,7 +908,8 @@ Spectrogram computeCQT(const std::vector<float> &x, int bpo, double filterScale,
     return s;
 }
 
-Spectrogram computeCFP(const std::vector<float> &x, int bpo) {
+Spectrogram computeCFP(const std::vector<float> &x, int bpo,
+                       const std::function<bool(double)> &progress) {
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
     const int NF = 4096, frames = (int)(x.size() / HOP) + 1;
@@ -932,6 +933,9 @@ Spectrogram computeCFP(const std::vector<float> &x, int bpo) {
     const std::vector<float> gs(Z.size(), (float)(G_SPEC / 2)), gc(C.size(), (float)G_CEPS);
     const int nz = (int)Z.size(), nc = (int)C.size();
     for (int f = 0; f < frames; f++) {
+        if (progress && f % 1024 == 0 && !progress((double)f / frames)) {
+            break;
+        }
         for (int i = 0; i < NF; i++) {
             const long long j = (long long)f * HOP - NF / 2 + i;
             buf[i] = (j >= 0 && j < (long long)x.size() ? x[j] : 0) * hann[i];
@@ -1190,10 +1194,18 @@ std::vector<NoteEstimate> estimateNotes(const Spectrogram &s, const std::vector<
             }
             return !cancelled;
         };
+        // the front ends only check for a cancel (seconds each on a long item); their share of the
+        // progress is small next to the NMF iterations
+        auto frontEndCancel = [&](double) {
+            if (progress && !progress(sacfEnd + (1 - sacfEnd) * iterations / (3.0 * ITERS))) {
+                cancelled = true;
+            }
+            return !cancelled;
+        };
         parallel(3, cancelled, [&](int i) {
             const Voter &v = VOTERS[i];
-            const Spectrogram fe =
-                v.cfp ? computeCFP(mono, v.bpo) : computeCQT(mono, v.bpo, v.scale);
+            const Spectrogram fe = v.cfp ? computeCFP(mono, v.bpo, frontEndCancel)
+                                         : computeCQT(mono, v.bpo, v.scale, frontEndCancel);
             if (cancelled) {
                 return;
             }
