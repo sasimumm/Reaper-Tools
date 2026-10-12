@@ -109,19 +109,19 @@ static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<f
     AudioAccessor *acc = CreateTakeAudioAccessor(take);
     const int nch =
         std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
-    const long long n = (long long)(len * sr);
-    left.assign((size_t)std::max(0LL, n), 0), right.assign(left.size(), 0);
+    const long long n = static_cast<long long>(len * sr);
+    left.assign(static_cast<size_t>(std::max(0LL, n)), 0), right.assign(left.size(), 0);
     std::vector<double> buf;
     const int chunk = 65536;
     for (long long pos = 0; pos < n; pos += chunk) {
-        const int m = (int)std::min<long long>(chunk, n - pos);
-        buf.assign((size_t)m * nch,
+        const int m = static_cast<int>(std::min<long long>(chunk, n - pos));
+        buf.assign(static_cast<size_t>(m) * nch,
                    0); // the accessor leaves the buffer untouched where there's no audio
-        GetAudioAccessorSamples(acc, (int)sr, nch, (double)pos / sr, m,
+        GetAudioAccessorSamples(acc, static_cast<int>(sr), nch, static_cast<double>(pos) / sr, m,
                                 buf.data()); // time relative to item start
         for (int i = 0; i < m; i++) {
-            left[pos + i] = (float)buf[(size_t)i * nch];
-            right[pos + i] = (float)buf[(size_t)i * nch + (nch - 1)];
+            left[pos + i] = static_cast<float>(buf[static_cast<size_t>(i) * nch]);
+            right[pos + i] = static_cast<float>(buf[static_cast<size_t>(i) * nch + (nch - 1)]);
         }
     }
     DestroyAudioAccessor(acc);
@@ -170,10 +170,10 @@ struct Job {
         Spectrogram own;
         if (!same) {
             own = computeNSGT(
-                ep, (long long)mono.size(),
+                ep, static_cast<long long>(mono.size()),
                 [&](long long start, int n, float *out) {
                     for (int i = 0; i < n; i++) {
-                        out[i] = start + i >= 0 && start + i < (long long)mono.size()
+                        out[i] = start + i >= 0 && start + i < static_cast<long long>(mono.size())
                                      ? mono[start + i]
                                      : 0;
                     }
@@ -208,7 +208,7 @@ struct Job {
         const std::vector<NoteEstimate> notes =
             estimateNotes(es, mono, basicPitch, opts, part(0.2, 1));
         for (const NoteEstimate &e : notes) {
-            est.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
+            est.estimated.push_back({e.f0, e.f1 - 1, static_cast<double>(e.pitch)});
         }
         est.estimatedVoice = assignVoices(notes, es.frameRate(), WINDOW_VOICES);
     }
@@ -246,7 +246,7 @@ struct Job {
         }
         if (needEstimate) {
             estimate([&](double f) {
-                permille = (int)(1000 * (stage + f * 2) / stages);
+                permille = static_cast<int>(1000 * (stage + f * 2) / stages);
                 return !cancel;
             });
         }
@@ -264,12 +264,12 @@ struct Job {
             }
             const std::vector<float> &l = left, &r = right;
             raw[ch] = std::make_shared<Spectrogram>(computeNSGT(
-                key.p, (long long)l.size(),
+                key.p, static_cast<long long>(l.size()),
                 [&](long long start, int n, float *out) {
                     for (int i = 0; i < n; i++) {
                         const long long j = start + i;
-                        const float a = j >= 0 && j < (long long)l.size() ? l[j] : 0,
-                                    b = j >= 0 && j < (long long)r.size() ? r[j] : 0;
+                        const float a = j >= 0 && j < static_cast<long long>(l.size()) ? l[j] : 0,
+                                    b = j >= 0 && j < static_cast<long long>(r.size()) ? r[j] : 0;
                         out[i] = ch == CH_LEFT    ? a
                                  : ch == CH_RIGHT ? b
                                  : ch == CH_SIDE  ? 0.5f * (a - b)
@@ -277,7 +277,7 @@ struct Job {
                     }
                 },
                 [&](double f) {
-                    permille = (int)(1000 * (stage + f) / stages);
+                    permille = static_cast<int>(1000 * (stage + f) / stages);
                     return !cancel;
                 }));
             stage++;
@@ -355,7 +355,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
         return;
     }
     g_autoOnInstall |= autoCalibrateAfter;
-    g_settings.np.binsPerOctave = 12 * (int)lround(g_settings.binsPerSemitone);
+    g_settings.np.binsPerOctave = 12 * static_cast<int>(lround(g_settings.binsPerSemitone));
     cancelJob();
     g_analysis.error.clear();
     if (g_session.audioLen > MAX_ANALYSIS_SECONDS) {
@@ -477,6 +477,6 @@ std::string audioIdentity(MediaItem_Take *take) {
         GetMediaSourceFileName(src, file, sizeof(file));
     }
     char buf[64];
-    snprintf(buf, sizeof(buf), "%p %p ", (void *)take, (void *)src);
+    snprintf(buf, sizeof(buf), "%p %p ", static_cast<void *>(take), static_cast<void *>(src));
     return buf + std::string(file);
 }

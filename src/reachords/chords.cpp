@@ -21,7 +21,8 @@ static const char *const SOURCE_TYPE = "REACHORDS";
 static const char *const OLD_SOURCE_TYPE = "REATRACE_CHORDS"; // from when this was part of ReaTrace
 
 static LICE_pixel rgba(int r, int g, int b, int a = 255) {
-    return (LICE_pixel)((b & 0xff) | ((g & 0xff) << 8) | ((r & 0xff) << 16) | ((a & 0xff) << 24));
+    return static_cast<LICE_pixel>((b & 0xff) | ((g & 0xff) << 8) | ((r & 0xff) << 16) |
+                                   ((a & 0xff) << 24));
 }
 
 // The chord item's colours.
@@ -50,11 +51,11 @@ class ChordSource : public PCM_source {
     MediaItem *m_item = NULL;
 
     PCM_source *Duplicate() override {
-        return guarded("chord item copy", (PCM_source *)NULL, [&] {
+        return guarded("chord item copy", static_cast<PCM_source *>(nullptr), [&] {
             auto *d = new ChordSource;
             d->chords = chords;
             d->length = length;
-            return (PCM_source *)d;
+            return static_cast<PCM_source *>(d);
         });
     }
     bool IsAvailable() override { return true; }
@@ -68,7 +69,8 @@ class ChordSource : public PCM_source {
     void GetSamples(PCM_source_transfer_t *block) override {
         if (block->samples && block->length > 0) {
             memset(block->samples, 0,
-                   sizeof(ReaSample) * (size_t)block->length * (size_t)block->nch);
+                   sizeof(ReaSample) * static_cast<size_t>(block->length) *
+                       static_cast<size_t>(block->nch));
         }
         block->samples_out = block->length;
     }
@@ -123,11 +125,12 @@ class ChordSource : public PCM_source {
 
     int extended(int call, void *parm1, void *parm2, void *parm3) {
         if (call == PCM_SOURCE_EXT_SETITEMCONTEXT) {
-            m_item = (MediaItem *)parm1;
+            m_item = static_cast<MediaItem *>(parm1);
             return 1;
         }
         if (call == PCM_SOURCE_EXT_INLINEEDITOR) {
-            return inlineEditor((int)(INT_PTR)parm1, parm2, (REAPER_inline_positioninfo *)parm3);
+            return inlineEditor(static_cast<int>(reinterpret_cast<INT_PTR>(parm1)), parm2,
+                                static_cast<REAPER_inline_positioninfo *>(parm3));
         }
         return 0;
     }
@@ -172,7 +175,7 @@ class ChordSource : public PCM_source {
     int chordAt(double qn) const {
         for (size_t i = 0; i < chords.size(); i++) {
             if (fabs(chords[i].qn - qn) < 1e-6) {
-                return (int)i;
+                return static_cast<int>(i);
             }
         }
         return -1;
@@ -183,8 +186,8 @@ class ChordSource : public PCM_source {
         const int i = chordAt(qn);
         if (i >= 0 && name.empty()) {
             chords.erase(chords.begin() + i);
-        } else if (i >= 0 && chords[(size_t)i].name != name) {
-            chords[(size_t)i].name = name;
+        } else if (i >= 0 && chords[static_cast<size_t>(i)].name != name) {
+            chords[static_cast<size_t>(i)].name = name;
         } else if (i < 0 && !name.empty()) {
             chords.insert(std::upper_bound(chords.begin(), chords.end(), qn,
                                            [](double v, const Chord &c) { return v < c.qn; }),
@@ -211,7 +214,7 @@ class ChordSource : public PCM_source {
         for (size_t i = 0; i < chords.size(); i++) {
             const double xc = x(timeOf(p, chords[i].qn));
             if (fabs(pi->mouse_x - xc) <= 4 && xc > xs + 6 && xc < xe - 6) {
-                return (int)i;
+                return static_cast<int>(i);
             }
         }
         return -1;
@@ -225,14 +228,14 @@ class ChordSource : public PCM_source {
         }
         const double t =
             SnapToGrid(NULL, pi->draw_start_time + pi->mouse_x / pi->pixels_per_second);
-        const size_t i = (size_t)m_drag;
+        const size_t i = static_cast<size_t>(m_drag);
         const double lo = i > 0 ? chords[i - 1].qn + 1e-3 : -1e9,
                      hi = i + 1 < chords.size() ? chords[i + 1].qn - 1e-3 : 1e9;
         chords[i].qn = std::clamp(TimeMap2_timeToQN(NULL, t) - p.qn0, lo, hi);
     }
 
     void endDrag() {
-        if (m_drag >= 0 && chords[(size_t)m_drag].qn != m_dragFrom) {
+        if (m_drag >= 0 && chords[static_cast<size_t>(m_drag)].qn != m_dragFrom) {
             Undo_OnStateChange("ReaChords: move chord change");
         }
         m_drag = -1;
@@ -244,19 +247,19 @@ class ChordSource : public PCM_source {
         case 0: return 1 | REAPER_INLINEFLAG_WANTOVERLAYEDCONTROLS;
         case WM_CREATE:
         case WM_DESTROY: return 1;
-        case WM_PAINT: paint((LICE_IBitmap *)parm2, pi); return 1;
+        case WM_PAINT: paint(static_cast<LICE_IBitmap *>(parm2), pi); return 1;
         case WM_SETCURSOR:
             if (!pi || (m_drag < 0 && boundaryAt(pi) < 0)) {
                 return 0;
             }
-            *(HCURSOR *)pi->extraParms[0] = LoadCursor(NULL, IDC_SIZEWE);
+            *static_cast<HCURSOR *>(pi->extraParms[0]) = LoadCursor(NULL, IDC_SIZEWE);
             return 1;
         case WM_LBUTTONDOWN:
             // on a chord change: drag it (capturing the mouse, so REAPER doesn't move the item)
             if (!pi || (m_drag = boundaryAt(pi)) < 0) {
                 return 0;
             }
-            m_dragFrom = chords[(size_t)m_drag].qn;
+            m_dragFrom = chords[static_cast<size_t>(m_drag)].qn;
             return REAPER_INLINE_RETNOTIFY_SETCAPTURE | REAPER_INLINE_RETNOTIFY_INVALIDATE;
         case WM_MOUSEMOVE:
             if (m_drag < 0 || !pi) {
@@ -303,7 +306,7 @@ class ChordSource : public PCM_source {
 
     // The largest font (in steps of 2 px) that fits the name in w by h.
     static LICE_IFont *fittingFont(const std::string &name, int w, int h) {
-        int size = std::clamp((int)lround(h * 0.75), 10, 96);
+        int size = std::clamp(static_cast<int>(lround(h * 0.75)), 10, 96);
         for (; size > 10; size -= std::max(2, size / 8)) {
             RECT r = {0, 0, 0, 0};
             LICE__DrawText(font(size), NULL, name.c_str(), -1, &r, DT_CALCRECT | DT_SINGLELINE);
@@ -324,15 +327,15 @@ class ChordSource : public PCM_source {
             return std::clamp((t - pi->draw_start_time) * pi->pixels_per_second, -1e6, 1e6);
         };
         for (size_t i = 0; i < chords.size(); i++) {
-            const int x0 = (int)lround(x(timeOf(p, chords[i].qn))),
-                      x1 =
-                          (int)lround(x(i + 1 < chords.size() ? timeOf(p, chords[i + 1].qn) : 1e9));
+            const int x0 = static_cast<int>(lround(x(timeOf(p, chords[i].qn)))),
+                      x1 = static_cast<int>(
+                          lround(x(i + 1 < chords.size() ? timeOf(p, chords[i + 1].qn) : 1e9)));
             if (x1 < 0 || x0 > pi->width) {
                 continue;
             }
             LICE_FillRect(bm, x0, y0, x1 - x0, h, i % 2 ? C_CHORD_ALT : C_CHORD, 1.0f, 0);
-            LICE_Line(bm, (float)x0, (float)y0, (float)x0, (float)(y0 + h), C_CHORD_LINE, 1.0f, 0,
-                      false);
+            LICE_Line(bm, static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0),
+                      static_cast<float>(y0 + h), C_CHORD_LINE, 1.0f, 0, false);
             // the name starts at the chord, or at the item's left edge for a chord started before
             const int l = std::max(x0, 0) + 6, r = std::min(x1, pi->width) - 4;
             RECT rc = {l, y0, std::max(l, r), y0 + h};
@@ -384,7 +387,8 @@ static void beginEdit(MediaItem *item, double qn) {
     }
     const auto x = [&](double t) { return g_ce.originX + (t - g_ce.drawStart) * g_ce.pps; };
     const double t = src->timeOf(p, qn);
-    const int x0 = (int)lround(x(t)), w = (int)std::clamp(x(next) - x(t) - 2, 60.0, 240.0);
+    const int x0 = static_cast<int>(lround(x(t))),
+              w = static_cast<int>(std::clamp(x(next) - x(t) - 2, 60.0, 240.0));
     g_ce.item = item;
     g_ce.qn = qn;
     if (!g_ce.hwnd) {
@@ -395,7 +399,7 @@ static void beginEdit(MediaItem *item, double qn) {
     if (!g_ce.hwnd) {
         return;
     }
-    SetWindowText(g_ce.hwnd, i >= 0 ? src->chords[(size_t)i].name.c_str() : "");
+    SetWindowText(g_ce.hwnd, i >= 0 ? src->chords[static_cast<size_t>(i)].name.c_str() : "");
     SetWindowPos(g_ce.hwnd, NULL, x0 + 1, g_ce.originY + 1, w, 20, SWP_NOZORDER | SWP_NOACTIVATE);
     ShowWindow(g_ce.hwnd, SW_SHOW);
     SetFocus(g_ce.hwnd);
@@ -459,7 +463,7 @@ int Chords_TranslateAccel(MSG *msg) {
     }
     // typing a chord: Enter done, Esc cancel; the rest goes to the field
     if (msg->message == WM_KEYDOWN) {
-        const int key = (int)msg->wParam;
+        const int key = static_cast<int>(msg->wParam);
         if (key == VK_RETURN) {
             endEdit(true);
             return 1;
@@ -524,10 +528,10 @@ const std::vector<ChordSpan> &Chords_Spans() {
 // --- registration --------------------------------------------------------------------
 
 static PCM_source *createFromType(const char *type, int) {
-    return guarded("creating a chord item", (PCM_source *)NULL, [&] {
+    return guarded("creating a chord item", static_cast<PCM_source *>(nullptr), [&] {
         return !strcmp(type, SOURCE_TYPE) || !strcmp(type, OLD_SOURCE_TYPE)
-                   ? (PCM_source *)new ChordSource
-                   : NULL;
+                   ? static_cast<PCM_source *>(new ChordSource)
+                   : nullptr;
     });
 }
 static PCM_source *createFromFile(const char *, int) { return NULL; }

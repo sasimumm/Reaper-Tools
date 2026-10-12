@@ -43,8 +43,8 @@ static NSGTParams sanitize(NSGTParams p) {
 static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
                               const std::function<void(long long, int, float *)> &read,
                               const std::function<bool(double)> &progress) {
-    numSamples =
-        std::max(0LL, std::min(numSamples, (long long)INT_MAX * 64)); // frames fit in an int
+    numSamples = std::max(
+        0LL, std::min(numSamples, static_cast<long long>(INT_MAX) * 64)); // frames fit in an int
     static bool fftInit = (WDL_fft_init(), true);
     (void)fftInit;
 
@@ -58,9 +58,9 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
 
     Spectrogram s;
     s.p = p;
-    s.bins = std::max(1, (int)ceil(p.binsPerOctave * log2(fmax / p.fmin)));
-    s.frames = (int)(numSamples / hop) + 1;
-    s.mag.assign((size_t)s.frames * s.bins, 0);
+    s.bins = std::max(1, static_cast<int>(ceil(p.binsPerOctave * log2(fmax / p.fmin))));
+    s.frames = static_cast<int>(numSamples / hop) + 1;
+    s.mag.assign(static_cast<size_t>(s.frames) * s.bins, 0);
 
     struct Bin {
         int k0 = 0, k1 = 0, M = 0, step = 0;
@@ -69,10 +69,11 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
     std::vector<Bin> bins(s.bins);
     double maxSigmaT = 0;
     for (int b = 0; b < s.bins; b++) {
-        const double f = p.fmin * pow(2.0, (double)b / p.binsPerOctave);
+        const double f = p.fmin * pow(2.0, static_cast<double>(b) / p.binsPerOctave);
         const double sigmaF = std::max((f / Q + p.gamma) / (2 * sqrt(2 * log(2.0))), minSigmaF);
         maxSigmaT = std::max(maxSigmaT, 1 / (2 * M_PI * sigmaF));
-        const int r = std::max(1, (int)ceil(3 * sigmaF / freqRes)), c = (int)lround(f / freqRes);
+        const int r = std::max(1, static_cast<int>(ceil(3 * sigmaF / freqRes))),
+                  c = static_cast<int>(lround(f / freqRes));
         Bin &bn = bins[b];
         bn.k0 = std::max(1, c - r);
         bn.k1 = std::min(N / 2 - 1, c + r);
@@ -80,12 +81,12 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
         bn.step = bn.M * hop / N;
         for (int k = bn.k0; k <= bn.k1; k++) {
             double d = k * freqRes - f;
-            bn.w.push_back((float)exp(-d * d / (2 * sigmaF * sigmaF)));
+            bn.w.push_back(static_cast<float>(exp(-d * d / (2 * sigmaF * sigmaF))));
         }
     }
 
     // Frames closer than `margin` to a block edge would see circular wrap-around; only keep the middle.
-    const int margin = std::min(N / 4, (int)ceil(3 * maxSigmaT * sr / hop) * hop);
+    const int margin = std::min(N / 4, static_cast<int>(ceil(3 * maxSigmaT * sr / hop)) * hop);
     const int valid = N - 2 * margin, framesPerBlock = valid / hop;
 
     std::vector<WDL_FFT_REAL> block(N);
@@ -99,10 +100,10 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
     const float scale = 1.0f / N;
 
     for (int first = 0; first < s.frames; first += framesPerBlock) {
-        const long long start = (long long)first * hop - margin;
+        const long long start = static_cast<long long>(first) * hop - margin;
         read(start, N, block.data());
         WDL_real_fft(block.data(), N, 0);
-        const WDL_FFT_COMPLEX *X = (const WDL_FFT_COMPLEX *)block.data();
+        const WDL_FFT_COMPLEX *X = reinterpret_cast<const WDL_FFT_COMPLEX *>(block.data());
         const int nf = std::min(framesPerBlock, s.frames - first);
 
         for (int b = 0; b < s.bins; b++) {
@@ -119,11 +120,11 @@ static Spectrogram computeOne(const NSGTParams &p, long long numSamples,
             }
             WDL_fft(small.data(), bn.M, 1);
             for (int i = 0; i < nf; i++) {
-                const WDL_FFT_COMPLEX &z = small[(size_t)(margin / hop + i) * bn.step];
-                s.mag[(size_t)(first + i) * s.bins + b] = hypotf(z.re, z.im);
+                const WDL_FFT_COMPLEX &z = small[static_cast<size_t>(margin / hop + i) * bn.step];
+                s.mag[static_cast<size_t>(first + i) * s.bins + b] = hypotf(z.re, z.im);
             }
         }
-        if (progress && !progress((double)(first + nf) / s.frames)) {
+        if (progress && !progress(static_cast<double>(first + nf) / s.frames)) {
             return s;
         }
     }
@@ -145,7 +146,7 @@ void estimateNoise(Spectrogram &s, double fraction) {
     for (int f = 0; f < s.frames; f++) {
         double e = 0;
         for (int b = 0; b < s.bins; b++) {
-            e += (double)s.at(f, b) * static_cast<double>(s.at(f, b));
+            e += static_cast<double>(s.at(f, b)) * static_cast<double>(s.at(f, b));
         }
         energy[f] = {e, f};
     }
@@ -153,11 +154,11 @@ void estimateNoise(Spectrogram &s, double fraction) {
     if (!s.frames) {
         return;
     }
-    const int quiet = std::max(1, std::min(s.frames, (int)(s.frames * fraction)));
+    const int quiet = std::max(1, std::min(s.frames, static_cast<int>(s.frames * fraction)));
     std::nth_element(energy.begin(), energy.begin() + quiet - 1, energy.end());
     for (int i = 0; i < quiet; i++) {
         for (int b = 0; b < s.bins; b++) {
-            s.noise[b] += s.at(energy[i].second, b) / (float)quiet;
+            s.noise[b] += s.at(energy[i].second, b) / static_cast<float>(quiet);
         }
     }
 }
@@ -168,7 +169,7 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
     }
     f0 = std::max(0, std::min(f0, f1));
     std::vector<float> db;
-    const size_t a = (size_t)f0 * s.bins, n = (size_t)f1 * s.bins,
+    const size_t a = static_cast<size_t>(f0) * s.bins, n = static_cast<size_t>(f1) * s.bins,
                  stride = std::max<size_t>(1, (n - a) / 200000);
     for (size_t i = a; i < n; i += stride) {
         db.push_back(20 * log10f(std::max(s.mag[i], 1e-10f)));
@@ -177,9 +178,10 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
         return;
     }
     auto pct = [&](double q) {
-        auto it = db.begin() + std::min(db.size() - 1, (size_t)(q * (double)db.size()));
+        auto it = db.begin() +
+                  std::min(db.size() - 1, static_cast<size_t>(q * static_cast<double>(db.size())));
         std::nth_element(db.begin(), it, db.end());
-        return (double)*it;
+        return static_cast<double>(*it);
     };
     const double p30 = pct(0.30), p95 = pct(0.95);
     rp.dbFloor = std::max(std::min(p30, -20.0), -120.0);
@@ -190,7 +192,8 @@ void autoCalibrate(const Spectrogram &s, RenderParams &rp, int f0, int f1) {
 
 static float displayMag(const Spectrogram &s, const RenderParams &rp, int f, int b) {
     float m = s.at(f, b);
-    return rp.subtractNoise ? std::max(0.0f, m - (float)rp.noiseAlpha * s.noise[b]) : m;
+    return rp.subtractNoise ? std::max(0.0f, m - static_cast<float>(rp.noiseAlpha) * s.noise[b])
+                            : m;
 }
 
 double cellValue(const Spectrogram &s, const RenderParams &rp, int f, int b) {
@@ -212,13 +215,13 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
     static std::vector<unsigned char> lut(1 << (32 - LUT_SHIFT - 1));
     for (size_t i = 0; i < lut.size(); i++) {
         unsigned int bits =
-            (unsigned int)(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
+            static_cast<unsigned int>(i << LUT_SHIFT) | (1u << (LUT_SHIFT - 1)); // bucket centre
         float m = 0;
         memcpy(&m, &bits, 4);
         const double db =
             std::max(20.0 * static_cast<double>(log10(std::max(m, 1e-10f))), rp.dbFloor);
         double v = ((db - rp.dbFloor) / -rp.dbFloor + rp.brightness) * rp.contrast;
-        lut[i] = (unsigned char)lround(std::max(0.0, std::min(1.0, v)) * 255);
+        lut[i] = static_cast<unsigned char>(lround(std::max(0.0, std::min(1.0, v)) * 255));
     }
     auto value = [&](float m) {
         unsigned int bits = 0;
@@ -228,10 +231,10 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
 
     out.resize(s.mag.size());
     std::vector<float> row(s.bins);
-    const float alpha = (float)rp.noiseAlpha;
-    const int dim = (int)lround(std::max(0.0, std::min(1.0, rp.peakDim)) * 256);
+    const float alpha = static_cast<float>(rp.noiseAlpha);
+    const int dim = static_cast<int>(lround(std::max(0.0, std::min(1.0, rp.peakDim)) * 256));
     for (int f = 0; f < s.frames; f++) {
-        const float *m = &s.mag[(size_t)f * s.bins];
+        const float *m = &s.mag[static_cast<size_t>(f) * s.bins];
         if (rp.subtractNoise) {
             for (int b = 0; b < s.bins; b++) {
                 row[b] = std::max(0.0f, m[b] - alpha * s.noise[b]);
@@ -239,14 +242,14 @@ void renderValues(const Spectrogram &s, const RenderParams &rp, std::vector<unsi
         } else {
             memcpy(row.data(), m, s.bins * sizeof(float));
         }
-        unsigned char *o = &out[(size_t)f * s.bins];
+        unsigned char *o = &out[static_cast<size_t>(f) * s.bins];
         for (int b = 0; b < s.bins; b++) {
             int v = value(row[b]);
             if (rp.peaksOnly && b > 0 && b + 1 < s.bins &&
                 !(row[b] > row[b - 1] && row[b] > row[b + 1])) {
                 v = (v * dim) >> 8;
             }
-            o[b] = (unsigned char)v;
+            o[b] = static_cast<unsigned char>(v);
         }
     }
 }
@@ -268,13 +271,13 @@ void makeColormap(double bias, unsigned int lut[256], int colormap) {
     const double exponent = pow(2.0, -bias);
     for (int i = 0; i < 256; i++) {
         const double t = pow(i / 255.0, exponent) * 8;
-        const int k = std::min(7, (int)t);
+        const int k = std::min(7, static_cast<int>(t));
         const double fr = t - k;
         unsigned int c = 0;
         for (int ch = 0; ch < 3; ch++) {
             double v = static_cast<double>(ramp[k][ch]) +
                        static_cast<double>(ramp[k + 1][ch] - ramp[k][ch]) * fr;
-            c = (c << 8) | (unsigned int)std::max(0.0, std::min(255.0, v * 255));
+            c = (c << 8) | static_cast<unsigned int>(std::max(0.0, std::min(255.0, v * 255)));
         }
         lut[i] = c;
     }

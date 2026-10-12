@@ -65,7 +65,7 @@ class ReaperTake : public Take {
         if (!MIDI_GetTextSysexEvt(m_take, i, NULL, NULL, &out->ppq, &out->type, msg, &size)) {
             return false;
         }
-        msg[std::max(0, std::min(size, (int)sizeof(msg) - 1))] = 0;
+        msg[std::max(0, std::min(size, static_cast<int>(sizeof(msg)) - 1))] = 0;
         out->text = msg;
         return true;
     }
@@ -81,7 +81,7 @@ class ReaperTake : public Take {
     void deleteText(int i) override { MIDI_DeleteTextSysexEvt(m_take, i); }
     void insertText(const TextEvent &t) override {
         MIDI_InsertTextSysexEvt(m_take, false, false, t.ppq, t.type, t.text.c_str(),
-                                (int)t.text.size());
+                                static_cast<int>(t.text.size()));
     }
     void sort() override { MIDI_Sort(m_take); }
 

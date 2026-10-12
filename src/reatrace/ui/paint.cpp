@@ -36,11 +36,11 @@ static void renderLayer(const Rect &n) {
     const int w = (n.r - n.l) * g_scale, h = (n.b - n.t) * g_scale;
     std::vector<char> black(h);
     for (int y = 0; y < h; y++) {
-        black[y] = (char)isBlack(g_ui.view.pitchAt(n.t + (y + 0.5) / S));
+        black[y] = static_cast<char>(isBlack(g_ui.view.pitchAt(n.t + (y + 0.5) / S)));
     }
-    g_layer.resize((size_t)w * h);
+    g_layer.resize(static_cast<size_t>(w) * h);
     for (int y = 0; y < h; y++) {
-        std::fill_n(&g_layer[(size_t)y * w], w,
+        std::fill_n(&g_layer[static_cast<size_t>(y) * w], w,
                     black[y] ? g_theme.shadeBlack(opaque(g_theme.area)) : opaque(g_theme.area));
     }
     const Spectrogram &s = *g_analysis.spec;
@@ -52,9 +52,9 @@ static void renderLayer(const Rect &n) {
     for (int y = 0; y < h; y++) {
         const double hi = s.binOfPitch(g_ui.view.p(n.t + y / S)),
                      lo = s.binOfPitch(g_ui.view.p(n.t + (y + 1) / S));
-        int a = (int)ceil(lo), b = (int)ceil(hi) - 1;
+        int a = static_cast<int>(ceil(lo)), b = static_cast<int>(ceil(hi)) - 1;
         if (a > b) {
-            a = b = (int)lround(0.5 * (lo + hi));
+            a = b = static_cast<int>(lround(0.5 * (lo + hi)));
         }
         rowLo[y] = std::max(0, a);
         rowHi[y] = std::min(s.bins - 1, b);
@@ -62,17 +62,19 @@ static void renderLayer(const Rect &n) {
     // Explain: pixels whose row centre is within half a semitone of a sounding note's overtone
     std::vector<char> dim;
     if (g_settings.explain) {
-        dim.assign((size_t)w * h, 0);
-        const int nh = (int)lround(g_settings.harmonics);
+        dim.assign(static_cast<size_t>(w) * h, 0);
+        const int nh = static_cast<int>(lround(g_settings.harmonics));
         auto add = [&](const Note &nt) {
-            const int xa = std::max(0, (int)floor((g_ui.view.x(nt.start) - n.l) * S)),
-                      xb = std::min(w, (int)ceil((g_ui.view.x(nt.end) - n.l) * S));
+            const int xa = std::max(0, static_cast<int>(floor((g_ui.view.x(nt.start) - n.l) * S))),
+                      xb = std::min(w, static_cast<int>(ceil((g_ui.view.x(nt.end) - n.l) * S)));
             for (int hh = 1; hh <= nh && xa < xb; hh++) {
-                const double ep = nt.pitch + 12 * log2((double)hh);
-                const int ya = std::max(0, (int)floor((g_ui.view.y(ep + 0.5) - n.t) * S - 0.5) + 1);
-                const int yb = std::min(h, (int)ceil((g_ui.view.y(ep - 0.5) - n.t) * S - 0.5));
+                const double ep = nt.pitch + 12 * log2(static_cast<double>(hh));
+                const int ya = std::max(
+                    0, static_cast<int>(floor((g_ui.view.y(ep + 0.5) - n.t) * S - 0.5)) + 1);
+                const int yb =
+                    std::min(h, static_cast<int>(ceil((g_ui.view.y(ep - 0.5) - n.t) * S - 0.5)));
                 for (int y = ya; y < yb; y++) {
-                    memset(&dim[(size_t)y * w + xa], 1, (size_t)(xb - xa));
+                    memset(&dim[static_cast<size_t>(y) * w + xa], 1, static_cast<size_t>(xb - xa));
                 }
             }
         };
@@ -87,25 +89,26 @@ static void renderLayer(const Rect &n) {
             }
         }
     }
-    const int stripes = std::max(1, std::min(8, (int)std::thread::hardware_concurrency()));
+    const int stripes =
+        std::max(1, std::min(8, static_cast<int>(std::thread::hardware_concurrency())));
     std::atomic<bool> stop{false};
     parallel(stripes, stop, [&](int stripe) {
         std::vector<unsigned char> col(s.bins);
         for (int x = stripe * w / stripes; x < (stripe + 1) * w / stripes; x++) {
             const double fa = (g_ui.view.t(n.l + x / S) - g_session.audioPos) * s.frameRate();
             const double fb = (g_ui.view.t(n.l + (x + 1) / S) - g_session.audioPos) * s.frameRate();
-            int f0 = (int)ceil(fa), f1 = (int)ceil(fb) - 1;
+            int f0 = static_cast<int>(ceil(fa)), f1 = static_cast<int>(ceil(fb)) - 1;
             if (f0 > f1) {
-                f0 = f1 = (int)lround(0.5 * (fa + fb));
+                f0 = f1 = static_cast<int>(lround(0.5 * (fa + fb)));
             }
             f0 = std::max(f0, 0);
             f1 = std::min(f1, s.frames - 1);
             if (f0 > f1) {
                 continue;
             }
-            memcpy(col.data(), &g_analysis.val[(size_t)f0 * s.bins], s.bins);
+            memcpy(col.data(), &g_analysis.val[static_cast<size_t>(f0) * s.bins], s.bins);
             for (int f = f0 + 1; f <= f1; f++) {
-                const unsigned char *v = &g_analysis.val[(size_t)f * s.bins];
+                const unsigned char *v = &g_analysis.val[static_cast<size_t>(f) * s.bins];
                 for (int b = 0; b < s.bins; b++) {
                     col[b] = std::max(col[b], v[b]);
                 }
@@ -118,9 +121,9 @@ static void renderLayer(const Rect &n) {
                 for (int k = rowLo[y]; k <= rowHi[y]; k++) {
                     m = std::max(m, col[k]);
                 }
-                const size_t at = (size_t)y * w + x;
+                const size_t at = static_cast<size_t>(y) * w + x;
                 if (!dim.empty() && dim[at]) {
-                    m = (unsigned char)(m * EXPLAIN_DIM);
+                    m = static_cast<unsigned char>(m * EXPLAIN_DIM);
                 }
                 const ARGB c = opaque(g_analysis.lut[m]);
                 g_layer[at] = black[y] ? g_theme.shadeBlack(c) : c;
@@ -147,7 +150,7 @@ static double overviewY(const Rect &o, double pitch) {
 }
 
 static void renderOverview(int w, int h) {
-    g_ovLayer.assign((size_t)w * h, opaque(g_theme.area));
+    g_ovLayer.assign(static_cast<size_t>(w) * h, opaque(g_theme.area));
     g_ovW = w;
     g_ovH = h;
     g_ovVersion = g_analysis.valVersion;
@@ -160,23 +163,25 @@ static void renderOverview(int w, int h) {
     const double lo = s.binOfPitch(OV_LOW - 0.5), hi = s.binOfPitch(OV_HIGH + 0.5);
     std::vector<unsigned char> col(s.bins);
     for (int x = 0; x < w; x++) {
-        const int f0 = std::max(0, (int)((double)x * s.frames / w)),
-                  f1 = std::min(s.frames, std::max(f0 + 1, (int)((double)(x + 1) * s.frames / w)));
+        const int f0 = std::max(0, static_cast<int>(static_cast<double>(x) * s.frames / w)),
+                  f1 = std::min(s.frames,
+                                std::max(f0 + 1, static_cast<int>(static_cast<double>(x + 1) *
+                                                                  s.frames / w)));
         std::fill(col.begin(), col.end(), 0);
         for (int f = f0; f < f1; f++) {
-            const unsigned char *v = &g_analysis.val[(size_t)f * s.bins];
+            const unsigned char *v = &g_analysis.val[static_cast<size_t>(f) * s.bins];
             for (int b = 0; b < s.bins; b++) {
                 col[b] = std::max(col[b], v[b]);
             }
         }
         for (int y = 0; y < h; y++) {
-            const int b0 = std::max(0, (int)(hi - (hi - lo) * (y + 1) / h)),
-                      b1 = std::min(s.bins - 1, (int)(hi - (hi - lo) * y / h));
+            const int b0 = std::max(0, static_cast<int>(hi - (hi - lo) * (y + 1) / h)),
+                      b1 = std::min(s.bins - 1, static_cast<int>(hi - (hi - lo) * y / h));
             unsigned char m = 0;
             for (int b = b0; b <= b1; b++) {
                 m = std::max(m, col[b]);
             }
-            g_ovLayer[(size_t)y * w + x] = opaque(g_analysis.lut[m]);
+            g_ovLayer[static_cast<size_t>(y) * w + x] = opaque(g_analysis.lut[m]);
         }
     }
 }
@@ -192,13 +197,14 @@ static std::vector<GridLine> gridLines(const Rect &n) {
                  qb = TimeMap2_timeToQN(NULL, g_ui.view.t(n.r));
     const double step = gridStepQN();
     if (step > 0) {
-        for (long long k = (long long)ceil(qa / step); (double)k * step <= qb && out.size() < 4000;
-             k++) {
-            const double q = (double)k * step;
+        for (long long k = static_cast<long long>(ceil(qa / step));
+             static_cast<double>(k) * step <= qb && out.size() < 4000; k++) {
+            const double q = static_cast<double>(k) * step;
             double ms = 0;
             const int m = TimeMap_QNToMeasures(NULL, q + 1e-9, &ms, NULL);
             const int level = fabs(q - ms) < 1e-6 ? 0 : fabs(q - floor(q + 0.5)) < 1e-6 ? 1 : 2;
-            out.push_back({(int)lround(g_ui.view.x(TimeMap2_QNToTime(NULL, q))), level, m});
+            out.push_back(
+                {static_cast<int>(lround(g_ui.view.x(TimeMap2_QNToTime(NULL, q)))), level, m});
         }
     } else {
         double ms = 0, me = 0;
@@ -206,7 +212,8 @@ static std::vector<GridLine> gridLines(const Rect &n) {
         for (double q = ms; q <= qb && out.size() < 4000;) {
             double s2 = 0, e2 = 0;
             const int m = TimeMap_QNToMeasures(NULL, q + 1e-9, &s2, &e2);
-            out.push_back({(int)lround(g_ui.view.x(TimeMap2_QNToTime(NULL, s2))), 0, m});
+            out.push_back(
+                {static_cast<int>(lround(g_ui.view.x(TimeMap2_QNToTime(NULL, s2)))), 0, m});
             q = std::max(e2, q + 1e-3);
         }
     }
@@ -232,10 +239,11 @@ static double levelDb(double pitch, double a, double b) {
     if (!s.frames) {
         return -200;
     }
-    const int f0 = std::max(0, (int)floor((a - g_session.audioPos) * s.frameRate()));
-    const int f1 = std::min(s.frames - 1, (int)ceil((b - g_session.audioPos) * s.frameRate()));
-    const int b0 = std::max(0, (int)ceil(s.binOfPitch(pitch - 0.5))),
-              b1 = std::min(s.bins - 1, (int)floor(s.binOfPitch(pitch + 0.5)));
+    const int f0 = std::max(0, static_cast<int>(floor((a - g_session.audioPos) * s.frameRate())));
+    const int f1 =
+        std::min(s.frames - 1, static_cast<int>(ceil((b - g_session.audioPos) * s.frameRate())));
+    const int b0 = std::max(0, static_cast<int>(ceil(s.binOfPitch(pitch - 0.5)))),
+              b1 = std::min(s.bins - 1, static_cast<int>(floor(s.binOfPitch(pitch + 0.5))));
     float m = 0;
     for (int f = f0; f <= f1; f++) {
         for (int k = b0; k <= b1; k++) {
@@ -245,24 +253,26 @@ static double levelDb(double pitch, double a, double b) {
     return static_cast<double>(20 * log10(std::max(m, 1e-10f)));
 }
 
-static double overtonePitch(double p, int h) { return p + 12 * log2((double)h); }
+static double overtonePitch(double p, int h) { return p + 12 * log2(static_cast<double>(h)); }
 
 // Note ghosts: faint outlines where each note's overtones should be.
 static void drawGhosts(Canvas &cv) {
     if (!g_settings.ghosts) {
         return;
     }
-    const int a = (int)lround(g_settings.guideOpacity * 160), n = (int)lround(g_settings.harmonics);
+    const int a = static_cast<int>(lround(g_settings.guideOpacity * 160)),
+              n = static_cast<int>(lround(g_settings.harmonics));
     for (const Note &nt : g_session.ed.notes) {
-        const int x0 = (int)lround(g_ui.view.x(nt.start)),
-                  x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
+        const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
+                  x1 = std::max(x0 + 2, static_cast<int>(lround(g_ui.view.x(nt.end))));
         if (x1 < cv.clip.l || x0 > cv.clip.r) {
             continue;
         }
         for (int h = 2; h <= n; h++) {
             const double y = g_ui.view.y(overtonePitch(nt.pitch, h)),
                          hh = std::max(1.0, g_ui.view.rowH * 0.3);
-            const int y0 = (int)lround(y - hh), y1 = (int)lround(y + hh) + 1;
+            const int y0 = static_cast<int>(lround(y - hh)),
+                      y1 = static_cast<int>(lround(y + hh)) + 1;
             cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[g_session.voice], 1,
                             a / (h - 1) + a / 2);
         }
@@ -285,8 +295,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         p0 = nt.pitch;
         tA = nt.start;
         tB = nt.end;
-        xA = (int)lround(g_ui.view.x(tA));
-        xB = std::max(xA + 40, (int)lround(g_ui.view.x(tB)));
+        xA = static_cast<int>(lround(g_ui.view.x(tA)));
+        xB = std::max(xA + 40, static_cast<int>(lround(g_ui.view.x(tB))));
     } else {
         p0 = g_ui.view.pitchAt(g_ui.mouseY);
         tA = g_ui.view.t(g_ui.mouseX) - 0.03;
@@ -294,11 +304,11 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         xA = g_ui.mouseX - 70;
         xB = g_ui.mouseX + 70;
     }
-    const int a = (int)lround(g_settings.guideOpacity * 256),
-              nh = (int)lround(g_settings.harmonics);
+    const int a = static_cast<int>(lround(g_settings.guideOpacity * 256)),
+              nh = static_cast<int>(lround(g_settings.harmonics));
     char buf[32];
     for (int h = 1; h <= nh; h++) {
-        const int y = (int)lround(g_ui.view.y(overtonePitch(p0, h)));
+        const int y = static_cast<int>(lround(g_ui.view.y(overtonePitch(p0, h))));
         if (y < n.t || y >= n.b) {
             continue;
         }
@@ -314,8 +324,8 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         const char *label;
     } below[] = {{2, "8vb"}, {3, "12th"}, {4, "2 oct"}};
     for (const auto &c : below) {
-        const double pc = overtonePitch(p0, 1) - 12 * log2((double)c.h);
-        const int y = (int)lround(g_ui.view.y(pc));
+        const double pc = overtonePitch(p0, 1) - 12 * log2(static_cast<double>(c.h));
+        const int y = static_cast<int>(lround(g_ui.view.y(pc)));
         if (y < n.t || y >= n.b || g_analysis.spec->binOfPitch(pc) < 0) {
             continue;
         }
@@ -369,8 +379,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
     }
     const double fr = g_analysis.spec->frameRate();
     auto pitchAt = [&](double f) -> double { // linear between voiced frames, -1 if unvoiced
-        const int a = (int)floor(f), b = a + 1;
-        if (a < 0 || b >= (int)g_analysis.contour.pitch.size()) {
+        const int a = static_cast<int>(floor(f)), b = a + 1;
+        if (a < 0 || b >= static_cast<int>(g_analysis.contour.pitch.size())) {
             return -1;
         }
         const double pa = static_cast<double>(g_analysis.contour.pitch[a]),
@@ -392,8 +402,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
             }
         };
         add(pitchAt(fa)), add(pitchAt(fb));
-        for (int f = (int)ceil(fa); f < fb; f++) {
-            add(f >= 0 && f < (int)g_analysis.contour.pitch.size()
+        for (int f = static_cast<int>(ceil(fa)); f < fb; f++) {
+            add(f >= 0 && f < static_cast<int>(g_analysis.contour.pitch.size())
                     ? static_cast<double>(g_analysis.contour.pitch[f])
                     : -1);
         }
@@ -405,7 +415,8 @@ static void drawContour(Canvas &cv, const Rect &n) {
             add(prev); // connect to the previous column
         }
         prev = pitchAt(fb) >= 0 ? pitchAt(fb) : hi;
-        const int y0 = (int)lround(g_ui.view.y(hi)), y1 = (int)lround(g_ui.view.y(lo));
+        const int y0 = static_cast<int>(lround(g_ui.view.y(hi))),
+                  y1 = static_cast<int>(lround(g_ui.view.y(lo)));
         cv.fill(x, y0 - 2, x + 1, y1 + 3, g_theme.shadow, 150);
         cv.fill(x, y0 - 1, x + 1, y1 + 2, g_theme.contour);
     }
@@ -416,7 +427,7 @@ static std::vector<int> lyricOrder() {
     std::vector<int> out;
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         if (!g_session.ed.notes[i].lyric.empty()) {
-            out.push_back((int)i);
+            out.push_back(static_cast<int>(i));
         }
     }
     std::sort(out.begin(), out.end(), [](int a, int b) {
@@ -467,7 +478,7 @@ static std::string hoverHint(const Layout &L) {
                    "·  K: split";
         }
         if (const int i = suggestionAt(x, y); i >= 0) {
-            const int v = suggestionVoice((size_t)i);
+            const int v = suggestionVoice(static_cast<size_t>(i));
             if (v < 0) {
                 snprintf(buf, sizeof(buf),
                          "Crowded out (more notes than voices)  ·  Click: add it to %s", voice);
@@ -509,7 +520,7 @@ static std::string hoverHint(const Layout &L) {
 // A small rounded label on the status line; returns its left edge.
 static int chip(Canvas &cv, HDC dc, int right, int t, int b, const char *label, unsigned int bg,
                 unsigned int fg) {
-    const int w = 12 + 7 * (int)strlen(label), l = right - w;
+    const int w = 12 + 7 * static_cast<int>(strlen(label)), l = right - w;
     cv.rounded(l, t + 3, right, b - 3, bg);
     text(dc, label, l, t, right, b, fg, DT_CENTER);
     return l;
@@ -530,15 +541,15 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     const bool over = n.in(g_ui.mouseX, g_ui.mouseY);
     if (over) {
         const double t = g_ui.view.t(g_ui.mouseX), p = g_ui.view.p(g_ui.mouseY);
-        const int ip = (int)floor(p + 0.5);
+        const int ip = static_cast<int>(floor(p + 0.5));
         pitchName(ip, buf, sizeof(buf)), col[0] = buf;
         snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12));
         col[1] = buf;
         const Spectrogram &sp = *g_analysis.spec;
-        const int f = (int)lround((t - g_session.audioPos) * sp.frameRate());
+        const int f = static_cast<int>(lround((t - g_session.audioPos) * sp.frameRate()));
         if (f >= 0 && f < sp.frames) {
-            const int b0 = std::max(0, (int)floor(sp.binOfPitch(ip - 1))),
-                      b1 = std::min(sp.bins - 1, (int)ceil(sp.binOfPitch(ip + 1)));
+            const int b0 = std::max(0, static_cast<int>(floor(sp.binOfPitch(ip - 1)))),
+                      b1 = std::min(sp.bins - 1, static_cast<int>(ceil(sp.binOfPitch(ip + 1))));
             int best = -1;
             for (int b = b0; b <= b1; b++) {
                 if (best < 0 || sp.at(f, b) > sp.at(f, best)) {
@@ -547,13 +558,15 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
             }
             if (best >= 0) {
                 const double peak =
-                    69 + 12 * log2(sp.p.fmin * pow(2.0, (double)best / sp.p.binsPerOctave) / 440);
-                const int pp = (int)floor(peak + 0.5);
+                    69 + 12 * log2(sp.p.fmin *
+                                   pow(2.0, static_cast<double>(best) / sp.p.binsPerOctave) / 440);
+                const int pp = static_cast<int>(floor(peak + 0.5));
                 char name[16];
                 pitchName(pp, name, sizeof(name));
                 snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", name, (peak - pp) * 100);
                 col[2] = buf;
-                const int bin = std::max(0, std::min(sp.bins - 1, (int)lround(sp.binOfPitch(p))));
+                const int bin =
+                    std::max(0, std::min(sp.bins - 1, static_cast<int>(lround(sp.binOfPitch(p)))));
                 snprintf(buf, sizeof(buf), "%4.0f dB",
                          static_cast<double>(20 * log10(std::max(1e-10f, sp.at(f, bin)))));
                 col[3] = buf;
@@ -564,12 +577,13 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         int hovered = -1;
         if (g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &hovered) !=
             NoteEditor::NONE) {
-            const Note &hn = g_session.ed.notes[(size_t)hovered];
+            const Note &hn = g_session.ed.notes[static_cast<size_t>(hovered)];
             double sung = 0;
-            const int f0 = (int)lround((hn.start - g_session.audioPos) * sp.frameRate()),
-                      f1 = (int)lround((hn.end - g_session.audioPos) * sp.frameRate());
-            if (contourMedian(g_analysis.contour, f0, f1, (int)lround(0.05 * sp.frameRate()),
-                              &sung)) {
+            const int f0 = static_cast<int>(
+                          lround((hn.start - g_session.audioPos) * sp.frameRate())),
+                      f1 = static_cast<int>(lround((hn.end - g_session.audioPos) * sp.frameRate()));
+            if (contourMedian(g_analysis.contour, f0, f1,
+                              static_cast<int>(lround(0.05 * sp.frameRate())), &sung)) {
                 snprintf(buf, sizeof(buf), "sung %+.0fc", (sung - hn.pitch) * 100);
                 col[6] = buf;
             }
@@ -599,7 +613,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
             g_analysis.error.empty() ? g_analysis.estimateNote : g_analysis.error;
         if (!note.empty()) {
             text(dc, note.c_str(), x, s.t, right, s.b, g_theme.warn, DT_RIGHT);
-            right -= 8 + 6 * (int)note.size();
+            right -= 8 + 6 * static_cast<int>(note.size());
         }
     }
     right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[g_session.voice],
@@ -619,7 +633,7 @@ static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
     cv.clip = n;
     const int cx = (n.l + n.r) / 2, cy = (n.t + n.b) / 2;
     auto banner = [&](const char *msg, int y) {
-        const int w = 24 + 7 * (int)strlen(msg);
+        const int w = 24 + 7 * static_cast<int>(strlen(msg));
         cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.shadow, 150);
         text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
     };
@@ -761,7 +775,7 @@ static const std::vector<ChordSpan> &projectChords() {
     lastChange = change;
     spans.clear();
     using GetChord = int (*)(int, double *, double *, char *, int);
-    const auto get = (GetChord)plugin_getapi("ReaChords_GetChord");
+    const auto get = reinterpret_cast<GetChord>(plugin_getapi("ReaChords_GetChord"));
     ChordSpan c;
     char name[256];
     for (int i = 0; get && get(i, &c.start, &c.end, name, sizeof(name)); i++) {
@@ -809,12 +823,13 @@ void paint(HDC hdc) {
             SelectObject(g_memdc, g_font);
         }
     }
-    unsigned int *fb = g_memdc ? (unsigned int *)SWELL_GetCtxFrameBuffer(g_memdc) : NULL;
+    unsigned int *fb =
+        g_memdc ? static_cast<unsigned int *>(SWELL_GetCtxFrameBuffer(g_memdc)) : NULL;
     if (!fb) {
         return;
     }
     if (L.tooSmall) {
-        for (size_t i = 0; i < (size_t)w * h; i++) {
+        for (size_t i = 0; i < static_cast<size_t>(w) * h; i++) {
             fb[i] = opaque(g_theme.bg);
         }
         StretchBlt(hdc, 0, 0, c.r, c.b, g_memdc, 0, 0, c.r * S, c.b * S, SRCCOPY);
@@ -840,7 +855,9 @@ void paint(HDC hdc) {
         (n.r - n.l) * S,
         (n.b - n.t) * S,
         g_analysis.valVersion,
-        g_settings.explain ? g_session.notesVersion * 32 + (int)lround(g_settings.harmonics) : 0
+        g_settings.explain
+            ? g_session.notesVersion * 32 + static_cast<int>(lround(g_settings.harmonics))
+            : 0
     };
     if (!g_layerValid || !(key == g_layerKey)) {
         renderLayer(n);
@@ -849,15 +866,16 @@ void paint(HDC hdc) {
     }
     const int lw = (n.r - n.l) * S;
     for (int y = n.t * S; y < n.b * S; y++) {
-        memcpy(fb + (size_t)y * w + (size_t)n.l * S, &g_layer[(size_t)(y - n.t * S) * lw],
-               (size_t)lw * 4);
+        memcpy(fb + static_cast<size_t>(y) * w + static_cast<size_t>(n.l) * S,
+               &g_layer[static_cast<size_t>(y - n.t * S) * lw], static_cast<size_t>(lw) * 4);
     }
 
     // pitch rows, then the time grid
     cv.clip = n;
-    const int pLo = (int)floor(g_ui.view.p(n.b)), pHi = (int)ceil(g_ui.view.p(n.t));
+    const int pLo = static_cast<int>(floor(g_ui.view.p(n.b))),
+              pHi = static_cast<int>(ceil(g_ui.view.p(n.t)));
     for (int p = pLo; p <= pHi; p++) {
-        const int y = (int)lround(g_ui.view.y(p - 0.5)); // boundary below pitch p
+        const int y = static_cast<int>(lround(g_ui.view.y(p - 0.5))); // boundary below pitch p
         cv.fill(n.l, y, n.r, y + 1, g_theme.grid, p % 12 == 0 ? 50 : 10);
     }
     std::vector<GridLine> grid = gridLines(n);
@@ -877,10 +895,11 @@ void paint(HDC hdc) {
                 continue;
             }
             for (const Note &nt : g_session.others[v].notes) {
-                const int x0 = (int)lround(g_ui.view.x(nt.start)),
-                          x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
-                const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
-                          y1 = std::max(y0 + 3, (int)lround(g_ui.view.y(nt.pitch - 0.5)));
+                const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
+                          x1 = std::max(x0 + 2, static_cast<int>(lround(g_ui.view.x(nt.end))));
+                const int y0 = static_cast<int>(lround(g_ui.view.y(nt.pitch + 0.5))),
+                          y1 = std::max(y0 + 3,
+                                        static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5))));
                 cv.rounded(x0, y0, x1, y1, g_theme.voices[v], 70);
                 cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[v]);
             }
@@ -892,12 +911,12 @@ void paint(HDC hdc) {
     const unsigned int noteColour = g_theme.voices[g_session.voice];
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &nt = g_session.ed.notes[i];
-        const int x0 = (int)lround(g_ui.view.x(nt.start)),
-                  x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
-        const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
-                  y1 = std::max(y0 + 3, (int)lround(g_ui.view.y(nt.pitch - 0.5)));
+        const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
+                  x1 = std::max(x0 + 2, static_cast<int>(lround(g_ui.view.x(nt.end))));
+        const int y0 = static_cast<int>(lround(g_ui.view.y(nt.pitch + 0.5))),
+                  y1 = std::max(y0 + 3, static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5))));
         // solid with a darker edge; selected ones get a light outline, so lyrics stay readable
-        const bool sel = nt.sel || (int)i == drawing;
+        const bool sel = nt.sel || static_cast<int>(i) == drawing;
         cv.rounded(x0, y0, x1, y1, noteColour, 245);
         cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, g_theme.shadow, 0.55));
         if (sel) {
@@ -909,10 +928,10 @@ void paint(HDC hdc) {
         if (nt.lyric.empty()) {
             continue;
         }
-        const int x0 = (int)lround(g_ui.view.x(nt.start)),
-                  x1 = std::max(x0 + 2, (int)lround(g_ui.view.x(nt.end)));
-        const int y0 = (int)lround(g_ui.view.y(nt.pitch + 0.5)),
-                  y1 = (int)lround(g_ui.view.y(nt.pitch - 0.5));
+        const int x0 = static_cast<int>(lround(g_ui.view.x(nt.start))),
+                  x1 = std::max(x0 + 2, static_cast<int>(lround(g_ui.view.x(nt.end))));
+        const int y0 = static_cast<int>(lround(g_ui.view.y(nt.pitch + 0.5))),
+                  y1 = static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5)));
         const int l = std::max(x0 + 2, n.l), r = std::min(std::max(x1, x0 + 60), n.r);
         if (r <= l) {
             continue;
@@ -927,8 +946,10 @@ void paint(HDC hdc) {
 
     double mr[4];
     if (g_session.ed.marquee(mr)) {
-        cv.fill((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], g_theme.highlight, 30);
-        cv.frame((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], g_theme.highlight);
+        cv.fill(static_cast<int>(mr[0]), static_cast<int>(mr[1]), static_cast<int>(mr[2]),
+                static_cast<int>(mr[3]), g_theme.highlight, 30);
+        cv.frame(static_cast<int>(mr[0]), static_cast<int>(mr[1]), static_cast<int>(mr[2]),
+                 static_cast<int>(mr[3]), g_theme.highlight);
     }
 
     // keyboard
@@ -938,7 +959,8 @@ void paint(HDC hdc) {
                                ? g_ui.view.pitchAt(g_ui.mouseY)
                                : -1;
     for (int p = pLo; p <= pHi; p++) {
-        const int y0 = (int)lround(g_ui.view.y(p + 0.5)), y1 = (int)lround(g_ui.view.y(p - 0.5));
+        const int y0 = static_cast<int>(lround(g_ui.view.y(p + 0.5))),
+                  y1 = static_cast<int>(lround(g_ui.view.y(p - 0.5)));
         cv.fill(0, y0, n.l, y1,
                 p == hoverPitch ? g_theme.accent
                 : isBlack(p)    ? g_theme.keyBlack
@@ -975,16 +997,16 @@ void paint(HDC hdc) {
             break;
         }
     }
-    for (long long k = (long long)ceil(g_ui.view.t(n.l) / secStep);
-         (double)k * secStep <= g_ui.view.t(n.r); k++) {
-        const double t = (double)k * secStep;
-        const int x = (int)lround(g_ui.view.x(t));
+    for (long long k = static_cast<long long>(ceil(g_ui.view.t(n.l) / secStep));
+         static_cast<double>(k) * secStep <= g_ui.view.t(n.r); k++) {
+        const double t = static_cast<double>(k) * secStep;
+        const int x = static_cast<int>(lround(g_ui.view.x(t)));
         cv.fill(x, rt + 22, x + 1, ru.b - 1, g_theme.tickMinor);
         format_timestr_pos(t, buf, sizeof(buf), 0);
         monoText(dc, buf, x + 3, rt + 14, x + 90, ru.b - 1, g_theme.dim, DT_LEFT);
     }
     for (int f : g_analysis.onsets) {
-        const int ox = (int)lround(g_ui.view.x(frameTime(f)));
+        const int ox = static_cast<int>(lround(g_ui.view.x(frameTime(f))));
         cv.fill(ox - 1, ru.b - 6, ox + 2, ru.b - 1, g_theme.warn);
     }
     cv.clip = {0, rt, KB_W, ru.b};
@@ -996,8 +1018,8 @@ void paint(HDC hdc) {
         cv.clip = ch;
         cv.fill(ch.l, ch.t, ch.r, ch.b, g_theme.ruler);
         for (const ChordSpan &span : projectChords()) {
-            const int xa = (int)lround(g_ui.view.x(span.start)),
-                      xb = (int)lround(g_ui.view.x(span.end));
+            const int xa = static_cast<int>(lround(g_ui.view.x(span.start))),
+                      xb = static_cast<int>(lround(g_ui.view.x(span.end)));
             if (xb < ch.l || xa > ch.r) {
                 continue;
             }
@@ -1013,17 +1035,18 @@ void paint(HDC hdc) {
     double selA = 0, selB = 0;
     GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
     if (selB > selA) {
-        const int xa = (int)lround(g_ui.view.x(selA)), xb = (int)lround(g_ui.view.x(selB));
+        const int xa = static_cast<int>(lround(g_ui.view.x(selA))),
+                  xb = static_cast<int>(lround(g_ui.view.x(selB)));
         cv.fill(xa, ru.t, xb, n.b, g_theme.highlight, 22);
         cv.fill(xa, ru.t, xa + 1, n.b, g_theme.highlight, 90),
             cv.fill(xb, ru.t, xb + 1, n.b, g_theme.highlight, 90);
     }
 
     // cursors
-    int x = (int)lround(g_ui.view.x(GetCursorPosition()));
+    int x = static_cast<int>(lround(g_ui.view.x(GetCursorPosition())));
     cv.fill(x, ru.t, x + 1, n.b, g_theme.editCursor);
     if (GetPlayState() & 1) {
-        x = (int)lround(g_ui.view.x(GetPlayPosition2()));
+        x = static_cast<int>(lround(g_ui.view.x(GetPlayPosition2())));
         cv.fill(x, ru.t, x + 1, n.b, g_theme.playCursor);
     }
 
@@ -1035,10 +1058,11 @@ void paint(HDC hdc) {
         const std::vector<int> order = lyricOrder();
         for (size_t k = 0; k < order.size(); k++) {
             const Note &nt = g_session.ed.notes[order[k]];
-            const int sx = (int)lround(g_ui.view.x(nt.start));
-            const int next = k + 1 < order.size()
-                                 ? (int)lround(g_ui.view.x(g_session.ed.notes[order[k + 1]].start))
-                                 : ly.r;
+            const int sx = static_cast<int>(lround(g_ui.view.x(nt.start)));
+            const int next =
+                k + 1 < order.size()
+                    ? static_cast<int>(lround(g_ui.view.x(g_session.ed.notes[order[k + 1]].start)))
+                    : ly.r;
             if (next < ly.l || sx > ly.r) {
                 continue;
             }
@@ -1057,19 +1081,19 @@ void paint(HDC hdc) {
             renderOverview(ow, oh);
         }
         for (int y = 0; y < oh; y++) {
-            memcpy(fb + (size_t)(o.t * S + y) * w + (size_t)o.l * S, &g_ovLayer[(size_t)y * ow],
-                   (size_t)ow * 4);
+            memcpy(fb + static_cast<size_t>(o.t * S + y) * w + static_cast<size_t>(o.l) * S,
+                   &g_ovLayer[static_cast<size_t>(y) * ow], static_cast<size_t>(ow) * 4);
         }
         cv.clip = o;
         for (const Note &nt : g_session.ed.notes) {
-            const int y = (int)lround(overviewY(o, nt.pitch));
-            cv.fill((int)lround(overviewX(o, nt.start)), y - 1,
-                    std::max((int)lround(overviewX(o, nt.start)) + 1,
-                             (int)lround(overviewX(o, nt.end))),
+            const int y = static_cast<int>(lround(overviewY(o, nt.pitch)));
+            cv.fill(static_cast<int>(lround(overviewX(o, nt.start))), y - 1,
+                    std::max(static_cast<int>(lround(overviewX(o, nt.start))) + 1,
+                             static_cast<int>(lround(overviewX(o, nt.end)))),
                     y + 1, noteColour);
         }
-        const int va = (int)lround(overviewX(o, g_ui.view.t(n.l))),
-                  vb = std::max(va + 2, (int)lround(overviewX(o, g_ui.view.t(n.r))));
+        const int va = static_cast<int>(lround(overviewX(o, g_ui.view.t(n.l)))),
+                  vb = std::max(va + 2, static_cast<int>(lround(overviewX(o, g_ui.view.t(n.r)))));
         cv.fill(o.l, o.t, va, o.b, g_theme.shadow, 120),
             cv.fill(vb, o.t, o.r, o.b, g_theme.shadow, 120);
         cv.frame(va, o.t, vb, o.b, g_theme.highlight);

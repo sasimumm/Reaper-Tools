@@ -40,22 +40,24 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
         }
 
         out.frames = std::max(0, frames);
-        out.note.assign((size_t)out.frames * BasicPitch::PITCHES, 0);
+        out.note.assign(static_cast<size_t>(out.frames) * BasicPitch::PITCHES, 0);
         out.onset.assign(out.note.size(), 0);
         // Output frame j of window w is original sample w*WINDOW_HOP - OVERLAP/2 + j*HOP. Each uniform
         // frame takes the nearest kept output frame of the window covering it, which avoids the drift
         // of reading the unwrapped output as uniform (~10 ms per window).
         const int windows =
-            out.frames ? (int)((long long)(out.frames - 1) * HOP / WINDOW_HOP) + 1 : 0;
+            out.frames
+                ? static_cast<int>((static_cast<long long>(out.frames - 1) * HOP) / WINDOW_HOP) + 1
+                : 0;
         std::vector<float> buf(WINDOW);
         int f = 0;
         for (int w = 0; w < windows; w++) {
             // each window's outputs are released here, not kept until all windows are done
             @autoreleasepool {
-                const long long start = (long long)w * WINDOW_HOP - OVERLAP / 2;
+                const long long start = static_cast<long long>(w) * WINDOW_HOP - OVERLAP / 2;
                 for (int i = 0; i < WINDOW; i++) {
                     const long long j = start + i;
-                    buf[i] = j >= 0 && j < (long long)mono.size() ? mono[j] : 0;
+                    buf[i] = j >= 0 && j < static_cast<long long>(mono.size()) ? mono[j] : 0;
                 }
                 MLMultiArray *in =
                     [[MLMultiArray alloc] initWithDataPointer:buf.data()
@@ -84,21 +86,26 @@ bool runBasicPitch(const std::string &modelPath, const std::vector<float> &mono,
                     setError(error, "unexpected basic-pitch output", e);
                     return false;
                 }
-                const float *np = (const float *)note.dataPointer,
-                            *op = (const float *)onset.dataPointer;
+                const float *np = static_cast<const float *>(note.dataPointer),
+                            *op = static_cast<const float *>(onset.dataPointer);
                 const long ns1 = note.strides[1].longValue, ns2 = note.strides[2].longValue;
                 const long os1 = onset.strides[1].longValue, os2 = onset.strides[2].longValue;
-                for (; f < out.frames && (long long)f * HOP < (long long)(w + 1) * WINDOW_HOP;
+                for (; f < out.frames &&
+                       static_cast<long long>(f) * HOP < static_cast<long long>(w + 1) * WINDOW_HOP;
                      f++) {
                     const int j = std::max(
                         EDGE, std::min(OUT_FRAMES - EDGE - 1,
-                                       (int)lround(((double)f * HOP - (double)start) / HOP)));
+                                       static_cast<int>(lround((static_cast<double>(f) * HOP -
+                                                                static_cast<double>(start)) /
+                                                               HOP))));
                     for (int p = 0; p < BasicPitch::PITCHES; p++) {
-                        out.note[(size_t)f * BasicPitch::PITCHES + p] = np[j * ns1 + p * ns2];
-                        out.onset[(size_t)f * BasicPitch::PITCHES + p] = op[j * os1 + p * os2];
+                        out.note[static_cast<size_t>(f) * BasicPitch::PITCHES + p] =
+                            np[j * ns1 + p * ns2];
+                        out.onset[static_cast<size_t>(f) * BasicPitch::PITCHES + p] =
+                            op[j * os1 + p * os2];
                     }
                 }
-                if (progress && !progress((double)(w + 1) / windows)) {
+                if (progress && !progress(static_cast<double>(w + 1) / windows)) {
                     return false;
                 }
             }

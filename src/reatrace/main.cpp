@@ -162,8 +162,8 @@ static MediaItem *overlappingItem(MediaTrack *tr, double pos, double len, bool m
 // The voice's track among the ReaTrace tracks directly below the audio track, created (after the
 // last existing voice track) if asked.
 static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
-    const int first =
-        (int)GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER"); // = index below
+    const int first = static_cast<int>(
+        GetMediaTrackInfo_Value(GetMediaItem_Track(audio), "IP_TRACKNUMBER")); // = index below
     int idx = first;
     for (MediaTrack *tr = NULL; (tr = GetTrack(NULL, idx)) && voiceOfTrack(tr) >= 0; idx++) {
         if (voiceOfTrack(tr) == voice) {
@@ -211,7 +211,7 @@ static MediaItem *audioForMidi(MediaItem *midi) {
     if (voiceOfTrack(tr) < 0) {
         return NULL;
     }
-    int idx = (int)GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 2;
+    int idx = static_cast<int>(GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 2;
     while (idx >= 0 && voiceOfTrack(GetTrack(NULL, idx)) >= 0) {
         idx--;
     }
@@ -285,8 +285,8 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
     if (!(g_cmdOpen = rec->Register("custom_action", &a))) {
         return 0;
     }
-    rec->Register("hookcommand2", (void *)onAction);
+    rec->Register("hookcommand2", reinterpret_cast<void *>(onAction));
     rec->Register("accelerator", &g_accel);
-    rec->Register("timer", (void *)timer);
+    rec->Register("timer", reinterpret_cast<void *>(timer));
     return 1;
 }

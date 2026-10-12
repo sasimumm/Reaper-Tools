@@ -261,7 +261,8 @@ static int widgetHeight(WidgetType t) {
 
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) {
-    return p >= (const void *)&g_settings.rp && p < (const void *)(&g_settings.rp + 1);
+    return p >= static_cast<const void *>(&g_settings.rp) &&
+           p < static_cast<const void *>(&g_settings.rp + 1);
 }
 
 static double sliderFrac(const Widget &w, double v) {
@@ -294,7 +295,7 @@ static int widgetAt(int y) {
     for (size_t i = 0; i < ws.size(); i++) {
         const int h = widgetHeight(ws[i].type);
         if (y >= top && y < top + h) {
-            return (int)i;
+            return static_cast<int>(i);
         }
         top += h;
     }
@@ -303,9 +304,11 @@ static int widgetAt(int y) {
 
 static void autoCalibrateView() {
     const Rect n = noteArea();
-    const int f0 = (int)((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec->frameRate());
+    const int f0 =
+        static_cast<int>((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec->frameRate());
     const int f1 =
-        (int)((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec->frameRate()) + 1;
+        static_cast<int>((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec->frameRate()) +
+        1;
     autoCalibrate(*g_analysis.spec, g_settings.rp, f0, f1);
 }
 
@@ -470,9 +473,10 @@ static void readBalance() {
 // A slider's value in default settings: the same field of a fresh Settings; notes volume is 0 dB.
 static double sliderDefault(const Widget &w) {
     static const Settings d;
-    const char *base = (const char *)&g_settings, *p = (const char *)w.value;
+    const char *base = reinterpret_cast<const char *>(&g_settings),
+               *p = reinterpret_cast<const char *>(w.value);
     if (p >= base && p < base + sizeof(Settings)) {
-        return *(const double *)((const char *)&d + (p - base));
+        return *reinterpret_cast<const double *>(reinterpret_cast<const char *>(&d) + (p - base));
     }
     return 0;
 }
@@ -510,7 +514,7 @@ void panelMouse(int x, int y, bool down) {
         return;
     }
     if (w.type == W_SLIDER) {
-        const double v = sliderValue(w, (double)(x - p.l - 12) / (p.r - p.l - 24));
+        const double v = sliderValue(w, static_cast<double>(x - p.l - 12) / (p.r - p.l - 24));
         if (v != *w.value) {
             *w.value = v;
             changedSetting(w);
@@ -572,8 +576,9 @@ void drawPanel(Canvas &cv, HDC dc) {
             snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
             text(dc, buf, l, top, r, top + 16, g_theme.dim, DT_RIGHT);
             const int by = top + 20,
-                      bx = l + (int)lround((r - l) *
-                                           std::max(0.0, std::min(1.0, sliderFrac(w, *w.value))));
+                      bx =
+                          l + static_cast<int>(lround(
+                                  (r - l) * std::max(0.0, std::min(1.0, sliderFrac(w, *w.value)))));
             cv.fill(l, by + 3, r, by + 7, g_theme.track);
             cv.fill(l, by + 3, bx, by + 7,
                     w.analysis && g_ui.analysisDirty ? g_theme.dirty : g_theme.accent);

@@ -21,7 +21,9 @@ static std::string g_savedSettings; // last written to the item, to only write o
 // a buffer size, unlike item P_EXT strings).
 static bool itemKey(char *key) {
     const GUID *g =
-        g_session.audio ? (const GUID *)GetSetMediaItemInfo(g_session.audio, "GUID", NULL) : NULL;
+        g_session.audio
+            ? static_cast<const GUID *>(GetSetMediaItemInfo(g_session.audio, "GUID", NULL))
+            : NULL;
     if (!g) {
         return false;
     }

@@ -11,7 +11,7 @@ inline ARGB opaque(RGB c) { return 0xff000000 | c; }
 // col over the pixel d with alpha a (0..256). Red and blue are blended together, green apart:
 // two multiplies per channel pair.
 inline ARGB blend(ARGB d, RGB col, int a) {
-    const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
+    const unsigned int ia = static_cast<unsigned int>(256 - a), ua = static_cast<unsigned int>(a);
     return opaque(((((d & 0xff00ff) * ia + (col & 0xff00ff) * ua) >> 8) & 0xff00ff) |
                   ((((d & 0xff00) * ia + (col & 0xff00) * ua) >> 8) & 0xff00));
 }

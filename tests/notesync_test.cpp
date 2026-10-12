@@ -38,14 +38,14 @@ class FakeTake : public Take {
     std::string timeMapping() override { return std::to_string(position); }
     double toTime(double ppq) override { return position + ppq / 960; }
     double toPPQ(double time) override { return (time - position) * 960; }
-    int noteCount() override { return (int)notes.size(); }
-    NoteEvent note(int i) override { return notes[(size_t)i].e; }
-    int textCount() override { return (int)texts.size(); }
+    int noteCount() override { return static_cast<int>(notes.size()); }
+    NoteEvent note(int i) override { return notes[static_cast<size_t>(i)].e; }
+    int textCount() override { return static_cast<int>(texts.size()); }
     bool text(int i, TextEvent *out) override {
-        *out = texts[(size_t)i];
+        *out = texts[static_cast<size_t>(i)];
         return true;
     }
-    void setNote(int i, const NoteEvent &n) override { notes[(size_t)i].e = n; }
+    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)].e = n; }
     void deleteNote(int i) override { notes.erase(notes.begin() + i); }
     void insertNote(const NoteEvent &n, int velocity) override { notes.push_back({n, velocity}); }
     void deleteText(int i) override { texts.erase(texts.begin() + i); }

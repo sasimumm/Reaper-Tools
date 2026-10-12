@@ -11,7 +11,7 @@ static int findNote(double start, int pitch) {
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         if (fabs(g_session.ed.notes[i].start - start) < 1e-6 &&
             g_session.ed.notes[i].pitch == pitch) {
-            return (int)i;
+            return static_cast<int>(i);
         }
     }
     return -1;
@@ -25,11 +25,11 @@ static int neighbourNote(int i, int dir) {
         const Note &o = g_session.ed.notes[j];
         const bool after = o.start > c.start || (o.start == c.start && o.pitch > c.pitch);
         const bool before = o.start < c.start || (o.start == c.start && o.pitch < c.pitch);
-        if ((int)j == i || (dir > 0 ? !after : !before)) {
+        if (static_cast<int>(j) == i || (dir > 0 ? !after : !before)) {
             continue;
         }
         if (best < 0) {
-            best = (int)j;
+            best = static_cast<int>(j);
             continue;
         }
         const Note &b = g_session.ed.notes[best];
@@ -37,7 +37,7 @@ static int neighbourNote(int i, int dir) {
                                 ? (o.start < b.start || (o.start == b.start && o.pitch < b.pitch))
                                 : (o.start > b.start || (o.start == b.start && o.pitch > b.pitch));
         if (closer) {
-            best = (int)j;
+            best = static_cast<int>(j);
         }
     }
     return best;
@@ -49,8 +49,9 @@ void placeEdit() {
         return;
     }
     const Note &nt = g_session.ed.notes[i];
-    const int x = (int)lround(g_ui.view.x(nt.start)), y = (int)lround(g_ui.view.y(nt.pitch - 0.5));
-    const int w = std::max(90, (int)lround(g_ui.view.x(nt.end)) - x);
+    const int x = static_cast<int>(lround(g_ui.view.x(nt.start))),
+              y = static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5)));
+    const int w = std::max(90, static_cast<int>(lround(g_ui.view.x(nt.end))) - x);
     RECT r;
     GetWindowRect(g_ui.edit, &r);
     POINT pt = {r.left, r.top};
@@ -62,7 +63,7 @@ void placeEdit() {
 }
 
 void beginLyric(int i) {
-    if (i < 0 || i >= (int)g_session.ed.notes.size()) {
+    if (i < 0 || i >= static_cast<int>(g_session.ed.notes.size())) {
         return;
     }
     // scroll so the note is visible
@@ -111,10 +112,10 @@ void endLyric(bool commit, int dir) {
         return;
     }
     std::string text = buf;
-    while (!text.empty() && isspace((unsigned char)text.back())) {
+    while (!text.empty() && isspace(static_cast<unsigned char>(text.back()))) {
         text.pop_back();
     }
-    while (!text.empty() && isspace((unsigned char)text[0])) {
+    while (!text.empty() && isspace(static_cast<unsigned char>(text[0]))) {
         text.erase(0, 1);
     }
     const int next = dir ? neighbourNote(i, dir) : -1;
@@ -140,7 +141,7 @@ std::string clipboardText() {
         return text;
     }
     if (HANDLE h = GetClipboardData(CF_TEXT)) {
-        if (const char *p = (const char *)GlobalLock(h)) {
+        if (const char *p = static_cast<const char *>(GlobalLock(h))) {
             text = p;
         }
         GlobalUnlock(h);
@@ -159,7 +160,7 @@ void pasteLyrics(const std::string &text) {
 
     std::vector<int> order(g_session.ed.notes.size());
     for (size_t i = 0; i < order.size(); i++) {
-        order[i] = (int)i;
+        order[i] = static_cast<int>(i);
     }
     std::sort(order.begin(), order.end(), [](int a, int b) {
         const Note &x = g_session.ed.notes[a], &y = g_session.ed.notes[b];

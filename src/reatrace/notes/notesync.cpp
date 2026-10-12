@@ -42,7 +42,7 @@ std::vector<Note> readNotes(Take &take) {
 }
 
 static bool known(const Note &n, const std::vector<Note> &loaded) {
-    return n.idx >= 0 && n.idx < (int)loaded.size();
+    return n.idx >= 0 && n.idx < static_cast<int>(loaded.size());
 }
 
 NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &edited,
@@ -50,7 +50,8 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
     NoteChanges c;
     c.data = !deleted.empty();
     for (int i : deleted) {
-        c.lyrics |= i >= 0 && i < (int)loaded.size() && loaded[(size_t)i].lyricIdx >= 0;
+        c.lyrics |= i >= 0 && i < static_cast<int>(loaded.size()) &&
+                    loaded[static_cast<size_t>(i)].lyricIdx >= 0;
     }
     for (const Note &n : edited) {
         if (!known(n, loaded)) {
@@ -58,7 +59,7 @@ NoteChanges diffNotes(const std::vector<Note> &loaded, const std::vector<Note> &
             c.lyrics |= !n.lyric.empty();
             continue;
         }
-        const Note &o = loaded[(size_t)n.idx];
+        const Note &o = loaded[static_cast<size_t>(n.idx)];
         c.data |= n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
         c.lyrics |= n.lyric != o.lyric || (n.start != o.start && !n.lyric.empty());
     }
@@ -75,7 +76,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, const std::vector<No
         if (!known(n, loaded)) {
             continue;
         }
-        const Note &o = loaded[(size_t)n.idx];
+        const Note &o = loaded[static_cast<size_t>(n.idx)];
         if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
             take.setNote(n.idx, {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, n.sel});
         }

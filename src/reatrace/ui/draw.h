@@ -22,12 +22,13 @@ struct Canvas {
         }
         if (a >= 256) {
             for (int y = y0; y < y1; y++) {
-                std::fill(px + (size_t)y * w + x0, px + (size_t)y * w + x1, opaque(col));
+                std::fill(px + static_cast<size_t>(y) * w + x0,
+                          px + static_cast<size_t>(y) * w + x1, opaque(col));
             }
             return;
         }
         for (int y = y0; y < y1; y++) {
-            ARGB *p = px + (size_t)y * w;
+            ARGB *p = px + static_cast<size_t>(y) * w;
             for (int x = x0; x < x1; x++) {
                 p[x] = blend(p[x], col, a);
             }

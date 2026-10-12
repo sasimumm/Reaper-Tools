@@ -19,7 +19,7 @@ struct Spectrogram {
     std::vector<float> mag;   // frames*bins, linear amplitude, a full-scale sine is ~1
     std::vector<float> noise; // per bin: mean spectrum of the quietest frames, see estimateNoise()
 
-    float at(int f, int b) const { return mag[(size_t)f * bins + b]; }
+    float at(int f, int b) const { return mag[static_cast<size_t>(f) * bins + b]; }
     double frameRate() const { return p.sampleRate / p.hop; }
     double binOfPitch(double midiPitch) const; // continuous bin index for a (fractional) MIDI pitch
 };

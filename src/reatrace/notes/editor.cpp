@@ -10,7 +10,7 @@ static const double INFLATE = 3, EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD =
 static const double AXIS_LOCK_THRESHOLD = 10;
 
 NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *noteIndex) const {
-    for (int i = (int)notes.size() - 1; i >= 0; i--) // last drawn is on top
+    for (int i = static_cast<int>(notes.size()) - 1; i >= 0; i--) // last drawn is on top
     {
         const Note &n = notes[i];
         const double x0 = v.x(n.start), x1 = v.x(n.end), y0 = v.y(n.pitch + 0.5),
@@ -80,7 +80,7 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         }
         const double t = sn(v.t(downX));
         notes.push_back({t, t + minLen, std::max(0, std::min(127, v.pitchAt(downY))), true, -1});
-        drawIndex = (int)notes.size() - 1;
+        drawIndex = static_cast<int>(notes.size()) - 1;
         mode = DRAW;
     }
     if (mode == PENDING_DRAG && past) {
@@ -145,7 +145,7 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
         }
     } else if (mode == PENDING_DRAG) { // click on an already selected note: select just it
         for (size_t i = 0; i < notes.size(); i++) {
-            const bool sel = (int)i == anchor;
+            const bool sel = static_cast<int>(i) == anchor;
             changed |= notes[i].sel != sel;
             notes[i].sel = sel;
         }
@@ -275,7 +275,7 @@ bool NoteEditor::splitAt(double t, int note) {
     bool any = false;
     const size_t count = notes.size();
     for (size_t i = 0; i < count; i++) {
-        if (note >= 0 ? (int)i != note : !notes[i].sel) {
+        if (note >= 0 ? static_cast<int>(i) != note : !notes[i].sel) {
             continue;
         }
         if (t < notes[i].start + minLen || t > notes[i].end - minLen) {
@@ -295,7 +295,7 @@ bool NoteEditor::joinSelected() {
     std::vector<int> sel;
     for (size_t i = 0; i < notes.size(); i++) {
         if (notes[i].sel) {
-            sel.push_back((int)i);
+            sel.push_back(static_cast<int>(i));
         }
     }
     if (sel.size() < 2) {
@@ -341,7 +341,7 @@ std::vector<std::string> splitSyllables(const std::string &text) {
     std::vector<std::string> out;
     std::string cur;
     for (char ch : text) {
-        if (isspace((unsigned char)ch)) {
+        if (isspace(static_cast<unsigned char>(ch))) {
             if (!cur.empty()) {
                 out.push_back(cur), cur.clear();
             }

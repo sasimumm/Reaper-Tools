@@ -110,8 +110,8 @@ bool covered(size_t i) {
         for (size_t k = 0; k < sug.size(); k++) {
             const Segment &sg = sug[k];
             const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
-            for (int q = std::max(0, (int)ceil(sg.pitch - 1));
-                 q <= std::min(127, (int)floor(sg.pitch + 1)) && !flags[k]; q++) {
+            for (int q = std::max(0, static_cast<int>(ceil(sg.pitch - 1)));
+                 q <= std::min(127, static_cast<int>(floor(sg.pitch + 1))) && !flags[k]; q++) {
                 for (const Note *n : byPitch[q]) {
                     if (coversSuggestion(*n, a, b, sg.pitch)) {
                         flags[k] = 1;
@@ -125,11 +125,11 @@ bool covered(size_t i) {
 }
 
 void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
-    const int p = (int)lround(sg.pitch);
-    *x0 = (int)lround(g_ui.view.x(frameTime(sg.f0)));
-    *x1 = std::max(*x0 + 2, (int)lround(g_ui.view.x(frameTime(sg.f1 + 1))));
-    *y0 = (int)lround(g_ui.view.y(p + 0.5));
-    *y1 = std::max(*y0 + 3, (int)lround(g_ui.view.y(p - 0.5)));
+    const int p = static_cast<int>(lround(sg.pitch));
+    *x0 = static_cast<int>(lround(g_ui.view.x(frameTime(sg.f0))));
+    *x1 = std::max(*x0 + 2, static_cast<int>(lround(g_ui.view.x(frameTime(sg.f1 + 1)))));
+    *y0 = static_cast<int>(lround(g_ui.view.y(p + 0.5)));
+    *y1 = std::max(*y0 + 3, static_cast<int>(lround(g_ui.view.y(p - 0.5))));
 }
 
 bool suggestionHidden(size_t i) {
@@ -147,7 +147,7 @@ int suggestionAt(int x, int y) {
         segmentRect(sug[i], &x0, &y0, &x1, &y1);
         if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !suggestionHidden(i) &&
             !covered(i)) {
-            return (int)i;
+            return static_cast<int>(i);
         }
     }
     return -1;
@@ -158,7 +158,7 @@ int firstSelected() {
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         if (g_session.ed.notes[i].sel &&
             (best < 0 || g_session.ed.notes[i].start < g_session.ed.notes[best].start)) {
-            best = (int)i;
+            best = static_cast<int>(i);
         }
     }
     return best;
@@ -193,8 +193,8 @@ void acceptSuggestion(int i) {
         o.sel = false;
     }
     g_session.ed.notes.push_back(
-        {frameTime(sg.f0), frameTime(sg.f1 + 1), (int)lround(sg.pitch), true, -1});
-    previewPitch((int)lround(sg.pitch));
+        {frameTime(sg.f0), frameTime(sg.f1 + 1), static_cast<int>(lround(sg.pitch)), true, -1});
+    previewPitch(static_cast<int>(lround(sg.pitch)));
     commitNotes();
 }
 
@@ -211,7 +211,7 @@ void acceptVisibleSuggestions() {
             covered(i)) {
             continue;
         }
-        byVoice[v].push_back({a, b, (int)lround(sg.pitch), false, -1});
+        byVoice[v].push_back({a, b, static_cast<int>(lround(sg.pitch)), false, -1});
     }
     bool others = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
@@ -241,11 +241,12 @@ void acceptVisibleSuggestions() {
 void pitchFromContour(Note &nt) {
     const double fr = g_analysis.spec->frameRate();
     double sung = 0;
-    if (contourMedian(g_analysis.contour, (int)lround((nt.start - g_session.audioPos) * fr),
-                      (int)lround((nt.end - g_session.audioPos) * fr), (int)lround(0.05 * fr),
-                      &sung) &&
+    if (contourMedian(g_analysis.contour,
+                      static_cast<int>(lround((nt.start - g_session.audioPos) * fr)),
+                      static_cast<int>(lround((nt.end - g_session.audioPos) * fr)),
+                      static_cast<int>(lround(0.05 * fr)), &sung) &&
         fabs(sung - nt.pitch) <= 2) {
-        nt.pitch = (int)lround(sung);
+        nt.pitch = static_cast<int>(lround(sung));
     }
 }
 

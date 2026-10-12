@@ -62,10 +62,10 @@ void ReportFailure(const char *where, const char *what) {
 static int getChord(int index, double *start, double *end, char *name, int nameSize) {
     return guarded("reading chords", 0, [&] {
         const std::vector<ChordSpan> &spans = Chords_Spans();
-        if (index < 0 || index >= (int)spans.size()) {
+        if (index < 0 || index >= static_cast<int>(spans.size())) {
             return 0;
         }
-        const ChordSpan &c = spans[(size_t)index];
+        const ChordSpan &c = spans[static_cast<size_t>(index)];
         if (start) {
             *start = c.start;
         }
@@ -73,7 +73,7 @@ static int getChord(int index, double *start, double *end, char *name, int nameS
             *end = c.end;
         }
         if (name && nameSize > 0) {
-            snprintf(name, (size_t)nameSize, "%s", c.name.c_str());
+            snprintf(name, static_cast<size_t>(nameSize), "%s", c.name.c_str());
         }
         return 1;
     });
@@ -103,9 +103,9 @@ extern "C" REAPER_PLUGIN_DLL_EXPORT int REAPER_PLUGIN_ENTRYPOINT(REAPER_PLUGIN_H
         return 0;
     }
     Chords_Register(rec);
-    rec->Register("API_ReaChords_GetChord", (void *)getChord);
-    rec->Register("hookcommand2", (void *)onAction);
+    rec->Register("API_ReaChords_GetChord", reinterpret_cast<void *>(getChord));
+    rec->Register("hookcommand2", reinterpret_cast<void *>(onAction));
     rec->Register("accelerator", &g_accel);
-    rec->Register("timer", (void *)timer);
+    rec->Register("timer", reinterpret_cast<void *>(timer));
     return 1;
 }

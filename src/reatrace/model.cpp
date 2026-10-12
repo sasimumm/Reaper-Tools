@@ -88,7 +88,7 @@ void decodeSettings(const char *str, Settings &settings) {
                 } else if (st.b) {
                     *st.b = v != 0;
                 } else if (st.i) {
-                    *st.i = (int)c;
+                    *st.i = static_cast<int>(c);
                 }
             }
         }

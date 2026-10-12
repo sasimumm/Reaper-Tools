@@ -27,15 +27,15 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
     out.pitch.assign(s.frames, -1);
     out.strength.assign(s.frames, 0);
     const int bpo = s.p.binsPerOctave;
-    const int k0 = std::max(0, (int)ceil(s.binOfPitch(lowPitch))),
-              k1 = std::min(s.bins - 2, (int)floor(s.binOfPitch(highPitch)));
+    const int k0 = std::max(0, static_cast<int>(ceil(s.binOfPitch(lowPitch)))),
+              k1 = std::min(s.bins - 2, static_cast<int>(floor(s.binOfPitch(highPitch))));
     if (s.frames == 0 || k0 >= k1) {
         return out;
     }
 
     double off[HARMONICS + 1], w[HARMONICS + 1], wsum = 0;
     for (int h = 1; h <= HARMONICS; h++) {
-        off[h] = bpo * log2((double)h);
+        off[h] = bpo * log2(static_cast<double>(h));
         w[h] = pow(HARMONIC_DECAY, h - 1);
         wsum += w[h];
     }
@@ -61,14 +61,14 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
             double sum = 0;
             for (int h = 1; h <= HARMONICS; h++) {
                 const double b = k + off[h];
-                const int i = (int)b;
+                const int i = static_cast<int>(b);
                 if (i + 1 >= s.bins) {
                     break;
                 }
                 sum += w[h] *
                        (static_cast<double>(c[i]) + static_cast<double>(c[i + 1] - c[i]) * (b - i));
             }
-            score[k] = (float)(sum / (wsum * static_cast<double>(peak)));
+            score[k] = static_cast<float>(sum / (wsum * static_cast<double>(peak)));
         }
         std::vector<Cand> &cf = cands[f];
         for (int k = k0 + 1; k < k1; k++) {
@@ -125,17 +125,17 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
                         cost[f - a - 1][i] + JUMP_COST * fabs(cf[j].pitch - cp[i].pitch);
                     if (v < best) {
                         best = v;
-                        from[f - a][j] = (int)i;
+                        from[f - a][j] = static_cast<int>(i);
                     }
                 }
                 cost[f - a][j] = best + emit;
             }
         }
-        int j =
-            (int)(std::min_element(cost.back().begin(), cost.back().end()) - cost.back().begin());
+        int j = static_cast<int>(std::min_element(cost.back().begin(), cost.back().end()) -
+                                 cost.back().begin());
         for (int f = b; f >= a; f--) {
-            out.pitch[f] = (float)cands[f][j].pitch;
-            out.strength[f] = (float)cands[f][j].score;
+            out.pitch[f] = static_cast<float>(cands[f][j].pitch);
+            out.strength[f] = static_cast<float>(cands[f][j].score);
             j = from[f - a][j];
         }
         a = b + 1;
@@ -145,7 +145,7 @@ Contour trackPitch(const Spectrogram &s, double lowPitch, double highPitch) {
 
 bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
     f0 = std::max(0, f0);
-    f1 = std::min((int)c.pitch.size() - 1, f1);
+    f1 = std::min(static_cast<int>(c.pitch.size()) - 1, f1);
     if (f1 < f0) {
         return false;
     }
@@ -158,7 +158,7 @@ bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
             }
         }
     }
-    if (all.size() * 2 < (size_t)f1 - (size_t)f0 + 1) {
+    if (all.size() * 2 < static_cast<size_t>(f1) - static_cast<size_t>(f0) + 1) {
         return false; // f1 >= f0 here
     }
     *pitch = median(late.size() * 2 >= all.size() ? late : all);
@@ -168,8 +168,8 @@ bool contourMedian(const Contour &c, int f0, int f1, int skip, double *pitch) {
 std::vector<Segment> segmentContour(const Contour &c, double frameRate,
                                     const std::vector<int> *onsets, double minDuration,
                                     double tolerance, double skipStart) {
-    const int n = (int)c.pitch.size(),
-              half = std::max(1, (int)lround(0.075 * frameRate)); // ~150 ms window
+    const int n = static_cast<int>(c.pitch.size()),
+              half = std::max(1, static_cast<int>(lround(0.075 * frameRate))); // ~150 ms window
     // vibrato-smoothed pitch: mean of voiced frames in the window, within the same voiced run
     std::vector<double> smooth(n, -1);
     for (int f = 0; f < n; f++) {
@@ -189,8 +189,8 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         smooth[f] = sum / cnt;
     }
 
-    const int minFrames = std::max(1, (int)lround(minDuration * frameRate)),
-              skip = (int)lround(skipStart * frameRate);
+    const int minFrames = std::max(1, static_cast<int>(lround(minDuration * frameRate))),
+              skip = static_cast<int>(lround(skipStart * frameRate));
     std::vector<Segment> segs;
     auto close = [&](int a, int b) {
         if (b - a + 1 < minFrames) {
@@ -237,7 +237,7 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
         for (int f = a.f1; f <= b.f0 && voicedGap; f++) {
             voicedGap = c.pitch[f] >= 0;
         }
-        if (!voicedGap || b.f0 - a.f1 > (int)lround(0.3 * frameRate)) {
+        if (!voicedGap || b.f0 - a.f1 > static_cast<int>(lround(0.3 * frameRate))) {
             continue;
         }
         const double mid = 0.5 * (a.pitch + b.pitch);
@@ -255,7 +255,8 @@ std::vector<Segment> segmentContour(const Contour &c, double frameRate,
     if (onsets) {
         for (size_t i = 0; i < merged.size(); i++) {
             Segment &sg = merged[i];
-            const int lo = i > 0 ? merged[i - 1].f1 + 1 : 0, range = (int)lround(0.06 * frameRate);
+            const int lo = i > 0 ? merged[i - 1].f1 + 1 : 0,
+                      range = static_cast<int>(lround(0.06 * frameRate));
             int best = -1;
             for (int f : *onsets) {
                 if (f >= lo && f < sg.f1 && abs(f - sg.f0) <= range &&
@@ -293,7 +294,7 @@ std::vector<int> detectOnsets(const Spectrogram &s) {
         var += (v - mean) * (v - mean) / std::max(1, s.frames);
     }
     const double thr = mean + 1.5 * sqrt(var);
-    const int around = 3, minGap = std::max(1, (int)lround(0.05 * s.frameRate()));
+    const int around = 3, minGap = std::max(1, static_cast<int>(lround(0.05 * s.frameRate())));
     std::vector<int> out;
     for (int f = 1; f < s.frames; f++) {
         if (flux[f] <= thr) {

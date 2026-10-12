@@ -33,7 +33,8 @@ Layout layout() {
     if (g_ui.hwnd) {
         GetClientRect(g_ui.hwnd, &r);
     }
-    return computeLayout((int)r.right, (int)r.bottom, g_ui.panel, g_ui.foldedLanes);
+    return computeLayout(static_cast<int>(r.right), static_cast<int>(r.bottom), g_ui.panel,
+                         g_ui.foldedLanes);
 }
 
 Rect clientRect() { return layout().client; }
@@ -65,7 +66,8 @@ static void fitItem() {
     const Rect n = noteArea();
     g_ui.view.pps = std::max(5.0, (n.r - n.l) / std::max(0.1, g_session.audioLen * 1.02));
     g_ui.view.t0 = g_session.audioPos - 0.01 * g_session.audioLen;
-    g_ui.view.rowH = std::max(3.0, (double)(n.b - n.t) / (84 - 40 + 1)); // vocal range E2..C6
+    g_ui.view.rowH =
+        std::max(3.0, static_cast<double>(n.b - n.t) / (84 - 40 + 1)); // vocal range E2..C6
     g_ui.view.pitchTop = 84.5;
     redraw();
 }
@@ -103,7 +105,7 @@ static void zoomToSelection() {
     const double len = std::max(0.2, b - a);
     g_ui.view.pps = std::min(3000.0, (n.r - n.l) / (len * 1.2));
     g_ui.view.t0 = a - len * 0.1;
-    g_ui.view.rowH = std::min(60.0, std::max(3.0, (double)(n.b - n.t) / (hi - lo + 7)));
+    g_ui.view.rowH = std::min(60.0, std::max(3.0, static_cast<double>(n.b - n.t) / (hi - lo + 7)));
     g_ui.view.pitchTop = hi + 3.5;
     redraw();
 }
@@ -384,7 +386,7 @@ int Window_TranslateAccel(MSG *msg) {
     if (g_ui.edit && msg->hwnd != g_ui.hwnd) {
         // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes to the field
         if (msg->message == WM_KEYDOWN) {
-            const int key = (int)msg->wParam, flags = (int)msg->lParam;
+            const int key = static_cast<int>(msg->wParam), flags = static_cast<int>(msg->lParam);
             if (key == VK_TAB) {
                 endLyric(true, (flags & FSHIFT) ? -1 : 1);
                 return 1;
@@ -415,12 +417,14 @@ int Window_TranslateAccel(MSG *msg) {
     }
     // Our keys are handled here: delivered to the window, SWELL would turn Enter/Esc into dialog commands.
     if (msg->message == WM_KEYDOWN &&
-        isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam)) {
-        onKey(keyCode((int)msg->wParam, (int)msg->lParam));
+        isOurKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)),
+                 static_cast<int>(msg->lParam))) {
+        onKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)));
         return 1;
     }
     if (msg->message == WM_KEYUP &&
-        isOurKey(keyCode((int)msg->wParam, (int)msg->lParam), (int)msg->lParam)) {
+        isOurKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)),
+                 static_cast<int>(msg->lParam))) {
         return 1;
     }
     return -666; // everything else (space = play/stop, ...) uses REAPER's main shortcuts
@@ -437,7 +441,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         return 0;
     }
     case WM_SIZE: redraw(); return 0;
-    case WM_KEYDOWN: return onKey(keyCode((int)wParam, (int)lParam)) ? 0 : 1;
+    case WM_KEYDOWN:
+        return onKey(keyCode(static_cast<int>(wParam), static_cast<int>(lParam))) ? 0 : 1;
     case WM_LBUTTONDOWN: {
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
         syncViewOrigin();
@@ -525,7 +530,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         ReleaseCapture();
         const int drawn = d == DRAG_NOTES ? g_session.ed.drawing() : -1;
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
-            if (drawn >= 0 && drawn < (int)g_session.ed.notes.size() &&
+            if (drawn >= 0 && drawn < static_cast<int>(g_session.ed.notes.size()) &&
                 g_settings.pitchFromContour && !(mods() & MOD_ALT)) {
                 pitchFromContour(g_session.ed.notes[drawn]);
             }
@@ -566,11 +571,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(hwnd, &pt);
         syncViewOrigin();
-        const double steps = (short)HIWORD(wParam) / 120.0;
+        const double steps = static_cast<short> HIWORD(wParam) / 120.0;
         const int m = mods();
         if (panelShown() && panelArea().in(pt.x, pt.y)) {
             if (msg == WM_MOUSEWHEEL) {
-                scrollPanel((int)lround(-steps * 30));
+                scrollPanel(static_cast<int>(lround(-steps * 30)));
             }
             return 0;
         }
@@ -588,7 +593,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_GESTURE: {
         // pinch zooms time (alt: pitch); SWELL reports the scale factor *1024 at GF_END
-        GESTUREINFO *gi = (GESTUREINFO *)lParam;
+        GESTUREINFO *gi = reinterpret_cast<GESTUREINFO *>(lParam);
         if (gi && gi->dwID == GID_ZOOM && (gi->dwFlags & GF_END) && gi->ullArguments) {
             POINT pt = {gi->ptsLocation.x, gi->ptsLocation.y};
             ScreenToClient(hwnd, &pt);
@@ -628,7 +633,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
 }
 
 static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
-    return guarded("window", (INT_PTR)0, [&] { return handleMessage(hwnd, msg, wParam, lParam); });
+    return guarded("window", static_cast<INT_PTR>(0),
+                   [&] { return handleMessage(hwnd, msg, wParam, lParam); });
 }
 
 // --- lifecycle ---------------------------------------------------------------------
@@ -645,7 +651,9 @@ static void createWindow() {
         DockWindowActivate(g_ui.hwnd);
     } else {
         // 0x400001: SWELL's "no dialog resource, resizable top-level window"
-        g_ui.hwnd = CreateDialog(NULL, (const char *)(INT_PTR)0x400001, GetMainHwnd(), dlgProc);
+        g_ui.hwnd =
+            CreateDialog(NULL, reinterpret_cast<const char *>(static_cast<INT_PTR>(0x400001)),
+                         GetMainHwnd(), dlgProc);
         if (!g_ui.hwnd) {
             return;
         }

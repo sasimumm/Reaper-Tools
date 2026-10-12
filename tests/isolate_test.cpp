@@ -27,8 +27,8 @@ struct Fx {
 
     static EEL_F NSEEL_CGEN_CALL sliderByIndex(void *self, EEL_F *i) {
         const std::vector<EEL_F *> &s = static_cast<Fx *>(self)->sliders;
-        const int k = (int)*i - 1;
-        return k >= 0 && k < (int)s.size() ? *s[k] : 0;
+        const int k = static_cast<int>(*i) - 1;
+        return k >= 0 && k < static_cast<int>(s.size()) ? *s[k] : 0;
     }
 
     Fx() {
@@ -49,12 +49,12 @@ struct Fx {
             const std::string l = src.substr(p, e - p);
             p = e == std::string::npos ? src.size() : e + 1;
             if (l.rfind("slider", 0) == 0 && l.find(':') != std::string::npos && cur < 0) {
-                const int n = (int)strtol(l.c_str() + 6, nullptr, 10);
+                const int n = static_cast<int>(strtol(l.c_str() + 6, nullptr, 10));
                 const std::string name = "slider" + std::to_string(n);
                 EEL_F *v = NSEEL_VM_regvar(vm, name.c_str());
                 *v = strtod(l.c_str() + l.find(':') + 1, nullptr);
-                sliders.resize(std::max(sliders.size(), (size_t)n));
-                sliders[(size_t)n - 1] = v;
+                sliders.resize(std::max(sliders.size(), static_cast<size_t>(n)));
+                sliders[static_cast<size_t>(n) - 1] = v;
             }
             static const char *const NAMES[] = {"@init", "@slider", "@block", "@sample"};
             bool header = false;
@@ -91,9 +91,10 @@ struct Fx {
         *sliders[0] = width;
         *sliders[1] = bgDb;
         for (int v = 0; v < ISOLATE_VOICES; v++) {
-            const Changes c = v < (int)voices.size() ? voices[(size_t)v] : Changes();
-            const size_t at = (size_t)isolateParam(v);
-            *sliders[at] = (double)c.size();
+            const Changes c =
+                v < static_cast<int>(voices.size()) ? voices[static_cast<size_t>(v)] : Changes();
+            const size_t at = static_cast<size_t>(isolateParam(v));
+            *sliders[at] = static_cast<double>(c.size());
             for (size_t i = 0; i < c.size(); i++) {
                 *sliders[at + 1 + 2 * i] = c[i].first;
                 *sliders[at + 2 + 2 * i] = c[i].second;
@@ -105,13 +106,13 @@ struct Fx {
     std::vector<float> run(const std::vector<float> &x) {
         std::vector<float> y(x.size());
         for (size_t b = 0; b < x.size(); b += BLOCK) {
-            *playPos = (double)b / SR;
+            *playPos = static_cast<double>(b) / SR;
             NSEEL_code_execute(block);
             for (size_t i = b; i < std::min(x.size(), b + BLOCK); i++) {
                 *spl0 = *spl1 = static_cast<double>(x[i]);
                 NSEEL_code_execute(sample);
                 assert(*spl0 == *spl1);
-                y[i] = (float)*spl0;
+                y[i] = static_cast<float>(*spl0);
             }
         }
         return y;
@@ -122,17 +123,17 @@ static double hz(double pitch) { return 440 * pow(2, (pitch - 69) / 12); }
 
 // a sung-ish tone: 1/k harmonics, optional ±cents vibrato at 5.5 Hz
 static std::vector<float> tone(double pitch, double seconds, double vibratoCents = 0) {
-    std::vector<float> x((size_t)(seconds * SR));
+    std::vector<float> x(static_cast<size_t>(seconds * SR));
     double ph = 0;
     for (size_t i = 0; i < x.size(); i++) {
-        const double f =
-            hz(pitch) * pow(2, vibratoCents / 1200 * sin(2 * M_PI * 5.5 * (double)i / SR));
+        const double f = hz(pitch) * pow(2, vibratoCents / 1200 *
+                                                sin(2 * M_PI * 5.5 * static_cast<double>(i) / SR));
         ph += 2 * M_PI * f / SR;
         double s = 0;
         for (int k = 1; k * hz(pitch) < 16000; k++) {
             s += sin(k * ph) / k;
         }
-        x[i] = (float)(0.2 * s);
+        x[i] = static_cast<float>(0.2 * s);
     }
     return x;
 }
@@ -140,9 +141,10 @@ static std::vector<float> tone(double pitch, double seconds, double vibratoCents
 // level of y relative to x in dB over [a, b) seconds
 static double gainDb(const std::vector<float> &x, const std::vector<float> &y, double a, double b) {
     double ex = 0, ey = 0;
-    for (size_t i = (size_t)(a * SR); i < (size_t)(b * SR) && i < x.size(); i++) {
-        ex += (double)x[i] * static_cast<double>(x[i]);
-        ey += (double)y[i] * static_cast<double>(y[i]);
+    for (size_t i = static_cast<size_t>(a * SR); i < static_cast<size_t>(b * SR) && i < x.size();
+         i++) {
+        ex += static_cast<double>(x[i]) * static_cast<double>(x[i]);
+        ey += static_cast<double>(y[i]) * static_cast<double>(y[i]);
     }
     return 10 * log10(ey / ex);
 }
@@ -183,9 +185,10 @@ int main() {
     {
         Fx fx;
         fx.set(100, -24, {{{0, 57}}});
-        std::vector<float> x((size_t)SR);
+        std::vector<float> x(static_cast<size_t>(SR));
         for (size_t i = 0; i < x.size(); i++) {
-            x[i] = (float)(0.3 * sin(2 * M_PI * hz(63) * (double)i / SR)); // a tritone above A3
+            x[i] = static_cast<float>(
+                0.3 * sin(2 * M_PI * hz(63) * static_cast<double>(i) / SR)); // a tritone above A3
         }
         const double g = gainDb(x, fx.run(x), 0.3, 1);
         printf("isolate background: %.1f dB\n", g);

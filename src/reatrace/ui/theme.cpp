@@ -3,7 +3,7 @@
 RGB mix(RGB a, RGB b, double f) {
     RGB out = 0;
     for (int sh = 0; sh < 24; sh += 8) {
-        out |= (RGB)lround(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f) << sh;
+        out |= static_cast<RGB>(lround(((a >> sh) & 255) * (1 - f) + ((b >> sh) & 255) * f)) << sh;
     }
     return out;
 }

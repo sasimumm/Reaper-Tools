@@ -28,7 +28,7 @@ void parallel(int n, std::atomic<bool> &stop, Body body,
     };
     std::vector<std::thread> threads;
     try {
-        threads.reserve((size_t)n);
+        threads.reserve(static_cast<size_t>(n));
         for (int i = 0; i < n; i++) {
             threads.emplace_back([&, i] {
                 try {

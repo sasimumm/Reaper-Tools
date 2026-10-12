@@ -71,12 +71,12 @@ void previewPitch(int pitch) {
     // was not played, leaving the note hanging)
     // clang-format off: one MIDI event per line
     const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96, 'M', 'T', 'r', 'k', 0, 0, 0, 16,
-                                 0, 0x90, (unsigned char)pitch, 96,
-                                 77, 0x80, (unsigned char)pitch, 0,
+                                 0, 0x90, static_cast<unsigned char>(pitch), 96,
+                                 77, 0x80, static_cast<unsigned char>(pitch), 0,
                                  10, 0xb0, 0x7b, 0,
                                  96, 0xff, 0x2f, 0};
     // clang-format on
-    const bool ok = write(fd, smf, sizeof(smf)) == (ssize_t)sizeof(smf);
+    const bool ok = write(fd, smf, sizeof(smf)) == static_cast<ssize_t>(sizeof(smf));
     close(fd);
     if (!ok) {
         return;

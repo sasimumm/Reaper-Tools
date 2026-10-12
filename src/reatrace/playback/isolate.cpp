@@ -24,7 +24,7 @@ static bool installJSFX() {
     RecursiveCreateDirectory(dir.c_str(), 0);
     std::ofstream out(path, std::ios::trunc);
     out << want;
-    return (bool)out;
+    return static_cast<bool>(out);
 }
 
 static MediaTrack *audioTrack() {
@@ -117,16 +117,16 @@ void updateIsolate() {
             (voice == g_session.voice ||
              (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1))) &&
             !covered(i)) {
-            spans[voice].push_back({a, b, (int)lround(sug[i].pitch), false, -1});
+            spans[voice].push_back({a, b, static_cast<int>(lround(sug[i].pitch)), false, -1});
         }
     }
-    std::vector<double> v((size_t)isolateParam(WINDOW_VOICES));
+    std::vector<double> v(static_cast<size_t>(isolateParam(WINDOW_VOICES)));
     v[0] = g_settings.isolateWidth;
     v[1] = g_settings.isolateBackground;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
         const auto sched = pitchSchedule(spans[voice], now - 1, ISOLATE_CHANGES);
-        size_t at = (size_t)isolateParam(voice);
-        v[at++] = (double)sched.size();
+        size_t at = static_cast<size_t>(isolateParam(voice));
+        v[at++] = static_cast<double>(sched.size());
         for (const auto &[t, p] : sched) {
             v[at++] = t;
             v[at++] = p;
@@ -134,7 +134,7 @@ void updateIsolate() {
     }
     for (size_t i = 0; i < v.size(); i++) {
         if (i >= g_sent.size() || g_sent[i] != v[i]) {
-            TrackFX_SetParam(tr, fx, (int)i, v[i]);
+            TrackFX_SetParam(tr, fx, static_cast<int>(i), v[i]);
         }
     }
     g_sent = std::move(v);

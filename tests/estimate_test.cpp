@@ -23,28 +23,29 @@ static void tone(std::vector<float> &x, double a, double b, double midi, float a
     const double f0 = 440 * pow(2, (midi - 69) / 12);
     double phase[9] = {};
     for (int h = 1; h <= 8; h++) {
-        phase[h] = rand() / (double)RAND_MAX * 6.3;
+        phase[h] = rand() / static_cast<double>(RAND_MAX) * 6.3;
     }
     double ph = 0;
-    for (long long i = (long long)(a * SR); i < (long long)(b * SR) && i < (long long)x.size();
-         i++) {
-        const double t = (double)i / SR, env = std::min(1.0, std::min(t - a, b - t) / 0.02);
+    for (long long i = static_cast<long long>(a * SR);
+         i < static_cast<long long>(b * SR) && i < static_cast<long long>(x.size()); i++) {
+        const double t = static_cast<double>(i) / SR,
+                     env = std::min(1.0, std::min(t - a, b - t) / 0.02);
         ph += 2 * M_PI * f0 * (1 + depth * sin(2 * M_PI * rate * t + vibPhase)) / SR;
         double v = 0;
         for (int h = 1; h <= 8; h++) {
             v += sin(h * ph + phase[h]) * pow(h, -0.6) * (h % 2 ? 1 : evenGain);
         }
-        x[i] += (float)(static_cast<double>(amp) * env * v);
+        x[i] += static_cast<float>(static_cast<double>(amp) * env * v);
     }
 }
 
 static Spectrogram analyze(const std::vector<float> &x) {
-    return computeNSGT(estimateNSGTParams(), (long long)x.size(),
-                       [&](long long st, int n, float *o) {
-                           for (int i = 0; i < n; i++) {
-                               o[i] = st + i >= 0 && st + i < (long long)x.size() ? x[st + i] : 0;
-                           }
-                       });
+    return computeNSGT(
+        estimateNSGTParams(), static_cast<long long>(x.size()), [&](long long st, int n, float *o) {
+            for (int i = 0; i < n; i++) {
+                o[i] = st + i >= 0 && st + i < static_cast<long long>(x.size()) ? x[st + i] : 0;
+            }
+        });
 }
 
 // The k strongest local maxima of a roll's mean over frames f0..f1, as MIDI pitches.
@@ -53,7 +54,7 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
     std::vector<double> m(n, 0);
     for (int f = f0; f < f1; f++) {
         for (int p = 0; p < n; p++) {
-            m[p] += static_cast<double>(roll[(size_t)f * n + p]);
+            m[p] += static_cast<double>(roll[static_cast<size_t>(f) * n + p]);
         }
     }
     std::vector<int> idx;
@@ -63,7 +64,7 @@ static std::vector<int> peaks(const std::vector<float> &roll, int lo, int n, int
         }
     }
     std::sort(idx.begin(), idx.end(), [&](int a, int b) { return m[a] > m[b]; });
-    idx.resize(std::min((int)idx.size(), k));
+    idx.resize(std::min(static_cast<int>(idx.size()), k));
     for (int &p : idx) {
         p += lo;
     }
@@ -138,28 +139,28 @@ int main() {
     // NMF finds chord notes without a phantom subharmonic (transcribe's mf0 voicings, incl. the E voicing)
     for (std::vector<int> v :
          {std::vector<int>{66, 71, 75}, {66, 70, 73}, {64, 68, 71}, {59, 64, 68}}) {
-        std::vector<float> x((size_t)(1.0 * SR));
+        std::vector<float> x(static_cast<size_t>(1.0 * SR));
         for (int m : v) {
             tone(x, 0, 1, m);
         }
         const Spectrogram s = analyze(x);
         const std::vector<int> got =
-            peaks(nmfRoll(s, lo, hi, false), lo, n, 20, s.frames - 20, (int)v.size());
+            peaks(nmfRoll(s, lo, hi, false), lo, n, 20, s.frames - 20, static_cast<int>(v.size()));
         printf("nmf %d %d %d -> %d %d %d\n", v[0], v[1], v[2], got[0], got[1], got[2]);
         assert(got == v);
     }
 
     // SACF: the strongest semitone of a single tone is the tone, and its sub-octave stays weak
     {
-        std::vector<float> x((size_t)(1.0 * SR));
+        std::vector<float> x(static_cast<size_t>(1.0 * SR));
         tone(x, 0, 1, 57);
-        const int frames = (int)(x.size() / 256) + 1;
+        const int frames = static_cast<int>(x.size() / 256) + 1;
         const std::vector<float> r = sacfRoll(x, frames, lo, hi);
         const std::vector<int> got = peaks(r, lo, n, 20, frames - 20, 1);
         double at = 0, sub = 0;
         for (int f = 20; f < frames - 20; f++) {
-            at += static_cast<double>(r[(size_t)f * n + 57 - lo]);
-            sub += static_cast<double>(r[(size_t)f * n + 45 - lo]);
+            at += static_cast<double>(r[static_cast<size_t>(f) * n + 57 - lo]);
+            sub += static_cast<double>(r[static_cast<size_t>(f) * n + 45 - lo]);
         }
         printf("sacf A3 -> %d, sub-octave %.2f of it\n", got[0], sub / at);
         assert(got[0] == 57 && sub < 0.3 * at);
@@ -168,14 +169,14 @@ int main() {
     // vote front ends: a sine reads A/2 * sqrt(window length) on the CQT (librosa's scale), at its bin;
     // CFP peaks at a tone's pitch and not at its octaves
     {
-        std::vector<float> x((size_t)(3 * SR));
+        std::vector<float> x(static_cast<size_t>(3 * SR));
         for (size_t i = 0; i < x.size(); i++) {
-            x[i] = 0.5f * (float)sin(2 * M_PI * 220 * (double)i / SR);
+            x[i] = 0.5f * static_cast<float>(sin(2 * M_PI * 220 * static_cast<double>(i) / SR));
         }
         for (double scale : {1.0, 1.5}) {
             for (int bpo : {36, 60}) {
                 const Spectrogram c = computeCQT(x, bpo, scale);
-                const int b = (int)lround(c.binOfPitch(57));
+                const int b = static_cast<int>(lround(c.binOfPitch(57)));
                 const double r = pow(2.0, 1.0 / bpo), alpha = (r * r - 1) / (r * r + 1),
                              L = scale * SR / (alpha * 220);
                 const double got = static_cast<double>(c.at(c.frames / 2, b)),
@@ -189,21 +190,22 @@ int main() {
                 assert(fabs(got / want - 1) < 0.05 && best == b);
             }
         }
-        std::vector<float> y((size_t)(2 * SR));
+        std::vector<float> y(static_cast<size_t>(2 * SR));
         tone(y, 0, 2, 57);
         const Spectrogram c = computeCFP(y);
         const int f = c.frames / 2;
-        const double at = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(57)))),
-                     up = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(69)))),
-                     down = static_cast<double>(c.at(f, (int)lround(c.binOfPitch(45))));
+        const double at = static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(57))))),
+                     up = static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(69))))),
+                     down =
+                         static_cast<double>(c.at(f, static_cast<int>(lround(c.binOfPitch(45)))));
         printf("cfp A3: octave above %.2f, below %.2f of it\n", up / at, down / at);
         assert(up < 0.5 * at && down < 0.5 * at);
     }
 
     // basic-pitch: posteriors at the right pitch and time, also in a later window (alignment)
-    std::vector<float> x((size_t)(8 * SR));
+    std::vector<float> x(static_cast<size_t>(8 * SR));
     for (float &v : x) {
-        v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);
+        v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
     }
     tone(x, 1.0, 2.0, 60), tone(x, 1.5, 2.5, 64), tone(x, 4.5, 5.5, 67), tone(x, 6.0, 6.8, 55);
     const Spectrogram s = analyze(x);
@@ -219,7 +221,7 @@ int main() {
     for (auto c :
          {std::make_pair(1.0, 60), std::make_pair(1.5, 64), std::make_pair(4.5, 67),
           std::make_pair(6.0, 55)}) {
-        const int expect = (int)lround(c.first * fr);
+        const int expect = static_cast<int>(lround(c.first * fr));
         int best = expect - 10;
         for (int f = expect - 10; f <= expect + 10; f++) {
             if (bp.onsetAt(f, c.second) > bp.onsetAt(best, c.second)) {
@@ -260,9 +262,9 @@ int main() {
     // octave doublings: a second singer an octave up (own vibrato) is added; one voice with strong even
     // partials (a formant) is not, since its "octave" moves with its own partials
     {
-        std::vector<float> y((size_t)(3 * SR));
+        std::vector<float> y(static_cast<size_t>(3 * SR));
         for (float &v : y) {
-            v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);
+            v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
         }
         tone(y, 0.5, 2.5, 62, 0.1f, 5.5, 0.006), tone(y, 0.5, 2.5, 74, 0.06f, 4.3, 0.006, 1, 2.0);
         const Spectrogram sy = analyze(y);
@@ -284,9 +286,9 @@ int main() {
                has(e, 74) ? "yes" : "no");
         assert(has(e, 62) && has(e, 74));
 
-        std::vector<float> z((size_t)(3 * SR));
+        std::vector<float> z(static_cast<size_t>(3 * SR));
         for (float &v : z) {
-            v = 0.0005f * ((float)(rand() / (double)RAND_MAX) - 0.5f);
+            v = 0.0005f * (static_cast<float>(rand() / static_cast<double>(RAND_MAX)) - 0.5f);
         }
         tone(z, 0.5, 2.5, 62, 0.1f, 5.5, 0.006, 3.0);
         const Spectrogram sz = analyze(z);
@@ -301,7 +303,7 @@ int main() {
 
     // speed on three minutes
     {
-        std::vector<float> y((size_t)(180 * SR));
+        std::vector<float> y(static_cast<size_t>(180 * SR));
         for (int k = 0; k < 90; k++) {
             tone(y, 2 * k, 2 * k + 1.5, 55 + (k * 7) % 20),
                 tone(y, 2 * k + 0.5, 2 * k + 1.8, 62 + (k * 5) % 12);

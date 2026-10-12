@@ -25,7 +25,7 @@ struct ViewMap {
     double t(double x) const { return t0 + (x - x0) / pps; }
     double y(double p) const { return y0 + (pitchTop - p) * rowH; }
     double p(double y) const { return pitchTop - (y - y0) / rowH; }
-    int pitchAt(double y) const { return (int)floor(p(y) + 0.5); }
+    int pitchAt(double y) const { return static_cast<int>(floor(p(y) + 0.5)); }
 };
 
 enum { MOD_SHIFT = 1, MOD_CMD = 2, MOD_ALT = 4 };

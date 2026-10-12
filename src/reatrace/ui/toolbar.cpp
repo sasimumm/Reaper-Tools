@@ -34,7 +34,7 @@ struct Item {
 
 const char *const VOICE_LABELS[WINDOW_VOICES] = {"Lead", "2", "3", "4"};
 
-int textWidth(const char *s) { return 7 * (int)strlen(s); } // 12 px Helvetica, roughly
+int textWidth(const char *s) { return 7 * static_cast<int>(strlen(s)); } // 12 px Helvetica, roughly
 
 // The items left to right (the help and panel buttons on the right); what doesn't fit is left out.
 std::vector<Item> items(const Layout &L) {
