@@ -28,7 +28,7 @@ static LayerKey g_layerKey;
 
 static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
-// Black-key rows darkened as Canvas::fill(.., 0x000000, 40) would, baked into the layer.
+// Black-key rows darkened as Canvas::fill(.., C_SHADOW, 40) would, baked into the layer.
 static unsigned int shadeBlack(unsigned int c) {
     const unsigned int k = 256 - 40;
     return 0xff000000 | ((((c & 0xff00ff) * k) >> 8) & 0xff00ff) |
@@ -318,10 +318,10 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
         const bool strong = rel > -12;
         for (int x = xA; x < xB; x += 8) {
             cv.fill(x, y - GUIDE_THICKNESS / 2, x + 4, y - GUIDE_THICKNESS / 2 + GUIDE_THICKNESS,
-                    strong ? C_WARN : 0xa0a0a0, strong ? 256 : a);
+                    strong ? C_WARN : C_TICK, strong ? 256 : a);
         }
         snprintf(buf, sizeof(buf), "%s %+.0f dB", c.label, rel);
-        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? C_WARN : 0xa0a0a0, DT_LEFT);
+        text(dc, buf, xB + 3, y - 8, xB + 120, y + 8, strong ? C_WARN : C_TICK, DT_LEFT);
     }
 }
 
@@ -343,8 +343,8 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;
         const int a = v >= 0 ? 256 : 180, t = y1 - y0 >= 8 ? 2 : 1; // dash thickness
         cv.rounded(x0, y0, x1, y1, col, v >= 0 ? 60 : 30);
-        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, 0x000000, 1, 170);
-        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, 0x000000, 1, 110);
+        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, C_SHADOW, 1, 170);
+        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, C_SHADOW, 1, 110);
         for (int x = x0 + 1; x < x1 - 1; x += 8) {
             cv.fill(x, y0, std::min(x + 5, x1 - 1), y0 + t, col, a),
                 cv.fill(x, y1 - t, std::min(x + 5, x1 - 1), y1, col, a);
@@ -397,7 +397,7 @@ static void drawContour(Canvas &cv, const Rect &n) {
         }
         prev = pitchAt(fb) >= 0 ? pitchAt(fb) : hi;
         const int y0 = (int)lround(g_ui.view.y(hi)), y1 = (int)lround(g_ui.view.y(lo));
-        cv.fill(x, y0 - 2, x + 1, y1 + 3, 0x000000, 150);
+        cv.fill(x, y0 - 2, x + 1, y1 + 3, C_SHADOW, 150);
         cv.fill(x, y0 - 1, x + 1, y1 + 2, C_CONTOUR);
     }
 }
@@ -514,7 +514,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     cv.fill(0, n.b, n.l, s.t, g_theme.button);
     cv.clip = s;
     cv.fill(s.l, s.t, s.r, s.b, g_theme.ruler);
-    cv.fill(s.l, s.t, s.r, s.t + 1, 0x000000);
+    cv.fill(s.l, s.t, s.r, s.t + 1, C_SEPARATOR);
     char buf[160];
     static const int COLS[] = {44, 84, 112, 64, 92, 76, 100}; // widths, points
     std::string col[7];
@@ -608,7 +608,7 @@ static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
     const int cx = (n.l + n.r) / 2, cy = (n.t + n.b) / 2;
     auto banner = [&](const char *msg, int y) {
         const int w = 24 + 7 * (int)strlen(msg);
-        cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, 0x000000, 150);
+        cv.rounded(cx - w / 2, y - 14, cx + w / 2, y + 14, C_SHADOW, 150);
         text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
     };
     char buf[300];
@@ -672,7 +672,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
     };
     const Rect c = L.client, n = L.notes;
     cv.clip = c;
-    cv.fill(0, n.t, c.r, c.b, 0x0c0d11, 215);
+    cv.fill(0, n.t, c.r, c.b, C_SCRIM, 215);
     const int cols = 3, colW = std::min(300, (c.r - 80) / cols), x0 = (c.r - colW * cols) / 2;
     text(dc, "Shortcuts   (? or Esc to close)", x0, n.t + 14, x0 + colW * cols, n.t + 34,
          g_theme.text, DT_LEFT);
@@ -712,7 +712,7 @@ static void drawLaneLabels(Canvas &cv, HDC dc, const Layout &L) {
             text(dc, lane.label, 6, lr.t, KB_W - 4, lr.b, hov ? g_theme.text : g_theme.dim,
                  DT_LEFT);
         }
-        cv.fill(0, lr.t, L.notes.r, lr.t + 1, 0x000000);
+        cv.fill(0, lr.t, L.notes.r, lr.t + 1, C_SEPARATOR);
     }
 }
 
@@ -842,11 +842,11 @@ void paint(HDC hdc) {
     const int pLo = (int)floor(g_ui.view.p(n.b)), pHi = (int)ceil(g_ui.view.p(n.t));
     for (int p = pLo; p <= pHi; p++) {
         const int y = (int)lround(g_ui.view.y(p - 0.5)); // boundary below pitch p
-        cv.fill(n.l, y, n.r, y + 1, 0xffffff, p % 12 == 0 ? 50 : 10);
+        cv.fill(n.l, y, n.r, y + 1, C_GRID, p % 12 == 0 ? 50 : 10);
     }
     std::vector<GridLine> grid = gridLines(n);
     for (const GridLine &g : grid) {
-        cv.fill(g.x, n.t, g.x + 1, n.b, 0xffffff, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
+        cv.fill(g.x, n.t, g.x + 1, n.b, C_GRID, g.level == 0 ? 70 : g.level == 1 ? 32 : 14);
     }
 
     drawGhosts(cv);
@@ -883,7 +883,7 @@ void paint(HDC hdc) {
         // solid with a darker edge; selected ones get a light outline, so lyrics stay readable
         const bool sel = nt.sel || (int)i == drawing;
         cv.rounded(x0, y0, x1, y1, noteColour, 245);
-        cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, 0x000000, 0.55));
+        cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, C_SHADOW, 0.55));
         if (sel) {
             cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, C_OUTLINE, y1 - y0 > 6 ? 2 : 1);
         }
@@ -903,16 +903,16 @@ void paint(HDC hdc) {
         }
         if (y1 - y0 >= 12) {
             text(dc, nt.lyric.c_str(), l, std::max(y0, n.t), std::min(x1 - 1, n.r),
-                 std::min(y1, n.b), mix(noteColour, 0x000000, 0.85), DT_LEFT);
+                 std::min(y1, n.b), mix(noteColour, C_SHADOW, 0.85), DT_LEFT);
         } else if (y1 + 14 <= n.b) {
-            text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, 0xffffff, DT_LEFT);
+            text(dc, nt.lyric.c_str(), l, y1, r, y1 + 14, C_HIGHLIGHT, DT_LEFT);
         }
     }
 
     double mr[4];
     if (g_session.ed.marquee(mr)) {
-        cv.fill((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], 0xffffff, 30);
-        cv.frame((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], 0xffffff);
+        cv.fill((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], C_HIGHLIGHT, 30);
+        cv.frame((int)mr[0], (int)mr[1], (int)mr[2], (int)mr[3], C_HIGHLIGHT);
     }
 
     // keyboard
@@ -933,19 +933,19 @@ void paint(HDC hdc) {
             text(dc, buf, 2, y0, n.l - 4, y1, C_KEY_TEXT, DT_RIGHT);
         }
     }
-    cv.fill(n.l - 1, n.t, n.l, n.b, 0x000000);
+    cv.fill(n.l - 1, n.t, n.l, n.b, C_SEPARATOR);
 
     // ruler: bars on top, seconds below
     const int rt = ru.t; // under the toolbar
     cv.clip = {0, rt, ru.r, ru.b};
     cv.fill(0, rt, ru.r, ru.b, g_theme.ruler);
-    cv.fill(0, ru.b - 1, ru.r, ru.b, 0x000000);
+    cv.fill(0, ru.b - 1, ru.r, ru.b, C_SEPARATOR);
     int lastLabel = -1000;
     for (const GridLine &g : grid) {
         if (g.level > 1) {
             continue;
         }
-        cv.fill(g.x, rt + (g.level == 0 ? 0 : 8), g.x + 1, rt + 14, 0xa0a0a0);
+        cv.fill(g.x, rt + (g.level == 0 ? 0 : 8), g.x + 1, rt + 14, C_TICK);
         if (g.level == 0 && g.x - lastLabel >= 36) {
             snprintf(buf, sizeof(buf), "%d", g.measure + 1);
             text(dc, buf, g.x + 3, rt, g.x + 60, rt + 14, g_theme.text, DT_LEFT);
@@ -963,7 +963,7 @@ void paint(HDC hdc) {
          (double)k * secStep <= g_ui.view.t(n.r); k++) {
         const double t = (double)k * secStep;
         const int x = (int)lround(g_ui.view.x(t));
-        cv.fill(x, rt + 22, x + 1, ru.b - 1, 0x707070);
+        cv.fill(x, rt + 22, x + 1, ru.b - 1, C_TICK_MINOR);
         format_timestr_pos(t, buf, sizeof(buf), 0);
         monoText(dc, buf, x + 3, rt + 14, x + 90, ru.b - 1, g_theme.dim, DT_LEFT);
     }
@@ -985,11 +985,11 @@ void paint(HDC hdc) {
             if (xb < ch.l || xa > ch.r) {
                 continue;
             }
-            cv.fill(xa, ch.t, xa + 1, ch.b, 0xa0a0a0);
+            cv.fill(xa, ch.t, xa + 1, ch.b, C_TICK);
             text(dc, span.name.c_str(), std::max(xa + 3, ch.l), ch.t, std::min(xb - 1, ch.r), ch.b,
                  g_theme.text, DT_LEFT);
         }
-        cv.fill(ch.l, ch.b - 1, ch.r, ch.b, 0x000000);
+        cv.fill(ch.l, ch.b - 1, ch.r, ch.b, C_SEPARATOR);
     }
 
     // time selection
@@ -998,8 +998,9 @@ void paint(HDC hdc) {
     GetSet_LoopTimeRange2(NULL, false, false, &selA, &selB, false);
     if (selB > selA) {
         const int xa = (int)lround(g_ui.view.x(selA)), xb = (int)lround(g_ui.view.x(selB));
-        cv.fill(xa, ru.t, xb, n.b, 0xffffff, 22);
-        cv.fill(xa, ru.t, xa + 1, n.b, 0xffffff, 90), cv.fill(xb, ru.t, xb + 1, n.b, 0xffffff, 90);
+        cv.fill(xa, ru.t, xb, n.b, C_HIGHLIGHT, 22);
+        cv.fill(xa, ru.t, xa + 1, n.b, C_HIGHLIGHT, 90),
+            cv.fill(xb, ru.t, xb + 1, n.b, C_HIGHLIGHT, 90);
     }
 
     // cursors
@@ -1027,7 +1028,7 @@ void paint(HDC hdc) {
             }
             cv.fill(sx, ly.t, sx + 1, ly.t + 4, noteColour);
             text(dc, nt.lyric.c_str(), std::max(sx + 2, ly.l), ly.t, std::min(next - 1, ly.r), ly.b,
-                 nt.sel ? 0xffffff : g_theme.text, DT_LEFT);
+                 nt.sel ? C_HIGHLIGHT : g_theme.text, DT_LEFT);
         }
     }
 
@@ -1053,9 +1054,9 @@ void paint(HDC hdc) {
         }
         const int va = (int)lround(overviewX(o, g_ui.view.t(n.l))),
                   vb = std::max(va + 2, (int)lround(overviewX(o, g_ui.view.t(n.r))));
-        cv.fill(o.l, o.t, va, o.b, 0x000000, 120), cv.fill(vb, o.t, o.r, o.b, 0x000000, 120);
-        cv.frame(va, o.t, vb, o.b, 0xffffff);
-        cv.fill(o.l, o.t, o.r, o.t + 1, 0x000000);
+        cv.fill(o.l, o.t, va, o.b, C_SHADOW, 120), cv.fill(vb, o.t, o.r, o.b, C_SHADOW, 120);
+        cv.frame(va, o.t, vb, o.b, C_HIGHLIGHT);
+        cv.fill(o.l, o.t, o.r, o.t + 1, C_SEPARATOR);
     }
 
     drawEmptyStates(cv, dc, n);

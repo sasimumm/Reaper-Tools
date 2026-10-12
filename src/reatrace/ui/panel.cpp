@@ -543,7 +543,7 @@ void drawPanel(Canvas &cv, HDC dc) {
     }
     cv.clip = p; // scrolled widgets stay out of the toolbar and the status line
     cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
-    cv.fill(p.l, p.t, p.l + 1, p.b, 0x000000);
+    cv.fill(p.l, p.t, p.l + 1, p.b, C_SEPARATOR);
     std::vector<Widget> ws = widgets();
     int top = panelArea().t + 8 - g_panelScroll;
     char buf[64];

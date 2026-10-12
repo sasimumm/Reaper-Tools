@@ -32,3 +32,11 @@ static const unsigned int C_ON_TEXT = 0x14161c; // text on a bright fill
 // The keyboard column.
 static const unsigned int C_KEY_WHITE = 0xd8d8d8, C_KEY_BLACK = 0x303030, C_KEY_EDGE = 0x888888,
                           C_KEY_TEXT = 0x202020;
+// Lines and overlays, mostly drawn with some transparency.
+static const unsigned int C_SEPARATOR = 0x000000;  // the 1-pixel lines between the window's parts
+static const unsigned int C_SHADOW = 0x000000;     // outlines, backdrops, darkened notes and keys
+static const unsigned int C_SCRIM = 0x0c0d11;      // behind the shortcuts overlay
+static const unsigned int C_GRID = 0xffffff;       // pitch rows and the tempo grid in the note area
+static const unsigned int C_HIGHLIGHT = 0xffffff;  // marquee, time selection, selected lyrics
+static const unsigned int C_TICK = 0xa0a0a0;       // ruler beats, chord boundaries, octave check
+static const unsigned int C_TICK_MINOR = 0x707070; // ruler seconds
