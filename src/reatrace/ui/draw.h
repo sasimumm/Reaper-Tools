@@ -6,12 +6,12 @@
 
 // Coordinates and clip are in points; px/w/h are the device-pixel backbuffer.
 struct Canvas {
-    Pixel *px;
+    ARGB *px;
     int w, h;
     Rect clip;
     int scale; // device pixels per point
 
-    void fill(int x0, int y0, int x1, int y1, Colour col, int a = 256) {
+    void fill(int x0, int y0, int x1, int y1, RGB col, int a = 256) {
         const int s = scale;
         x0 = std::max(std::max(x0, clip.l) * s, 0), y0 = std::max(std::max(y0, clip.t) * s, 0);
         x1 = std::min(std::min(x1, clip.r) * s, w), y1 = std::min(std::min(y1, clip.b) * s, h);
@@ -25,7 +25,7 @@ struct Canvas {
             return;
         }
         for (int y = y0; y < y1; y++) {
-            Pixel *p = px + (size_t)y * w;
+            ARGB *p = px + (size_t)y * w;
             for (int x = x0; x < x1; x++) {
                 p[x] = blend(p[x], col, a);
             }
