@@ -380,11 +380,14 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
         const int *perm = WDL_fft_permute_tab(SACF_NFFT / 2), *iperm = WDL_fft_permute_tab(NI / 2);
         std::vector<float> pw(SACF_NFFT / 2 + 1), expo(pw.size(), (float)(SACF_K / 2));
         int bins = (int)pw.size();
+        // the bands' compressed spectra, summed per frame: the inverse FFT is linear, so one per
+        // frame after the band loop gives the summed autocorrelation
+        std::vector<float> psum((size_t)chunk * pw.size());
         for (int ci = 0; !cancel && (ci = next++) < chunks;) {
             const int c0 = ci * chunk, fc = std::min(chunk, F - c0);
             const long long s0 = (long long)c0 * HOP - SACF_NFFT / 2 - SACF_MARGIN;
             const int len = (fc - 1) * HOP + SACF_NFFT + 2 * SACF_MARGIN;
-            std::fill(acc.begin(), acc.end(), 0.0f);
+            std::fill(psum.begin(), psum.end(), 0.0f);
             for (int band = 0; band < SACF_BANDS; band++) {
                 x.assign(len, 0);
                 for (int i = 0; i < len; i++) {
@@ -409,16 +412,21 @@ std::vector<float> sacfRoll(const std::vector<float> &mono, int frames, int lo, 
                         pw[k] = X[perm[k]].re * X[perm[k]].re + X[perm[k]].im * X[perm[k]].im;
                     }
                     vvpowf(pw.data(), expo.data(), pw.data(), &bins);
-                    std::fill(ibuf.begin(), ibuf.end(), 0);
-                    WDL_FFT_COMPLEX *Y = (WDL_FFT_COMPLEX *)ibuf.data();
-                    for (int k = 0; k <= SACF_NFFT / 2; k++) {
-                        Y[iperm[k]].re = pw[k];
-                    }
-                    WDL_real_fft(ibuf.data(), NI, 1);
-                    float *a = &acc[(size_t)f * maxlag];
-                    for (int l = 0; l < maxlag; l++) {
-                        a[l] += (float)ibuf[l];
-                    }
+                    float *ps = &psum[(size_t)f * pw.size()];
+                    vDSP_vadd(ps, 1, pw.data(), 1, ps, 1, pw.size());
+                }
+            }
+            for (int f = 0; f < fc; f++) {
+                const float *ps = &psum[(size_t)f * pw.size()];
+                std::fill(ibuf.begin(), ibuf.end(), 0);
+                WDL_FFT_COMPLEX *Y = (WDL_FFT_COMPLEX *)ibuf.data();
+                for (int k = 0; k <= SACF_NFFT / 2; k++) {
+                    Y[iperm[k]].re = ps[k];
+                }
+                WDL_real_fft(ibuf.data(), NI, 1);
+                float *a = &acc[(size_t)f * maxlag];
+                for (int l = 0; l < maxlag; l++) {
+                    a[l] = (float)ibuf[l];
                 }
             }
             for (int f = 0; f < fc; f++) {
