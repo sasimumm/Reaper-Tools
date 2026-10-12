@@ -23,9 +23,11 @@ Restart REAPER after deploying. `make help` lists the rest; they wrap the CMake 
 - `make lint`: clang-tidy (from Homebrew's `llvm`; checks in `.clang-tidy`).
 - `make format`, `make format-check`: clang-format (also Homebrew's `llvm`; style in `.clang-format`).
 
-Our sources build with `-Wall -Wextra -Wshadow -Wconversion` as errors (`-DREATRACE_WERROR=OFF` to
-relax), and libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string` indexing,
-also in the extensions.
+Our sources build with strict warnings as errors (`-DREATRACE_WERROR=OFF` to relax), among them
+`-Wpedantic`, `-Wconversion`, `-Wsign-conversion`, `-Wdouble-promotion`, `-Wold-style-cast` and
+`-Wcomma`; the list is in `CMakeLists.txt`, and vendor code is left out. `make lint` fails on any
+clang-tidy finding. libc++'s hardening mode bounds-checks `std::vector`/`std::span`/`std::string`
+indexing, also in the extensions.
 
 ## Layout
 
