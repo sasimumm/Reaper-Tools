@@ -35,6 +35,7 @@ struct Settings {
     bool followTheme = true;  // else the built-in dark colours
     bool linkArrange = false; // keep the visible time range in sync with REAPER's arrange view
     bool followPlay = true;   // page the view along with the play cursor
+    double isolateWidth = 100, isolateBackground = -24; // the isolate filter: cents, dB
 };
 
 // --- layout, in points ------------------------------------------------------------------
@@ -84,3 +85,7 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch);
 // [t0, t0 + width)) to `now` outside it, else t0. The cursor lands a twentieth of the way in.
 // A cursor already outside on the previous tick (the view scrolled away) is left alone.
 double followPage(double t0, double width, double prev, double now);
+
+// The isolate filter's pitch changes: (start, pitch) of the first `max` spans by start that end
+// after `from`.
+std::vector<std::pair<double, int>> pitchSchedule(std::vector<Note> spans, double from, size_t max);

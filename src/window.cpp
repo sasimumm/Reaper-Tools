@@ -5,6 +5,7 @@
 #include "analysis.h"
 #include "commands.h"
 #include "guard.h"
+#include "isolate.h"
 #include "lyrics.h"
 #include "paint.h"
 #include "panel.h"
@@ -246,6 +247,8 @@ static bool onKey(int key) {
         g_ui.dockPending = true;
     } else if (key == 'L' && !m) {
         g_settings.linkArrange = !g_settings.linkArrange;
+    } else if (key == 'I' && !m) {
+        setIsolate(!isolateOn());
     } else if (key == 'T' && !m) {
         g_settings.followPlay = !g_settings.followPlay;
     } else if (key == 'N' && !m) {
@@ -334,6 +337,7 @@ static bool isOurKey(int key, int flags) {
     case 'Q':
     case 'L':
     case 'T':
+    case 'I':
     case 'K':
     case 'J':
     case 'R':
@@ -575,6 +579,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         stopPreviews(false);
         g_ui.edit = NULL; // destroyed with the window
         if (!g_recreating) {
+            setIsolate(false); // it follows this window's notes: don't leave it filtering
             cancelJob(), clearCache();
         }
         releasePaintCache();
@@ -728,6 +733,7 @@ void Window_Timer() {
         loadNotes(); // created elsewhere
     }
     loadOtherVoices(false);
+    updateIsolate();
 
     const int state = GetPlayState(), change = GetProjectStateChangeCount(NULL);
     const double playPos = GetPlayPosition2(), cursor = GetCursorPosition();

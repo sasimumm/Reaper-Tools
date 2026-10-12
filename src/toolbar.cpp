@@ -1,6 +1,7 @@
 #include "toolbar.h"
 
 #include "commands.h"
+#include "isolate.h"
 #include "panel.h"
 
 namespace {
@@ -16,6 +17,7 @@ enum Kind {
     EXPLAIN,
     LISTEN,
     SPEED,
+    ISOLATE,
     FOLLOW,
     HELP,
     PANEL
@@ -95,6 +97,8 @@ std::vector<Item> items(const Layout &L) {
     };
     add(LABEL, 0, "HEAR", "", 38);
     segment(LISTEN, HEAR, HEAR_TIPS, 3);
+    add(ISOLATE, 0, "Isolate", "Hear only the edited voice's pitch and overtones (I)",
+        textWidth("Isolate") + 16);
     static const char *const SPEEDS[] = {"100%", "75%", "50%"};
     static const char *const SPEED_TIPS[] = {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"
@@ -121,6 +125,7 @@ bool isOn(const Item &it) {
     case LISTEN: return it.arg == listenMode();
     case SPEED: return it.arg == speedIndex();
     case FOLLOW: return g_settings.followPlay;
+    case ISOLATE: return isolateOn();
     case HELP: return g_ui.help;
     case PANEL: return g_ui.panel;
     case LABEL: return false;
@@ -217,6 +222,7 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
     case LISTEN: setListen(it->arg); break;
     case SPEED: setSpeed(it->arg); break;
     case FOLLOW: g_settings.followPlay = !g_settings.followPlay; break;
+    case ISOLATE: setIsolate(!isolateOn()); break;
     case HELP: g_ui.help = !g_ui.help; break;
     case PANEL: g_ui.panel = !g_ui.panel; break;
     case LABEL: break;

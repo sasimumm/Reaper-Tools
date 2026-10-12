@@ -106,5 +106,17 @@ int main() {
         assert(followPage(10, 4, 13.9, 2) == 1.8);     // loop back to before the view
         assert(followPage(10, 4, 20, 20.1) == 10);     // scrolled away from the cursor
     }
+    // isolate schedule: by start, only spans still to come (or sounding), at most `max`
+    {
+        const std::vector<Note> spans = {
+            {3, 4, 64, false, -1},
+            {0, 1, 60, false, -1},
+            {1, 2.5, 62, false, -1},
+            {5, 6, 67, false, -1}
+        };
+        const auto s = pitchSchedule(spans, 2, 2);
+        assert(s.size() == 2 && s[0] == std::make_pair(1.0, 62) && s[1] == std::make_pair(3.0, 64));
+        assert(pitchSchedule(spans, 10, 5).empty());
+    }
     printf("ok\n");
 }

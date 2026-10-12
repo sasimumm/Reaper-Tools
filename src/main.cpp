@@ -69,6 +69,11 @@
 #define REAPERAPI_WANT_TimeMap2_timeToQN
 #define REAPERAPI_WANT_TimeMap_QNToMeasures
 #define REAPERAPI_WANT_TrackFX_AddByName
+#define REAPERAPI_WANT_TrackFX_Delete
+#define REAPERAPI_WANT_TrackFX_GetCount
+#define REAPERAPI_WANT_TrackFX_GetFXName
+#define REAPERAPI_WANT_TrackFX_SetParam
+#define REAPERAPI_WANT_RecursiveCreateDirectory
 #define REAPERAPI_WANT_Undo_BeginBlock2
 #define REAPERAPI_WANT_Undo_EndBlock2
 #define REAPERAPI_WANT_UpdateArrange

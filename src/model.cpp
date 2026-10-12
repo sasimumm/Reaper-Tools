@@ -44,6 +44,8 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "theme", .b = &s.followTheme},
         {.name = "linkarrange", .b = &s.linkArrange},
         {.name = "followplay", .b = &s.followPlay},
+        {.name = "isolatewidth", .d = &s.isolateWidth, .lo = 20, .hi = 400},
+        {.name = "isolatebg", .d = &s.isolateBackground, .lo = -60, .hi = 0},
         {.name = "snap", .i = &s.snapMode, .lo = 0, .hi = SNAP_GRID},
         {.name = "quantise", .d = &s.quantStrength, .lo = 0, .hi = 1},
     };
@@ -114,6 +116,19 @@ bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)>
 double followPage(double t0, double width, double prev, double now) {
     const auto in = [&](double t) { return t >= t0 && t < t0 + width; };
     return in(prev) && !in(now) ? now - width / 20 : t0;
+}
+
+std::vector<std::pair<double, int>> pitchSchedule(std::vector<Note> spans, double from,
+                                                  size_t max) {
+    std::sort(spans.begin(), spans.end(),
+              [](const Note &a, const Note &b) { return a.start < b.start; });
+    std::vector<std::pair<double, int>> out;
+    for (const Note &n : spans) {
+        if (n.end > from && out.size() < max) {
+            out.emplace_back(n.start, n.pitch);
+        }
+    }
+    return out;
 }
 
 bool coversSuggestion(const Note &n, double start, double end, double pitch) {

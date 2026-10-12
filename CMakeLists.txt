@@ -36,6 +36,8 @@ add_library(reaper_reatrace MODULE
   src/settings.cpp
   src/takesync.cpp
   src/toolbar.cpp
+  src/isolate.cpp
+  src/isolatefx.cpp
   src/notesync.cpp
   src/model.cpp
   src/contour.cpp
@@ -92,11 +94,22 @@ target_compile_definitions(estimate_test PRIVATE BASIC_PITCH_MODEL="${BASIC_PITC
 target_link_libraries(estimate_test PRIVATE "-framework Foundation" "-framework CoreML" "-framework Accelerate")
 add_dependencies(estimate_test basic_pitch_model)
 
+# The isolate JSFX run through EEL2 (portable interpreter, not REAPER's JIT; same language).
+set(EEL2 ${WDL}/eel2)
+add_library(eel2 STATIC ${EEL2}/nseel-caltab.c ${EEL2}/nseel-compiler.c ${EEL2}/nseel-eval.c
+  ${EEL2}/nseel-lextab.c ${EEL2}/nseel-ram.c ${EEL2}/nseel-yylex.c ${EEL2}/nseel-cfunc.c)
+target_compile_definitions(eel2 PUBLIC EEL_TARGET_PORTABLE NSEEL_LOOPFUNC_SUPPORT_MAXLEN=0)
+target_compile_options(eel2 PRIVATE -w -fsigned-char)
+target_include_directories(eel2 SYSTEM PUBLIC ${WDL})
+add_executable(isolate_test tests/isolate_test.cpp src/isolatefx.cpp)
+target_link_libraries(isolate_test PRIVATE eel2)
+target_compile_options(isolate_test PRIVATE -UNDEBUG)
+
 # Sanitized self-checks: cmake -B build-asan -DREATRACE_SANITIZE=address,undefined (or thread), in a
 # separate build directory; the plugin itself is not sanitized (it runs inside REAPER).
 set(REATRACE_SANITIZE "" CACHE STRING "Sanitizers for the self-check programs, e.g. address,undefined or thread")
 if(REATRACE_SANITIZE)
-  foreach(t nsgt_test editor_test notesync_test model_test contour_test estimate_test)
+  foreach(t nsgt_test editor_test notesync_test model_test contour_test estimate_test isolate_test)
     target_compile_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE} -fno-omit-frame-pointer -fno-sanitize-recover=all -g)
     target_link_options(${t} PRIVATE -fsanitize=${REATRACE_SANITIZE})
   endforeach()

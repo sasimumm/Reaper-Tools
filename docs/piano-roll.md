@@ -204,7 +204,7 @@ tempo tools and markers-to-tempo conversion. We display the tempo map and leave 
 | PLAY-6 | P1 | ✅ | Slow playback: 100/75/50% buttons set the master playrate and turn on preserve pitch (action 40671, assumed). |
 | PLAY-7 | P2 | — | Scrub with the mouse over the ruler (REAPER's scrub, or DrawScore's spectral-freeze idea, unproven). |
 | PLAY-8 | P1 | — | Reference tone while holding a key on the keyboard, to compare against the sung pitch. |
-| PLAY-9 | P2 | — | Filtered listening: play only the frequency band around the selected note's pitch and its overtones (isolates the vocal in a mix). |
+| PLAY-9 | P2 | ✅ | Filtered listening: play only the frequency band around the selected note's pitch and its overtones (isolates the vocal in a mix). I or the toolbar's Isolate puts a JSFX (written to Effects/ReaTrace/isolate.jsfx) on the audio track. It follows the edited voice's notes, or that voice's suggestions where none are drawn, holding the last pitch between them. The extension sends the coming pitch changes and the JSFX switches by its own play position, so render-ahead doesn't delay them. Each overtone has two band-passes in series, 100 cents wide (constant Q, vibrato stays in), narrower where overtones crowd together; the rest plays at −24 dB. Width and level are in the panel's Playback section. In the EEL2 self-check, notes a semitone or a minor third away drop ~13 dB; shared overtones can't be separated. The JSFX is removed when the window closes. |
 
 ## 8. REAPER integration and robustness
 
@@ -247,5 +247,5 @@ Measured on Apple Silicon for 3 minutes of audio:
    item auto-extend (INT-4); bass analysis (SPEC-5) was tried and removed. Left: reference tone
    (PLAY-8), several audio items per track (INT-5), tuning reference (PITCH-9).
 6. — **Experiments:** pitch bends from the contour (PITCH-10), harmony contours (PITCH-11),
-   harmonic/percussive separation (SPEC-9), filtered listening (PLAY-9), automatic hyphenation
+   harmonic/percussive separation (SPEC-9), automatic hyphenation
    (LYR-6).
