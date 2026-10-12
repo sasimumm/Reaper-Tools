@@ -339,13 +339,10 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         const Segment &sg = sug[i];
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         segmentRect(sg, &x0, &y0, &x1, &y1);
-        if (x1 < n.l || x0 > n.r || covered(sg)) {
+        if (x1 < n.l || x0 > n.r || suggestionHidden(i) || covered(sg)) {
             continue;
         }
         const int v = suggestionVoice(i);
-        if (v >= 0 && (g_ui.hiddenVoices >> v & 1)) {
-            continue;
-        }
         // dashed in the colour of the voice A puts it in (not a note yet), on a dark outline and
         // a tint so it stands out from bright energy
         const unsigned int col = v >= 0 ? VOICE_COLOURS[v] : C_CROWDED;

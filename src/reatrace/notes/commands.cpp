@@ -99,6 +99,11 @@ void segmentRect(const Segment &sg, int *x0, int *y0, int *x1, int *y1) {
     *y1 = std::max(*y0 + 3, (int)lround(g_ui.view.y(p - 0.5)));
 }
 
+bool suggestionHidden(size_t i) {
+    const int v = suggestionVoice(i);
+    return v >= 0 && (g_ui.hiddenVoices >> v & 1);
+}
+
 int suggestionAt(int x, int y) {
     if (!g_settings.suggest) {
         return -1;
@@ -107,7 +112,8 @@ int suggestionAt(int x, int y) {
     for (size_t i = 0; i < sug.size(); i++) {
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
         segmentRect(sug[i], &x0, &y0, &x1, &y1);
-        if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !covered(sug[i])) {
+        if (x >= x0 - 2 && x < x1 + 2 && y >= y0 - 2 && y < y1 + 2 && !suggestionHidden(i) &&
+            !covered(sug[i])) {
             return (int)i;
         }
     }
@@ -167,7 +173,8 @@ void acceptVisibleSuggestions() {
         const Segment &sg = sug[i];
         const double a = frameTime(sg.f0), b = frameTime(sg.f1 + 1);
         const int v = suggestionVoice(i);
-        if (v < 0 || b < g_ui.view.t(n.l) || a > g_ui.view.t(n.r) || covered(sg)) {
+        if (v < 0 || suggestionHidden(i) || b < g_ui.view.t(n.l) || a > g_ui.view.t(n.r) ||
+            covered(sg)) {
             continue;
         }
         byVoice[v].push_back({a, b, (int)lround(sg.pitch), false, -1});
