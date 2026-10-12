@@ -1,3 +1,5 @@
+// The background analysis of the open item and its caches: one display spectrogram (with its
+// pitch contour, segments and onsets) per channel, and the last note estimate.
 #include "analysis.h"
 
 #include <array>
@@ -10,6 +12,10 @@
 #include "index.h"
 
 // --- spectrogram ---------------------------------------------------------------
+
+// The raw channels a spectrogram is computed from (CH_MIX..CH_SIDE); the centre is derived from
+// the mix and side ones.
+static const int RAW_CHANNELS = CH_SIDE + 1;
 
 void updateValues() {
     renderValues(*g_analysis.spec, g_settings.rp, g_analysis.val);
@@ -34,15 +40,17 @@ struct AudioKey {
     bool operator==(const AudioKey &) const = default;
 };
 
+// Whether two transforms give the same spectrogram.
+static bool sameNSGT(const NSGTParams &a, const NSGTParams &b) {
+    return a.sampleRate == b.sampleRate && a.fmin == b.fmin && a.fmax == b.fmax &&
+           a.binsPerOctave == b.binsPerOctave && a.hop == b.hop && a.gamma == b.gamma;
+}
+
 // What a channel's display spectrogram (and its contour, onsets) depends on.
 struct SpecKey {
     AudioKey audio;
     NSGTParams p;
-    bool operator==(const SpecKey &o) const {
-        return audio == o.audio && p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin &&
-               p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave && p.hop == o.p.hop &&
-               p.gamma == o.p.gamma;
-    }
+    bool operator==(const SpecKey &o) const { return audio == o.audio && sameNSGT(p, o.p); }
 };
 
 // What the note estimate depends on: not the display settings (it has its own spectrogram).
@@ -53,17 +61,33 @@ struct EstimateKey {
     bool operator==(const EstimateKey &) const = default;
 };
 
+// The pitch analysis of a display spectrogram.
 struct Vocal {
     Contour contour;
     std::vector<Segment> segments;
     std::vector<int> onsets;
 };
 
+// The note estimator's output (see AnalysisResult for the fields).
 struct Estimate {
     std::vector<Segment> estimated;
     std::vector<int> estimatedVoice;
     std::string note;
 };
+
+// A channel's sample from the left and right ones (CH_MIX and CH_CENTRE: the mid).
+static float channelSample(int ch, float a, float b) {
+    if (ch == CH_LEFT) {
+        return a;
+    }
+    if (ch == CH_RIGHT) {
+        return b;
+    }
+    if (ch == CH_SIDE) {
+        return 0.5f * (a - b);
+    }
+    return 0.5f * (a + b);
+}
 
 // basic-pitch's compiled model, installed next to the plugin
 static std::string basicPitchModel() {
@@ -78,7 +102,7 @@ static Vocal analyzeVocal(const Spectrogram &s) {
     return v;
 }
 
-// One entry per channel. Memory ceiling: ~30 MB per channel per 3 minutes of audio.
+// A channel's display spectrogram and, once computed, its vocal analysis.
 struct ChannelCache {
     bool valid = false;
     SpecKey key;
@@ -86,7 +110,8 @@ struct ChannelCache {
     bool vocalValid = false;
     Vocal vocal;
 };
-static std::array<ChannelCache, 5> g_cache;
+// One entry per channel (CH_*). Memory ceiling: ~30 MB per channel per 3 minutes of audio.
+static std::array<ChannelCache, CH_CENTRE + 1> g_cache;
 
 // The last note estimate (one: it is small, but slow to recompute).
 static struct {
@@ -102,26 +127,31 @@ void clearCache() {
     g_estimate = {};
 }
 
+// Whether channel ch's spectrogram for `key` is cached.
 static bool cached(int ch, const SpecKey &key) {
     return g_cache[idx(ch)].valid && g_cache[idx(ch)].key == key;
 }
 
-// The audio, read on the main thread (accessors must be), resampled to the analysis rate.
+// The audio, read on the main thread (accessors must be), resampled to the analysis rate: len
+// seconds from the item start at sr Hz. A mono source gives the same samples in left and right.
 static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<float> &left,
                       std::vector<float> &right) {
     AudioAccessor *acc = CreateTakeAudioAccessor(take);
     const int nch =
         std::max(1, std::min(2, GetMediaSourceNumChannels(GetMediaItemTake_Source(take))));
     const long long n = static_cast<long long>(len * sr);
-    left.assign(idx(std::max(0LL, n)), 0), right.assign(left.size(), 0);
-    std::vector<double> buf;
-    const int chunk = 65536;
+    left.assign(idx(std::max(0LL, n)), 0);
+    right.assign(left.size(), 0);
+
+    std::vector<double> buf; // interleaved, nch per frame
+    const int chunk = 65536; // frames per read
     for (long long pos = 0; pos < n; pos += chunk) {
         const int m = static_cast<int>(std::min<long long>(chunk, n - pos));
-        buf.assign(idx(m) * idx(nch),
-                   0); // the accessor leaves the buffer untouched where there's no audio
+        // the accessor leaves the buffer untouched where there's no audio
+        buf.assign(idx(m) * idx(nch), 0);
+        // time relative to item start
         GetAudioAccessorSamples(acc, static_cast<int>(sr), nch, static_cast<double>(pos) / sr, m,
-                                buf.data()); // time relative to item start
+                                buf.data());
         for (int i = 0; i < m; i++) {
             left[idx(pos + i)] = static_cast<float>(buf[idx(i) * idx(nch)]);
             right[idx(pos + i)] = static_cast<float>(buf[idx(i) * idx(nch) + (idx(nch - 1))]);
@@ -141,10 +171,10 @@ struct Job {
     EstimateKey estKey;
     int channel = CH_MIX;
     std::vector<float> left, right;
-    bool needSpec = false;         // the display spectrogram and contour
-    std::array<bool, 4> need = {}; // raw channels (CH_MIX..CH_SIDE) to compute for it
+    bool needSpec = false;                    // the display spectrogram and contour
+    std::array<bool, RAW_CHANNELS> need = {}; // raw channels to compute for it
     // computed, or the cache's when only needed for the centre
-    std::array<std::shared_ptr<Spectrogram>, 4> raw;
+    std::array<std::shared_ptr<Spectrogram>, RAW_CHANNELS> raw;
     std::shared_ptr<Spectrogram> spec; // the requested channel
     Vocal vocal;
     bool needEstimate = false;
@@ -157,17 +187,15 @@ struct Job {
         std::vector<float> mono(left.size());
         for (size_t i = 0; i < mono.size(); i++) {
             const float a = left[i], b = i < right.size() ? right[i] : a;
-            mono[i] = channel == CH_LEFT    ? a
-                      : channel == CH_RIGHT ? b
-                      : channel == CH_SIDE  ? 0.5f * (a - b)
-                                            : 0.5f * (a + b);
+            mono[i] = channelSample(channel, a, b);
         }
-        std::vector<float>().swap(left), std::vector<float>().swap(right); // ~80 MB each at 15 min
+        // free the input: ~80 MB each at 15 min
+        std::vector<float>().swap(left);
+        std::vector<float>().swap(right);
+
         const NSGTParams ep = estimateNSGTParams();
-        const bool same = needSpec && spec->p.sampleRate == ep.sampleRate &&
-                          spec->p.fmin == ep.fmin && spec->p.fmax == ep.fmax &&
-                          spec->p.binsPerOctave == ep.binsPerOctave && spec->p.hop == ep.hop &&
-                          spec->p.gamma == ep.gamma;
+        const bool same = needSpec && sameNSGT(spec->p, ep);
+        // progress over [a, b) of the whole: the spectrogram is the first fifth
         auto part = [&](double a, double b) {
             return [&, a, b](double f) { return progress(a + (b - a) * f); };
         };
@@ -182,6 +210,7 @@ struct Job {
         if (cancel) {
             return;
         }
+
         // basic-pitch alongside the main NMF (which doesn't need it): ~0.7 s saved per 3 minutes
         BasicPitch bp;
         std::string err;
@@ -201,11 +230,12 @@ struct Job {
             est.note = haveBp ? "" : "basic-pitch: " + err;
             return haveBp ? &bp : nullptr;
         };
+
         EstimateParams opts;
         opts.vote = estKey.vote;
         const std::vector<NoteEstimate> notes =
             estimateNotes(es, mono, basicPitch, opts, part(0.2, 1));
-        for (const NoteEstimate &e : notes) {
+        for (const NoteEstimate &e : notes) { // f1 is exclusive there, inclusive in a Segment
             est.estimated.push_back({e.f0, e.f1 - 1, static_cast<double>(e.pitch)});
         }
         est.estimatedVoice = assignVoices(notes, es.frameRate(), WINDOW_VOICES);
@@ -229,13 +259,16 @@ struct Job {
         }
     }
 
+    // The analysis itself, with progress in permille.
     void work() {
         // progress weights: one per spectrogram, two for the note estimation
-        int stages = needEstimate ? 2 : 0, stage = 0;
+        int stages = needEstimate ? 2 : 0;
         for (bool b : need) {
             stages += b;
         }
         stages = std::max(1, stages);
+        int stage = 0;
+
         if (needSpec) {
             computeSpec(stage, stages);
         }
@@ -255,25 +288,23 @@ struct Job {
         done = true;
     }
 
+    // The raw channels in `need`, then the requested channel's spectrogram (the centre from the
+    // mix and side) and its vocal analysis. stage counts the spectrograms done, of `stages`.
     void computeSpec(int &stage, int stages) {
-        for (int ch = 0; ch < 4; ch++) {
+        // sample j of x, 0 outside it
+        const auto sampleAt = [](const std::vector<float> &x, long long j) {
+            return j >= 0 && j < static_cast<long long>(x.size()) ? x[idx(j)] : 0;
+        };
+        for (int ch = 0; ch < RAW_CHANNELS; ch++) {
             if (!need[idx(ch)]) {
                 continue;
             }
-            const std::vector<float> &l = left, &r = right;
             raw[idx(ch)] = std::make_shared<Spectrogram>(computeNSGT(
-                key.p, static_cast<long long>(l.size()),
+                key.p, static_cast<long long>(left.size()),
                 [&](long long start, std::span<float> out) {
                     for (size_t i = 0; i < out.size(); i++) {
                         const long long j = start + static_cast<long long>(i);
-                        const float a = j >= 0 && j < static_cast<long long>(l.size()) ? l[idx(j)]
-                                                                                       : 0,
-                                    b = j >= 0 && j < static_cast<long long>(r.size()) ? r[idx(j)]
-                                                                                       : 0;
-                        out[i] = ch == CH_LEFT    ? a
-                                 : ch == CH_RIGHT ? b
-                                 : ch == CH_SIDE  ? 0.5f * (a - b)
-                                                  : 0.5f * (a + b);
+                        out[i] = channelSample(ch, sampleAt(left, j), sampleAt(right, j));
                     }
                 },
                 [&](double f) {
@@ -285,6 +316,7 @@ struct Job {
                 return;
             }
         }
+
         if (channel == CH_CENTRE && raw[CH_SIDE]) {
             // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
             // (not its noise: the main thread may be rewriting that one's; install() recomputes it)
@@ -319,6 +351,7 @@ void cancelJob() {
     g_job.reset();
 }
 
+// Makes c's spectrogram and vocal analysis and the estimate e the shown analysis.
 static void install(const ChannelCache &c, const Estimate &e) {
     g_analysis.spec = c.spec ? c.spec : std::make_shared<Spectrogram>();
     g_analysis.contour = c.vocal.contour;
@@ -327,18 +360,21 @@ static void install(const ChannelCache &c, const Estimate &e) {
     g_analysis.estimated = e.estimated;
     g_analysis.estimatedVoice = e.estimatedVoice;
     g_analysis.estimateNote = e.note;
+
     g_analysis.snapTimes.clear();
     for (int f : g_analysis.onsets) {
         g_analysis.snapTimes.push_back(frameTime(f));
     }
     for (const Segment &sg : g_analysis.segments) {
-        g_analysis.snapTimes.push_back(frameTime(sg.f0)),
-            g_analysis.snapTimes.push_back(frameTime(sg.f1 + 1));
+        g_analysis.snapTimes.push_back(frameTime(sg.f0));
+        g_analysis.snapTimes.push_back(frameTime(sg.f1 + 1)); // f1 is the last frame
     }
     std::sort(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end());
+
     estimateNoise(*g_analysis.spec, g_settings.rp.noiseFraction);
     if (g_autoOnInstall) {
-        autoCalibrate(*g_analysis.spec, g_settings.rp), g_autoOnInstall = false;
+        autoCalibrate(*g_analysis.spec, g_settings.rp);
+        g_autoOnInstall = false;
     }
     g_ui.analysisDirty = false;
     updateValues();
@@ -348,7 +384,6 @@ static void install(const ChannelCache &c, const Estimate &e) {
 // cached channel spectrogram; longer items are refused rather than risking running out.
 static const double MAX_ANALYSIS_SECONDS = 15 * 60;
 
-// Starts (or reuses from the cache) the analysis for the current channel and settings.
 void requestAnalysis(bool autoCalibrateAfter) {
     MediaItem_Take *take = GetActiveTake(g_session.audio);
     if (!take) {
@@ -364,20 +399,21 @@ void requestAnalysis(bool autoCalibrateAfter) {
         redraw();
         return;
     }
+
     const AudioKey audio = {
         g_session.audioIdentity, g_session.audioLen, g_session.audioOffs, g_session.audioRate
     };
     const int ch = g_settings.channel;
     const SpecKey key = {audio, g_settings.np};
     const EstimateKey estKey = {audio, ch, g_settings.estimateVote};
-    const bool haveSpec = cached(ch, key) && g_cache[idx(ch)].vocalValid,
-               haveEstimate = g_estimate.valid && g_estimate.key == estKey;
+    const bool haveSpec = cached(ch, key) && g_cache[idx(ch)].vocalValid;
+    const bool haveEstimate = g_estimate.valid && g_estimate.key == estKey;
     if (haveSpec && haveEstimate) {
         install(g_cache[idx(ch)], g_estimate.est);
         return;
     }
 
-    std::unique_ptr<Job> job(new Job);
+    auto job = std::make_unique<Job>();
     job->key = key;
     job->estKey = estKey;
     job->channel = ch;
@@ -385,6 +421,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
     job->needSpec = !haveSpec;
     job->needEstimate = !haveEstimate;
     if (job->needSpec) {
+        // the raw channels the requested one comes from; -1: none
         const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
         for (int r : rawCh) {
             if (r < 0) {
@@ -402,9 +439,12 @@ void requestAnalysis(bool autoCalibrateAfter) {
             job->raw[CH_SIDE] = nullptr;
         }
     }
-    if (job->needEstimate || job->need[0] || job->need[1] || job->need[2] || job->need[3]) {
+
+    const bool needRaw = std::ranges::any_of(job->need, [](bool b) { return b; });
+    if (job->needEstimate || needRaw) {
         readAudio(take, g_session.audioLen, g_settings.np.sampleRate, job->left, job->right);
     }
+
     Job *j = job.get();
     job->thread = std::thread([j] { j->run(); });
     g_job = std::move(job);
@@ -412,15 +452,16 @@ void requestAnalysis(bool autoCalibrateAfter) {
     redraw();
 }
 
-// Called from the timer: installs a finished analysis into the cache and the view.
+// Installs a finished analysis into the cache and the view.
 void pollJob() {
     if (!g_job) {
         return;
     }
     if (!g_job->done) {
-        redraw();
+        redraw(); // keep the progress display moving
         return;
-    } // keep the progress display moving
+    }
+
     g_job->thread.join();
     Job &j = *g_job;
     if (!j.error.empty()) {
@@ -429,8 +470,10 @@ void pollJob() {
         redraw();
         return;
     }
+
     if (j.needSpec) {
-        for (int r = 0; r < 4; r++) {
+        // raw channels computed on the way to another one are cached without a vocal analysis
+        for (int r = 0; r < RAW_CHANNELS; r++) {
             if (j.need[idx(r)] && r != j.channel) {
                 ChannelCache &c = g_cache[idx(r)];
                 c = ChannelCache();
@@ -456,7 +499,6 @@ void pollJob() {
     install(g_cache[idx(ch)], g_estimate.est);
 }
 
-// Progress of the running analysis in permille, -1 if none.
 int analysisProgress() { return g_job ? g_job->permille.load() : -1; }
 
 // The version keeps counting: caches keyed on it (the spectrogram layer, the overview) must not
@@ -467,6 +509,8 @@ void clearAnalysis() {
     g_analysis.valVersion = version + 1;
 }
 
+// The take and source pointers stand for the take and source; the file name for what the source
+// plays, which can be replaced in place.
 std::string audioIdentity(MediaItem_Take *take) {
     if (!take) {
         return "";

@@ -1,3 +1,5 @@
+// The ReaTrace window: its lifecycle and docking, the message handler (mouse, wheel, pinch),
+// keyboard shortcuts, view navigation, and the timer that follows changes in REAPER.
 #include "ui/window.h"
 
 #include "index.h"
@@ -18,12 +20,21 @@
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
 static const double WHEEL_ZOOM = 1.05; // zoom per wheel notch (cmd/alt+scroll)
+static const double MAX_PPS = 3000;    // zoom limit, points per second
+// row height limits when zooming pitch, points per semitone
+static const double MIN_ROW_H = 3, MAX_ROW_H = 60;
+// the pitch range fitItem() shows: E2..C6, the vocal range
+static const int FIT_LOW = 40, FIT_HIGH = 84;
+// seconds the item must stay unchanged after a move or trim before it is analysed again
+static const double REANALYSE_DELAY = 0.3;
+
 static bool g_docked;     // in REAPER's docker rather than a floating window (remembered)
 static bool g_recreating; // destroying the window only to recreate it: keep the state
 
+// What the mouse button went down on, until it goes up.
 enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL, DRAG_OVERVIEW };
-static double g_selectAnchor;
 static Drag g_drag;
+static double g_selectAnchor; // DRAG_RULER_SELECT: where the time selection started, seconds
 
 // change detection for the timer
 static int g_lastPlayState, g_lastProjChange;
@@ -58,18 +69,17 @@ void redraw() {
         InvalidateRect(g_ui.hwnd, NULL, FALSE);
     }
 }
-static void toggleDock();
 
 // --- navigation --------------------------------------------------------------------
 
+// The whole item with a 1% margin on each side, and the vocal range.
 static void fitItem() {
     syncViewOrigin();
     const Rect n = noteArea();
     g_ui.view.pps = std::max(5.0, (n.r - n.l) / std::max(0.1, g_session.audioLen * 1.02));
     g_ui.view.t0 = g_session.audioPos - 0.01 * g_session.audioLen;
-    g_ui.view.rowH =
-        std::max(3.0, static_cast<double>(n.b - n.t) / (84 - 40 + 1)); // vocal range E2..C6
-    g_ui.view.pitchTop = 84.5;
+    g_ui.view.rowH = std::max(MIN_ROW_H, static_cast<double>(n.b - n.t) / (FIT_HIGH - FIT_LOW + 1));
+    g_ui.view.pitchTop = FIT_HIGH + 0.5;
     redraw();
 }
 
@@ -88,6 +98,7 @@ static void matchArrange() {
     redraw();
 }
 
+// The selected notes, with some room around them.
 static void zoomToSelection() {
     double a = 1e30, b = -1e30;
     int lo = 128, hi = -1;
@@ -104,37 +115,42 @@ static void zoomToSelection() {
     }
     const Rect n = noteArea();
     const double len = std::max(0.2, b - a);
-    g_ui.view.pps = std::min(3000.0, (n.r - n.l) / (len * 1.2));
+    g_ui.view.pps = std::min(MAX_PPS, (n.r - n.l) / (len * 1.2));
     g_ui.view.t0 = a - len * 0.1;
-    g_ui.view.rowH = std::min(60.0, std::max(3.0, static_cast<double>(n.b - n.t) / (hi - lo + 7)));
+    // three semitones above and below
+    const double rowH = static_cast<double>(n.b - n.t) / (hi - lo + 7);
+    g_ui.view.rowH = std::min(MAX_ROW_H, std::max(MIN_ROW_H, rowH));
     g_ui.view.pitchTop = hi + 3.5;
     redraw();
 }
 
+// Scrolls time t (seconds) to the middle of the notes area.
 static void centreOn(double t) {
     const Rect n = noteArea();
     g_ui.view.t0 = t - 0.5 * (n.r - n.l) / g_ui.view.pps - (n.l - g_ui.view.x0) / g_ui.view.pps;
     redraw();
 }
 
+// Zooms time by `factor`, keeping the time at client x where it is.
 static void zoomTime(double factor, int x) {
     const double t = g_ui.view.t(x);
-    g_ui.view.pps = std::min(3000.0, std::max(2.0, g_ui.view.pps * factor));
+    g_ui.view.pps = std::min(MAX_PPS, std::max(2.0, g_ui.view.pps * factor));
     g_ui.view.t0 = t - (x - g_ui.view.x0) / g_ui.view.pps;
     redraw();
 }
 
+// Zooms pitch by `factor`, keeping the pitch at client y where it is.
 static void zoomPitch(double factor, int y) {
     const double p = g_ui.view.p(y);
-    g_ui.view.rowH = std::min(60.0, std::max(3.0, g_ui.view.rowH * factor));
+    g_ui.view.rowH = std::min(MAX_ROW_H, std::max(MIN_ROW_H, g_ui.view.rowH * factor));
     g_ui.view.pitchTop = p + (y - g_ui.view.y0) / g_ui.view.rowH;
     redraw();
 }
 
+// Scrolls up by `semitones`, keeping the view within MIDI pitches 0..127.
 static void scrollPitch(double semitones) {
-    g_ui.view.pitchTop =
-        std::min(128.0, std::max(g_ui.view.pitchTop + semitones,
-                                 (noteArea().b - noteArea().t) / g_ui.view.rowH - 0.5));
+    const double lowest = (noteArea().b - noteArea().t) / g_ui.view.rowH - 0.5;
+    g_ui.view.pitchTop = std::min(128.0, std::max(g_ui.view.pitchTop + semitones, lowest));
     redraw();
 }
 
@@ -170,6 +186,7 @@ static void syncArrange() {
     g_ourB = g_ui.view.t(n.r);
 }
 
+// Pages the view along with the play cursor (see followPage()).
 static void followPlayback() {
     static double s_prev = -1; // play position last tick, -1 when stopped
     const double now = GetPlayPosition2();
@@ -180,8 +197,8 @@ static void followPlayback() {
     if (g_settings.followPlay && g_drag == DRAG_NONE && s_prev >= 0) {
         syncViewOrigin();
         const Rect n = noteArea();
-        const double t0 = g_ui.view.t(n.l),
-                     page = followPage(t0, (n.r - n.l) / g_ui.view.pps, s_prev, now);
+        const double t0 = g_ui.view.t(n.l);
+        const double page = followPage(t0, (n.r - n.l) / g_ui.view.pps, s_prev, now);
         if (page != t0) {
             g_ui.view.t0 += page - t0;
             redraw();
@@ -208,11 +225,13 @@ void selectVoice(int v) {
 // --- input -------------------------------------------------------------------------
 
 int mods() {
+    // the high bit: held now
     return ((GetAsyncKeyState(VK_SHIFT) & 0x8000) ? MOD_SHIFT : 0) |
            ((GetAsyncKeyState(VK_CONTROL) & 0x8000) ? MOD_CMD : 0) |
            ((GetAsyncKeyState(VK_MENU) & 0x8000) ? MOD_ALT : 0);
 }
 
+// Changes the transform's resolution (Hz) within the slider's range.
 static void adjustGamma(double delta) {
     g_settings.np.gamma = std::max(3.0, std::min(40.0, g_settings.np.gamma + delta));
     requestAnalysis(false);
@@ -223,7 +242,7 @@ static void adjustGamma(double delta) {
 static const int CHARKEY = 0x10000;
 static int keyCode(int key, int flags) { return (flags & FVIRTKEY) ? key : key | CHARKEY; }
 
-// returns true if handled
+// A shortcut (keyCode() form); true if handled.
 static bool onKey(int key) {
     const int m = mods();
     if (key == VK_DELETE || key == VK_BACK) {
@@ -236,7 +255,8 @@ static bool onKey(int key) {
         g_ui.help = false;
     } else if (key == VK_ESCAPE) {
         if (g_session.ed.active()) {
-            g_session.ed.cancel(), g_drag = DRAG_NONE;
+            g_session.ed.cancel();
+            g_drag = DRAG_NONE;
             ReleaseCapture();
         } else if (g_session.ed.selectAll(false)) {
             commitNotes();
@@ -247,9 +267,8 @@ static bool onKey(int key) {
         }
     } else if (key == VK_RETURN) {
         int i = firstSelected();
-        if (i < 0) {
-            g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY,
-                                 &i); // nothing selected: the note under the mouse
+        if (i < 0) { // nothing selected: the note under the mouse
+            g_session.ed.hitTest(g_ui.view, g_ui.mouseX, g_ui.mouseY, &i);
         }
         beginLyric(i);
     } else if (key == 'H' && !m) {
@@ -332,6 +351,8 @@ static bool onKey(int key) {
     return true;
 }
 
+// Whether key (keyCode() form) with accelerator flags (FCONTROL, ...) is one of our shortcuts;
+// the rest stay REAPER's.
 static bool isOurKey(int key, int flags) {
     const bool cmd = (flags & FCONTROL) != 0;
     switch (key) {
@@ -380,12 +401,14 @@ static bool isOurKey(int key, int flags) {
     return false;
 }
 
+// Returns 0: not for us, 1: handled, -1: to the focused control, -666: to REAPER's main window.
 int Window_TranslateAccel(MSG *msg) {
     if (!g_ui.hwnd || (msg->hwnd != g_ui.hwnd && !IsChild(g_ui.hwnd, msg->hwnd))) {
         return 0;
     }
     if (g_ui.edit && msg->hwnd != g_ui.hwnd) {
-        // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes to the field
+        // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes
+        // to the field
         if (msg->message == WM_KEYDOWN) {
             const int key = static_cast<int>(msg->wParam), flags = static_cast<int>(msg->lParam);
             if (key == VK_TAB) {
@@ -396,8 +419,7 @@ int Window_TranslateAccel(MSG *msg) {
                 endLyric(true, 1);
                 return 1;
             }
-            if (key == '-' && !(flags & FVIRTKEY)) // hyphen: this syllable joins the next one
-            {
+            if (key == '-' && !(flags & FVIRTKEY)) { // hyphen: this syllable joins the next one
                 char buf[1024] = "";
                 GetWindowText(g_ui.edit, buf, sizeof(buf) - 1);
                 SetWindowText(g_ui.edit, (std::string(buf) + "-").c_str());
@@ -415,16 +437,16 @@ int Window_TranslateAccel(MSG *msg) {
         }
         return -1;
     }
-    // Our keys are handled here: delivered to the window, SWELL would turn Enter/Esc into dialog commands.
-    if (msg->message == WM_KEYDOWN &&
-        isOurKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)),
-                 static_cast<int>(msg->lParam))) {
-        onKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)));
+
+    // Our keys are handled here: delivered to the window, SWELL would turn Enter/Esc into dialog
+    // commands.
+    const int flags = static_cast<int>(msg->lParam);
+    const int key = keyCode(static_cast<int>(msg->wParam), flags);
+    if (msg->message == WM_KEYDOWN && isOurKey(key, flags)) {
+        onKey(key);
         return 1;
     }
-    if (msg->message == WM_KEYUP &&
-        isOurKey(keyCode(static_cast<int>(msg->wParam), static_cast<int>(msg->lParam)),
-                 static_cast<int>(msg->lParam))) {
+    if (msg->message == WM_KEYUP && isOurKey(key, flags)) {
         return 1;
     }
     return -666; // everything else (space = play/stop, ...) uses REAPER's main shortcuts
@@ -483,12 +505,17 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             beginLyric(lyricAt(x));
             return 0;
         } else if (noteArea().in(x, y)) {
-            int sug = -1;
-            if (g_session.ed.hitTest(g_ui.view, x, y, NULL) == NoteEditor::NONE &&
-                !(mods() & (MOD_SHIFT | MOD_CMD)) && (sug = suggestionAt(x, y)) >= 0) {
-                acceptSuggestion(sug); // click a suggested note to make it a note
-                return 0;
+            // a plain click on a suggested note, not on a note, makes it a note
+            const bool plainMiss =
+                g_session.ed.hitTest(g_ui.view, x, y, NULL) == NoteEditor::NONE &&
+                !(mods() & (MOD_SHIFT | MOD_CMD));
+            if (plainMiss) {
+                if (const int sug = suggestionAt(x, y); sug >= 0) {
+                    acceptSuggestion(sug);
+                    return 0;
+                }
             }
+
             g_drag = DRAG_NOTES;
             g_session.ed.mouseDown(g_ui.view, x, y, mods());
             int hit = -1;
@@ -508,7 +535,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         g_ui.mouseX = x;
         g_ui.mouseY = y;
         if (g_drag == DRAG_NOTES) {
-            g_session.ed.mouseMove(g_ui.view, x, y, mods()), previewDragged();
+            g_session.ed.mouseMove(g_ui.view, x, y, mods());
+            previewDragged();
         } else if (g_drag == DRAG_RULER) {
             SetEditCurPos(g_ui.view.t(x), false, true);
         } else if (g_drag == DRAG_RULER_SELECT) {
@@ -528,6 +556,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const Drag d = g_drag;
         g_drag = DRAG_NONE;
         ReleaseCapture();
+
+        // a note just drawn takes the sung pitch (alt: keep the drawn one)
         const int drawn = d == DRAG_NOTES ? g_session.ed.drawing() : -1;
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
             if (drawn >= 0 && drawn < static_cast<int>(g_session.ed.notes.size()) &&
@@ -567,20 +597,21 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     }
     case WM_MOUSEWHEEL:
     case WM_MOUSEHWHEEL: {
-        // trackpad friendly: scroll pans, cmd+scroll zooms time, alt+scroll zooms pitch, shift+scroll pans time
+        // trackpad friendly: scroll pans, cmd+scroll zooms time, alt+scroll zooms pitch,
+        // shift+scroll pans time
         POINT pt = {GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
         ScreenToClient(hwnd, &pt);
         syncViewOrigin();
-        const double steps = static_cast<short> HIWORD(wParam) / 120.0;
+        const double steps = static_cast<short> HIWORD(wParam) / 120.0; // notches
         const int m = mods();
         if (panelShown() && panelArea().in(pt.x, pt.y)) {
             if (msg == WM_MOUSEWHEEL) {
-                scrollPanel(static_cast<int>(lround(-steps * 30)));
+                scrollPanel(static_cast<int>(lround(-steps * 30))); // 30 points per notch
             }
             return 0;
         }
         if (msg == WM_MOUSEHWHEEL || ((m & MOD_SHIFT) && !(m & (MOD_CMD | MOD_ALT)))) {
-            g_ui.view.t0 -= steps * 40 / g_ui.view.pps;
+            g_ui.view.t0 -= steps * 40 / g_ui.view.pps; // 40 points per notch
         } else if (m & MOD_CMD) {
             zoomTime(pow(WHEEL_ZOOM, steps), pt.x);
         } else if (m & MOD_ALT) {
@@ -598,9 +629,12 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             POINT pt = {gi->ptsLocation.x, gi->ptsLocation.y};
             ScreenToClient(hwnd, &pt);
             syncViewOrigin();
-            const double f = gi->ullArguments > 1024   ? PINCH_STEP
-                             : gi->ullArguments < 1024 ? 1 / PINCH_STEP
-                                                       : 1;
+            double f = 1;
+            if (gi->ullArguments > 1024) {
+                f = PINCH_STEP;
+            } else if (gi->ullArguments < 1024) {
+                f = 1 / PINCH_STEP;
+            }
             if (mods() & MOD_ALT) {
                 zoomPitch(f, pt.y);
             } else {
@@ -622,7 +656,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         g_ui.edit = NULL; // destroyed with the window
         if (!g_recreating) {
             setIsolate(false); // it follows this window's notes: don't leave it filtering
-            cancelJob(), clearCache();
+            cancelJob();
+            clearCache();
         }
         releasePaintCache();
         g_ui.hwnd = NULL;
@@ -639,8 +674,11 @@ static INT_PTR WINAPI dlgProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
 // --- lifecycle ---------------------------------------------------------------------
 
+// SWELL's CreateDialog "resource" for a resizable top-level window without a dialog resource.
+static const INT_PTR SWELL_RESIZABLE_WINDOW = 0x400001;
+
 // Floating: a resizable top-level window. Docked: a child window handed to REAPER's docker
-// (SWELL makes a child view when there is no dialog resource and no 0x400001 style).
+// (SWELL makes a child view when there is no dialog resource and no SWELL_RESIZABLE_WINDOW).
 static void createWindow() {
     if (g_docked) {
         g_ui.hwnd = CreateDialog(NULL, NULL, GetMainHwnd(), dlgProc);
@@ -650,15 +688,14 @@ static void createWindow() {
         DockWindowAddEx(g_ui.hwnd, "ReaTrace", "reatrace_editor", true);
         DockWindowActivate(g_ui.hwnd);
     } else {
-        // 0x400001: SWELL's "no dialog resource, resizable top-level window"
-        g_ui.hwnd =
-            CreateDialog(NULL, reinterpret_cast<const char *>(static_cast<INT_PTR>(0x400001)),
-                         GetMainHwnd(), dlgProc);
+        g_ui.hwnd = CreateDialog(NULL, reinterpret_cast<const char *>(SWELL_RESIZABLE_WINDOW),
+                                 GetMainHwnd(), dlgProc);
         if (!g_ui.hwnd) {
             return;
         }
         SetWindowPos(g_ui.hwnd, NULL, 80, 80, 1300, 760, SWP_NOZORDER);
     }
+
     MediaItem_Take *take = GetActiveTake(g_session.audio);
     const char *name = take ? GetTakeName(take) : NULL;
     SetWindowText(g_ui.hwnd, (std::string("ReaTrace - ") + (name ? name : "")).c_str());
@@ -666,6 +703,7 @@ static void createWindow() {
     matchArrange();
 }
 
+// Recreates the window docked or floating, keeping the view; remembered for next time.
 static void toggleDock() {
     finishLyric(); // the edit field goes with the window
     const ViewMap view = g_ui.view;
@@ -689,6 +727,7 @@ void Window_Open(MediaItem *audio, int voice) {
         SetForegroundWindow(g_ui.hwnd);
         return;
     }
+
     Window_Close();
     clearCache();
     g_session = Session();
@@ -701,6 +740,7 @@ void Window_Open(MediaItem *audio, int voice) {
     g_session.audioOffs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
     g_session.audioRate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
     g_session.audioIdentity = audioIdentity(take);
+
     clearAnalysis();
     const bool hadSettings = loadItemSettings();
     updateValues();
@@ -746,18 +786,21 @@ void Window_Timer() {
 
     // the item may have been moved, trimmed, slipped or sped up: re-analyze
     MediaItem_Take *take = GetActiveTake(g_session.audio);
-    const double pos = GetMediaItemInfo_Value(g_session.audio, "D_POSITION"),
-                 len = GetMediaItemInfo_Value(g_session.audio, "D_LENGTH");
+    const double pos = GetMediaItemInfo_Value(g_session.audio, "D_POSITION");
+    const double len = GetMediaItemInfo_Value(g_session.audio, "D_LENGTH");
     const double offs = take ? GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") : 0;
     const double rate = take ? GetMediaItemTakeInfo_Value(take, "D_PLAYRATE") : 1;
-    static double s_changedAt = -1; // re-analyze once the item has stopped changing for a moment
-    if (const std::string id = audioIdentity(take); id != g_session.audioIdentity) {
-        // another take or source: what is shown describes a different recording, so drop it now
-        g_session.audioIdentity = id;
+    const auto setAudioTiming = [&] {
         g_session.audioPos = pos;
         g_session.audioLen = len;
         g_session.audioOffs = offs;
         g_session.audioRate = rate;
+    };
+    static double s_changedAt = -1; // re-analyze once the item has stopped changing for a moment
+    if (const std::string id = audioIdentity(take); id != g_session.audioIdentity) {
+        // another take or source: what is shown describes a different recording, so drop it now
+        g_session.audioIdentity = id;
+        setAudioTiming();
         cancelJob();
         clearAnalysis();
         updateValues();
@@ -765,16 +808,14 @@ void Window_Timer() {
         requestAnalysis(false);
     } else if (pos != g_session.audioPos || len != g_session.audioLen ||
                offs != g_session.audioOffs || rate != g_session.audioRate) {
-        g_session.audioPos = pos;
-        g_session.audioLen = len;
-        g_session.audioOffs = offs;
-        g_session.audioRate = rate;
+        setAudioTiming();
         s_changedAt = time_precise();
         redraw();
-    } else if (s_changedAt >= 0 && time_precise() - s_changedAt > 0.3) {
+    } else if (s_changedAt >= 0 && time_precise() - s_changedAt > REANALYSE_DELAY) {
         s_changedAt = -1;
         requestAnalysis(false);
     }
+
     // The takes are only looked at after a project change (edits, undo, moves, tempo changes all
     // count), and once a second for anything that doesn't: hashing four takes and walking their
     // tracks every tick costs more than the rest of the timer.
@@ -787,16 +828,20 @@ void Window_Timer() {
         if (notesStale()) {
             loadNotes(); // edited elsewhere, undo, item moved, tempo changed, ...
         }
-        if (!g_session.midi &&
-            (g_session.midi = VoiceItem(g_session.audio, g_session.voice, false))) {
-            loadNotes(); // created elsewhere
+        if (!g_session.midi) {
+            g_session.midi = VoiceItem(g_session.audio, g_session.voice, false);
+            if (g_session.midi) {
+                loadNotes(); // created elsewhere
+            }
         }
         loadOtherVoices(false);
     }
     updateIsolate();
 
+    // redraw for the play and edit cursors, and for anything a project change may have changed
     const int state = GetPlayState();
-    const double playPos = GetPlayPosition2(), cursor = GetCursorPosition();
+    const double playPos = GetPlayPosition2();
+    const double cursor = GetCursorPosition();
     if (state != g_lastPlayState || ((state & 1) && playPos != g_lastPlayPos) ||
         cursor != g_lastCursor || change != g_lastProjChange) {
         redraw();

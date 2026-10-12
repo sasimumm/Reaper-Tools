@@ -26,19 +26,25 @@
 
 // --- state ---------------------------------------------------------------------
 
+// Another voice than the active one: its notes item (NULL until it has notes) and its notes as of
+// `snapshot`, drawn dimmed.
 struct OtherVoice {
     MediaItem *item = NULL;
     TakeSnapshot snapshot;
     std::vector<Note> notes;
 };
+
+// The open item's settings (settings.cpp loads and saves them).
 inline Settings g_settings;
 
-// The item being transcribed and the active voice's notes (window.cpp opens it, takesync.cpp syncs it).
+// The item being transcribed and the active voice's notes (window.cpp opens it, takesync.cpp
+// syncs it).
 struct Session {
     MediaItem *audio = NULL, *midi = NULL; // midi: the active voice's notes item
     int voice = 0;                         // active voice, 0 = lead
     std::array<OtherVoice, WINDOW_VOICES> others;
-    double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1; // as analysed
+    // as analysed: item position and length, take start offset (seconds), take playrate
+    double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1;
     std::string audioIdentity; // which recording: see audioIdentity()
     NoteEditor ed;
     TakeSnapshot snapshot; // of the take when the notes were loaded
@@ -52,14 +58,14 @@ struct AnalysisResult {
     std::shared_ptr<Spectrogram> spec = std::make_shared<Spectrogram>();
     std::vector<unsigned char> val;         // renderValues() output, one byte per cell
     std::array<unsigned int, 256> lut = {}; // value byte -> colour
-    int valVersion = 0;
+    int valVersion = 0; // bumped whenever val or lut change, for the caches drawn from them
     Contour contour;
-    std::vector<Segment>
-        segments; // stable-pitch stretches of the contour (snapping; suggestions if chosen)
-    std::vector<Segment>
-        estimated; // notes from the estimator (estimate.h), the default suggestions
+    // stable-pitch stretches of the contour (snapping; suggestions if chosen)
+    std::vector<Segment> segments;
+    // notes from the estimator (estimate.h), the default suggestions
+    std::vector<Segment> estimated;
     std::vector<int> estimatedVoice; // voice of each, -1 if crowded out (assignVoices)
-    std::vector<int> onsets;         // frames
+    std::vector<int> onsets;         // spectrogram frames
     std::vector<double> snapTimes;   // onsets and segment edges, project time, sorted
     std::string estimateNote;        // why the estimator ran without basic-pitch, if it did
     std::string error;               // why there is no analysis (failed, or the item is too long)
@@ -73,19 +79,20 @@ struct WindowState {
     bool panel = true;
     bool showOthers = true; // show the other voices' notes, dimmed
     int voicePick = 0;      // panel buttons; applied through selectVoice()
-    bool dockPending =
-        false;        // toggle docking on the next timer tick, outside the window's own handlers
+    // toggle docking on the next timer tick, outside the window's own handlers
+    bool dockPending = false;
     HWND edit = NULL; // lyric edit field while typing; identifies its note by start and pitch
-    bool analysisDirty = false; // an analysis slider moved; recomputed on mouse up
-    int mouseX = -1, mouseY = -1;
-    bool help = false;         // the shortcut sheet is shown (?)
-    unsigned hiddenVoices = 0; // bit per voice: not drawn (shift-click its toolbar chip)
-    unsigned foldedLanes = 0;  // LANE_* folded to a strip (click its label)
+    bool analysisDirty = false;   // an analysis slider moved; recomputed on mouse up
+    int mouseX = -1, mouseY = -1; // last mouse position in the client area, points
+    bool help = false;            // the shortcut sheet is shown (?)
+    unsigned hiddenVoices = 0;    // bit per voice: not drawn (shift-click its toolbar chip)
+    unsigned foldedLanes = 0;     // LANE_* folded to a strip (click its label)
 };
 inline WindowState g_ui;
 
 // window.cpp
 Layout layout(); // of the window as it is now
+// The parts of layout(), in client points.
 Rect clientRect();
 bool panelShown();
 Rect noteArea();
@@ -94,7 +101,7 @@ Rect chordsArea();
 Rect lyricsArea();
 Rect overviewArea();
 Rect panelArea();
-void syncViewOrigin();
-void redraw();
-void selectVoice(int v);
-int mods();
+void syncViewOrigin();   // puts the view's origin at the notes area's top left
+void redraw();           // invalidates the window, if open
+void selectVoice(int v); // makes voice v (0 = lead) the edited one
+int mods();              // MOD_* keys held now

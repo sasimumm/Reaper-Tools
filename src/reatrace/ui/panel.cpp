@@ -1,3 +1,5 @@
+// The settings panel on the right of the window (its widget table, drawing and mouse handling),
+// the presets, and the playback speed and audio/notes balance the toolbar also shows.
 #include "ui/panel.h"
 
 #include "analysis.h"
@@ -6,22 +8,29 @@
 #include "settings.h"
 #include "ui/theme.h"
 
-static const char *const CHANNELS[] = {
-    "Mix", "Left", "Right", "Side", "Centre"
-}; // centre: mid minus side
-
+// CH_*; centre: mid minus side
+static const char *const CHANNELS[] = {"Mix", "Left", "Right", "Side", "Centre"};
 static const char *const COLORMAPS[] = {"Graphite", "Magma"}; // COLORMAP_*
-static const double SPEED_RATES[] = {1, 0.75, 0.5};
-static int g_speed;
+
+static const double SPEED_RATES[] = {1, 0.75, 0.5}; // master playrates
+static int g_speed;                                 // index into SPEED_RATES
+
 // Balance: which of audio and notes is heard (track mutes), and the voice tracks' volume.
 enum { LISTEN_BOTH, LISTEN_AUDIO, LISTEN_NOTES };
 static int g_listen;
 static double g_notesDb; // read back from the lead voice track
-static int g_panelWidget = -1;
+
+static int g_panelWidget = -1; // index into widgets() of the one being dragged, -1 if none
+
+// Panel geometry, in points: widgets' left and right margin, and where the first one starts.
+static const int PANEL_MARGIN = 12;
+static const int PANEL_TOP = 8;
 
 // --- settings panel --------------------------------------------------------------
 
 enum WidgetType { W_HEADER, W_SLIDER, W_TOGGLE, W_BUTTON, W_CHOICE, W_BUTTONS };
+
+// What buttons do: W_BUTTON's `button`, or W_BUTTONS' `button` plus the option's index.
 enum {
     B_AUTO_ALL = 1,
     B_AUTO_VIEW,
@@ -34,23 +43,24 @@ enum {
 };
 static const char *const PRESETS[] = {"Vocal in mix", "Solo vocal", "Fast runs"};
 static const char *const DEFAULTS[] = {"Save as default", "Load default"};
+static const char *const AUTO[] = {"Auto: whole item", "Auto: visible"};
+
+// A row of the panel, bound to the setting it shows and changes.
 struct Widget {
     WidgetType type;
     const char *label;
     double *value = nullptr; // sliders
     bool *flag = nullptr;    // toggles
-    double lo = 0, hi = 0;
+    double lo = 0, hi = 0;   // slider range, in `value`'s units
     bool logScale = false;
-    bool analysis = false; // changing it recomputes the analysis
-    double display = 0;    // shown value = value * display
-    const char *fmt = nullptr;
-    int button = 0;
-    int *choice = nullptr; // choices: a row of buttons, one per option
-    std::span<const char *const> options;
+    bool analysis = false;                // changing it recomputes the analysis
+    double display = 0;                   // shown value = value * display
+    const char *fmt = nullptr;            // printf format of the shown value
+    int button = 0;                       // B_*
+    int *choice = nullptr;                // choices: a row of buttons, one per option
+    std::span<const char *const> options; // choice and button row labels
     int optionCount = 0;
 };
-
-static const char *const AUTO[] = {"Auto: whole item", "Auto: visible"};
 
 // Sections fold at their header; what changes while transcribing is in the toolbar.
 // The panel bound to the settings s (g_settings, or defaults to read a slider's default from).
@@ -247,12 +257,17 @@ static std::vector<Widget> widgets() {
     return out;
 }
 
+// In points.
 static int widgetHeight(WidgetType t) {
-    return t == W_HEADER                     ? 30
-           : t == W_SLIDER                   ? 32
-           : t == W_TOGGLE                   ? 20
-           : t == W_CHOICE || t == W_BUTTONS ? 42
-                                             : 24;
+    switch (t) {
+    case W_HEADER: return 30;
+    case W_SLIDER: return 32;
+    case W_TOGGLE: return 20;
+    case W_CHOICE:
+    case W_BUTTONS: return 42;
+    case W_BUTTON: return 24;
+    }
+    return 24;
 }
 
 // Whether p points into obj.
@@ -268,16 +283,20 @@ template <class T> static bool pointsInto(const void *p, const T &obj) {
 // Spectrogram settings need the display values recomputed; guide settings only a redraw.
 static bool isRenderParam(const void *p) { return pointsInto(p, g_settings.rp); }
 
+// Where value v is along the slider, 0..1 inside its range.
 static double sliderFrac(const Widget &w, double v) {
     return w.logScale ? log(v / w.lo) / log(w.hi / w.lo) : (v - w.lo) / (w.hi - w.lo);
 }
+
+// The value at fraction f along the slider (clamped to 0..1).
 static double sliderValue(const Widget &w, double f) {
     f = std::max(0.0, std::min(1.0, f));
     return w.logScale ? w.lo * pow(w.hi / w.lo, f) : w.lo + (w.hi - w.lo) * f;
 }
 
-static int g_panelScroll; // pixels the panel is scrolled down
+static int g_panelScroll; // points the panel is scrolled down
 
+// The height of the shown widgets with the space around them, in points.
 static int panelContentHeight() {
     int h = 16;
     for (const Widget &w : widgets()) {
@@ -288,13 +307,15 @@ static int panelContentHeight() {
 
 void scrollPanel(int dy) {
     const Rect p = panelArea();
-    g_panelScroll = std::max(0, std::min(g_panelScroll + dy, panelContentHeight() - (p.b - p.t)));
+    const int maxScroll = panelContentHeight() - (p.b - p.t);
+    g_panelScroll = std::max(0, std::min(g_panelScroll + dy, maxScroll));
     redraw();
 }
 
+// The index into widgets() of the one at client y, -1 if none.
 static int widgetAt(int y) {
-    std::vector<Widget> ws = widgets();
-    int top = panelArea().t + 8 - g_panelScroll;
+    const std::vector<Widget> ws = widgets();
+    int top = panelArea().t + PANEL_TOP - g_panelScroll;
     for (size_t i = 0; i < ws.size(); i++) {
         const int h = widgetHeight(ws[i].type);
         if (y >= top && y < top + h) {
@@ -305,24 +326,24 @@ static int widgetAt(int y) {
     return -1;
 }
 
+// The display settings fitted to the frames in view.
 static void autoCalibrateView() {
     const Rect n = noteArea();
-    const int f0 =
-        static_cast<int>((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec->frameRate());
-    const int f1 =
-        static_cast<int>((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec->frameRate()) +
-        1;
+    const double frameRate = g_analysis.spec->frameRate();
+    const int f0 = static_cast<int>((g_ui.view.t(n.l) - g_session.audioPos) * frameRate);
+    const int f1 = static_cast<int>((g_ui.view.t(n.r) - g_session.audioPos) * frameRate) + 1;
     autoCalibrate(*g_analysis.spec, g_settings.rp, f0, f1);
 }
 
 static void applyNotesVolume();
 
+// Updates what depends on w's setting after it changed.
 static void changedSetting(const Widget &w) {
-    if (w.analysis) {
+    if (w.analysis) { // recomputed on mouse up
         g_ui.analysisDirty = true;
         redraw();
         return;
-    } // recomputed on mouse up
+    }
     if (w.value == &g_settings.rp.noiseFraction) {
         estimateNoise(*g_analysis.spec, g_settings.rp.noiseFraction);
     }
@@ -338,6 +359,7 @@ static void changedSetting(const Widget &w) {
     }
 }
 
+// PRESETS[i]; "Fast runs" changes only the resolution, on top of the current settings.
 static void applyPreset(int i) {
     if (i == 0) {
         g_settings.channel = CH_CENTRE;
@@ -357,6 +379,7 @@ static void applyPreset(int i) {
     requestAnalysis(true);
 }
 
+// Does what button b (B_*) does.
 static void pressButton(int b) {
     if (b >= B_PRESET) {
         applyPreset(b - B_PRESET);
@@ -405,8 +428,8 @@ static void applySpeed() {
     CSurf_OnPlayRateChange(rate);
 }
 
-// The voice tracks that exist, for this audio item.
-// The voice tracks of the audio item; looked up again after each project change (read every frame).
+// The voice tracks that exist for the audio item; looked up again after each project change (read
+// every frame).
 static std::vector<MediaTrack *> voiceTracks() {
     static std::vector<MediaTrack *> out;
     static int change = -1;
@@ -425,6 +448,7 @@ static std::vector<MediaTrack *> voiceTracks() {
     return out;
 }
 
+// Mutes the audio or the voice tracks for g_listen.
 static void applyListen() {
     if (MediaTrack *a = GetMediaItem_Track(g_session.audio)) {
         SetMediaTrackInfo_Value(a, "B_MUTE", g_listen == LISTEN_NOTES);
@@ -449,13 +473,16 @@ static void applyNotesVolume() {
 }
 
 int listenMode() { return g_listen; }
+
 void setListen(int mode) {
-    g_listen = std::clamp(mode, 0, 2);
+    g_listen = std::clamp(mode, static_cast<int>(LISTEN_BOTH), static_cast<int>(LISTEN_NOTES));
     applyListen();
 }
+
 int speedIndex() { return g_speed; }
+
 void setSpeed(int index) {
-    g_speed = std::clamp(index, 0, 2);
+    g_speed = std::clamp(index, 0, static_cast<int>(std::size(SPEED_RATES)) - 1);
     applySpeed();
 }
 
@@ -465,9 +492,14 @@ static void readBalance() {
     const std::vector<MediaTrack *> vt = voiceTracks();
     const bool audioMuted = a && GetMediaTrackInfo_Value(a, "B_MUTE") != 0;
     const bool notesMuted = !vt.empty() && GetMediaTrackInfo_Value(vt[0], "B_MUTE") != 0;
-    g_listen = audioMuted && !notesMuted   ? LISTEN_NOTES
-               : notesMuted && !audioMuted ? LISTEN_AUDIO
-                                           : LISTEN_BOTH;
+    if (audioMuted && !notesMuted) {
+        g_listen = LISTEN_NOTES;
+    } else if (notesMuted && !audioMuted) {
+        g_listen = LISTEN_AUDIO;
+    } else {
+        g_listen = LISTEN_BOTH;
+    }
+    // not while a panel slider is being dragged: the drag sets the volume itself
     if (!vt.empty() && g_panelWidget < 0) {
         g_notesDb = 20 * log10(std::max(1e-6, GetMediaTrackInfo_Value(vt[0], "D_VOL")));
     }
@@ -480,7 +512,8 @@ static double sliderDefault(const Widget &w) {
         return 0;
     }
     static Settings d;
-    const std::vector<Widget> live = allWidgets(), dflt = allWidgets(d);
+    const std::vector<Widget> live = allWidgets();
+    const std::vector<Widget> dflt = allWidgets(d);
     for (size_t i = 0; i < live.size(); i++) {
         if (live[i].value == w.value) {
             return *dflt[i].value;
@@ -491,17 +524,28 @@ static double sliderDefault(const Widget &w) {
 
 void panelDoubleClick(int y) {
     const int i = widgetAt(y);
-    std::vector<Widget> ws = widgets();
-    if (i >= 0 && ws[idx(i)].type == W_SLIDER && *ws[idx(i)].value != sliderDefault(ws[idx(i)])) {
-        g_panelWidget = i;
-        *ws[idx(i)].value = sliderDefault(ws[idx(i)]);
-        changedSetting(ws[idx(i)]);
+    if (i < 0) {
+        return;
     }
+    const std::vector<Widget> ws = widgets();
+    const Widget &w = ws[idx(i)];
+    if (w.type == W_SLIDER && *w.value != sliderDefault(w)) {
+        g_panelWidget = i;
+        *w.value = sliderDefault(w);
+        changedSetting(w);
+    }
+}
+
+// The option of a choice or button row at client x.
+static int optionAt(const Widget &w, int x, const Rect &p) {
+    const int option =
+        (x - p.l - PANEL_MARGIN) * w.optionCount / std::max(1, p.r - p.l - 2 * PANEL_MARGIN);
+    return std::max(0, std::min(w.optionCount - 1, option));
 }
 
 void panelMouse(int x, int y, bool down) {
     const Rect p = panelArea();
-    std::vector<Widget> ws = widgets();
+    const std::vector<Widget> ws = widgets();
     if (down) {
         g_panelWidget = widgetAt(y);
     }
@@ -521,8 +565,11 @@ void panelMouse(int x, int y, bool down) {
         redraw();
         return;
     }
+
     if (w.type == W_SLIDER) {
-        const double v = sliderValue(w, static_cast<double>(x - p.l - 12) / (p.r - p.l - 24));
+        const double f =
+            static_cast<double>(x - p.l - PANEL_MARGIN) / (p.r - p.l - 2 * PANEL_MARGIN);
+        const double v = sliderValue(w, f);
         if (v != *w.value) {
             *w.value = v;
             changedSetting(w);
@@ -539,12 +586,9 @@ void panelMouse(int x, int y, bool down) {
     } else if (down && w.type == W_BUTTON) {
         pressButton(w.button);
     } else if (down && w.type == W_BUTTONS) {
-        pressButton(w.button +
-                    std::max(0, std::min(w.optionCount - 1, (x - p.l - 12) * w.optionCount /
-                                                                std::max(1, p.r - p.l - 24))));
+        pressButton(w.button + optionAt(w, x, p));
     } else if (down && w.type == W_CHOICE) {
-        const int i = std::max(0, std::min(w.optionCount - 1, (x - p.l - 12) * w.optionCount /
-                                                                  std::max(1, p.r - p.l - 24)));
+        const int i = optionAt(w, x, p);
         if (i == *w.choice) {
             return;
         }
@@ -567,13 +611,14 @@ void drawPanel(Canvas &cv, HDC dc) {
     cv.clip = p; // scrolled widgets stay out of the toolbar and the status line
     cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
     cv.fill(p.l, p.t, p.l + 1, p.b, g_theme.separator);
-    std::vector<Widget> ws = widgets();
-    int top = panelArea().t + 8 - g_panelScroll;
+
+    const std::vector<Widget> ws = widgets();
+    int top = p.t + PANEL_TOP - g_panelScroll;
     char buf[64];
-    const int l = p.l + 12, r = p.r - 12;
+    const int l = p.l + PANEL_MARGIN, r = p.r - PANEL_MARGIN;
     for (const Widget &w : ws) {
         const int h = widgetHeight(w.type);
-        if (w.type == W_HEADER) {
+        if (w.type == W_HEADER) { // a line above (unless at the top), the label, + when folded
             if (top > p.t + 4) {
                 cv.fill(p.l + 1, top + 2, p.r, top + 3, g_theme.track);
             }
@@ -586,10 +631,10 @@ void drawPanel(Canvas &cv, HDC dc) {
             snprintf(buf, sizeof(buf), w.fmt, *w.value * w.display);
 #pragma clang unsafe_buffer_usage end
             text(dc, buf, l, top, r, top + 16, g_theme.dim, DT_RIGHT);
-            const int by = top + 20,
-                      bx =
-                          l + static_cast<int>(lround(
-                                  (r - l) * std::max(0.0, std::min(1.0, sliderFrac(w, *w.value)))));
+            // the bar, filled up to the knob at bx
+            const int by = top + 20;
+            const double frac = std::max(0.0, std::min(1.0, sliderFrac(w, *w.value)));
+            const int bx = l + static_cast<int>(lround((r - l) * frac));
             cv.fill(l, by + 3, r, by + 7, g_theme.track);
             cv.fill(l, by + 3, bx, by + 7,
                     w.analysis && g_ui.analysisDirty ? g_theme.dirty : g_theme.accent);
@@ -603,14 +648,14 @@ void drawPanel(Canvas &cv, HDC dc) {
         } else if (w.type == W_CHOICE || w.type == W_BUTTONS) {
             text(dc, w.label, l, top, r, top + 16, g_theme.text, DT_LEFT);
             for (int i = 0; i < w.optionCount; i++) {
-                const int bl = l + (r - l) * i / w.optionCount,
-                          br = l + (r - l) * (i + 1) / w.optionCount;
+                const int bl = l + (r - l) * i / w.optionCount;
+                const int br = l + (r - l) * (i + 1) / w.optionCount;
                 const bool on = w.choice && i == *w.choice;
                 cv.fill(bl, top + 18, br - 2, top + 40, on ? g_theme.accent : g_theme.button);
                 text(dc, w.options[idx(i)], bl, top + 18, br - 2, top + 40,
                      on ? g_theme.onText : g_theme.text, DT_CENTER);
             }
-        } else {
+        } else { // W_BUTTON
             cv.fill(l, top + 2, r, top + h - 2, g_theme.button);
             text(dc, w.label, l, top + 2, r, top + h - 2, g_theme.text, DT_CENTER);
         }
@@ -622,7 +667,7 @@ void drawPanel(Canvas &cv, HDC dc) {
 void syncPlayback() {
     const double rate = Master_GetPlayRate(NULL);
     const std::span<const double> rates = SPEED_RATES;
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < static_cast<int>(rates.size()); i++) { // the nearest one
         if (fabs(rates[idx(i)] - rate) < fabs(rates[idx(g_speed)] - rate)) {
             g_speed = i;
         }

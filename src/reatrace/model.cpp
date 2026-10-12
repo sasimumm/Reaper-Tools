@@ -1,3 +1,5 @@
+// REAPER-free window logic: the settings text format, quantise, follow-playback paging, the
+// isolate filter's pitch schedule and the window layout.
 #include "model.h"
 
 #include "index.h"
@@ -7,6 +9,8 @@
 #include <cstdlib>
 #include <string_view>
 
+// One stored setting: its name in the "name=value;" text and a pointer to exactly one of the
+// fields d, b or i of a Settings.
 struct Setting {
     const char *name = nullptr;
     double *d = nullptr;
@@ -14,7 +18,8 @@ struct Setting {
     int *i = nullptr;
     double lo = 0, hi = 0; // loaded values are clamped to this range
 };
-// The fields of `s`, as stored.
+
+// The fields of `s`, as stored (pointing into `s`).
 static std::vector<Setting> fields(Settings &s) {
     return {
         {.name = "gamma", .d = &s.np.gamma, .lo = 3, .hi = 40},
@@ -62,7 +67,7 @@ static double toNumber(const std::string &s) {
 }
 
 std::string encodeSettings(const Settings &settings) {
-    Settings copy = settings;
+    Settings copy = settings; // fields() needs pointers to non-const fields
     std::string out;
     char buf[64];
     for (const Setting &st : fields(copy)) {
@@ -84,11 +89,13 @@ std::string encodeSettings(const Settings &settings) {
 
 void decodeSettings(const char *str, Settings &settings) {
     const std::vector<Setting> fs = fields(settings);
+    // one "name=value;" pair per step; a malformed rest is ignored
     for (std::string_view p = str ? str : ""; !p.empty();) {
         const size_t eq = p.find('='), end = p.find(';');
         if (eq == p.npos || end == p.npos || eq > end) {
             break;
         }
+
         const std::string name(p.substr(0, eq));
         const double v = toNumber(std::string(p.substr(eq + 1, end - eq - 1)));
         for (const Setting &st : fs) {
@@ -116,6 +123,7 @@ bool quantiseNotes(std::vector<Note> &notes, const std::function<double(double)>
         }
         const double s = n.start + (snap(n.start) - n.start) * strength;
         double e = n.end + (snap(n.end) - n.end) * strength;
+        // too short (or reversed): keep the note's own length from the new start, at least minLen
         if (e < s + minLen) {
             e = std::max(n.end - n.start + s, s + minLen);
         }
@@ -150,19 +158,22 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch) {
 }
 
 Layout computeLayout(int width, int height, bool panelWanted, unsigned folded) {
-    const int chordsH = folded & LANE_CHORDS ? FOLDED_H : CHORDS_H,
-              lyricsH = folded & LANE_LYRICS ? FOLDED_H : LYRICS_H,
-              overviewH = folded & LANE_OVERVIEW ? FOLDED_H : OVERVIEW_H;
+    const int chordsH = folded & LANE_CHORDS ? FOLDED_H : CHORDS_H;
+    const int lyricsH = folded & LANE_LYRICS ? FOLDED_H : LYRICS_H;
+    const int overviewH = folded & LANE_OVERVIEW ? FOLDED_H : OVERVIEW_H;
+
     Layout L = {};
     L.client = {0, 0, std::max(0, width), std::max(0, height)};
     const Rect &c = L.client;
     L.tooSmall = c.r < MIN_W || c.b < MIN_H;
-    L.panelShown = panelWanted && c.r >= KB_W + PANEL_W + 100;
+    L.panelShown = panelWanted && c.r >= KB_W + PANEL_W + 100; // at least 100 points of notes
+
+    // the notes area, kept at least a point wide and high; the other areas line up with it
     const int top = TOOLBAR_H + RULER_H + chordsH;
-    const Rect n = {
-        KB_W, top, std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0)),
-        std::max(top + 1, c.b - STATUS_H - overviewH - lyricsH)
-    };
+    const int notesR = std::max(KB_W + 1, c.r - (L.panelShown ? PANEL_W : 0));
+    const int notesB = std::max(top + 1, c.b - STATUS_H - overviewH - lyricsH);
+    const Rect n = {KB_W, top, notesR, notesB};
+
     L.toolbar = {0, 0, c.r, TOOLBAR_H};
     L.notes = n;
     L.ruler = {n.l, TOOLBAR_H, n.r, TOOLBAR_H + RULER_H};
