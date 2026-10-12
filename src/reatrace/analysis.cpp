@@ -17,27 +17,43 @@ void updateValues() {
 
 double frameTime(double f) { return g_session.audioPos + f / g_analysis.spec.frameRate(); }
 
-// What an analysis depends on: if any of it changes, that channel is recomputed.
-struct AnalysisKey {
-    NSGTParams p;
-    double pos = 0, len = 0, offs = 0, rate = 1;
-    bool vote = true;
+// The samples analysed: the recording and the part of it the item plays. The item's position isn't
+// in it (samples are read from the item start; frames map to time through the live position).
+struct AudioKey {
     std::string audio; // audioIdentity(): another take or source is another recording
-    bool operator==(const AnalysisKey &o) const {
+    double len = 0, offs = 0, rate = 1;
+    bool operator==(const AudioKey &) const = default;
+};
+
+// What a channel's display spectrogram (and its contour, onsets) depends on.
+struct SpecKey {
+    AudioKey audio;
+    NSGTParams p;
+    bool operator==(const SpecKey &o) const {
         return audio == o.audio && p.sampleRate == o.p.sampleRate && p.fmin == o.p.fmin &&
                p.fmax == o.p.fmax && p.binsPerOctave == o.p.binsPerOctave && p.hop == o.p.hop &&
-               p.gamma == o.p.gamma && vote == o.vote && pos == o.pos && len == o.len &&
-               offs == o.offs && rate == o.rate;
+               p.gamma == o.p.gamma;
     }
+};
+
+// What the note estimate depends on: not the display settings (it has its own spectrogram).
+struct EstimateKey {
+    AudioKey audio;
+    int channel = CH_MIX;
+    bool vote = true;
+    bool operator==(const EstimateKey &) const = default;
 };
 
 struct Vocal {
     Contour contour;
     std::vector<Segment> segments;
     std::vector<int> onsets;
+};
+
+struct Estimate {
     std::vector<Segment> estimated;
     std::vector<int> estimatedVoice;
-    std::string estimateNote;
+    std::string note;
 };
 
 // basic-pitch's compiled model, installed next to the plugin
@@ -56,20 +72,28 @@ static Vocal analyzeVocal(const Spectrogram &s) {
 // One entry per channel. Memory ceiling: ~30 MB per channel per 3 minutes of audio.
 struct ChannelCache {
     bool valid = false;
-    AnalysisKey key;
+    SpecKey key;
     Spectrogram spec;
     bool vocalValid = false;
     Vocal vocal;
 };
 static ChannelCache g_cache[5];
 
+// The last note estimate (one: it is small, but slow to recompute).
+static struct {
+    bool valid = false;
+    EstimateKey key;
+    Estimate est;
+} g_estimate;
+
 void clearCache() {
     for (ChannelCache &c : g_cache) {
         c = ChannelCache();
     }
+    g_estimate = {};
 }
 
-static bool cached(int ch, const AnalysisKey &key) {
+static bool cached(int ch, const SpecKey &key) {
     return g_cache[ch].valid && g_cache[ch].key == key;
 }
 
@@ -97,19 +121,24 @@ static void readAudio(MediaItem_Take *take, double len, double sr, std::vector<f
     DestroyAudioAccessor(acc);
 }
 
-// A background analysis of one channel. The worker only touches the job; the main thread polls
-// `done` from the timer and installs the results.
+// A background analysis of one channel: its display spectrogram and contour, the note estimate, or
+// both, whichever isn't cached. The worker only touches the job; the main thread polls `done` from
+// the timer and installs the results.
 struct Job {
     std::thread thread;
     std::atomic<bool> cancel{false}, done{false};
     std::atomic<int> permille{0};
-    AnalysisKey key;
+    SpecKey key;
+    EstimateKey estKey;
     int channel = CH_MIX;
     std::vector<float> left, right;
-    bool need[4] = {};  // raw channels (CH_MIX..CH_SIDE) to compute
-    Spectrogram raw[4]; // computed, or copied from the cache when only needed for the centre
-    Spectrogram spec;   // the requested channel
+    bool needSpec = false; // the display spectrogram and contour
+    bool need[4] = {};     // raw channels (CH_MIX..CH_SIDE) to compute for it
+    Spectrogram raw[4];    // computed, or copied from the cache when only needed for the centre
+    Spectrogram spec;      // the requested channel
     Vocal vocal;
+    bool needEstimate = false;
+    Estimate est;
     std::string modelPath;
 
     // The note estimator, on the channel's own signal (the centre uses the mid), with its own
@@ -124,9 +153,10 @@ struct Job {
                                             : 0.5f * (a + b);
         }
         const NSGTParams ep = estimateNSGTParams();
-        const bool same = spec.p.sampleRate == ep.sampleRate && spec.p.fmin == ep.fmin &&
-                          spec.p.fmax == ep.fmax && spec.p.binsPerOctave == ep.binsPerOctave &&
-                          spec.p.hop == ep.hop && spec.p.gamma == ep.gamma;
+        const bool same = needSpec && spec.p.sampleRate == ep.sampleRate &&
+                          spec.p.fmin == ep.fmin && spec.p.fmax == ep.fmax &&
+                          spec.p.binsPerOctave == ep.binsPerOctave && spec.p.hop == ep.hop &&
+                          spec.p.gamma == ep.gamma;
         auto part = [&](double a, double b) {
             return [&, a, b](double f) { return progress(a + (b - a) * f); };
         };
@@ -153,15 +183,15 @@ struct Job {
         if (cancel) {
             return;
         }
-        vocal.estimateNote = haveBp ? "" : "basic-pitch: " + err;
+        est.note = haveBp ? "" : "basic-pitch: " + err;
         EstimateParams opts;
-        opts.vote = key.vote;
-        const std::vector<NoteEstimate> est =
+        opts.vote = estKey.vote;
+        const std::vector<NoteEstimate> notes =
             estimateNotes(es, mono, haveBp ? &bp : nullptr, opts, part(0.45, 1));
-        for (const NoteEstimate &e : est) {
-            vocal.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
+        for (const NoteEstimate &e : notes) {
+            est.estimated.push_back({e.f0, e.f1 - 1, (double)e.pitch});
         }
-        vocal.estimatedVoice = assignVoices(est, es.frameRate(), WINDOW_VOICES);
+        est.estimatedVoice = assignVoices(notes, es.frameRate(), WINDOW_VOICES);
     }
 
     std::string error; // set instead of the results when the analysis failed
@@ -183,11 +213,32 @@ struct Job {
     }
 
     void work() {
-        // progress weights: one per spectrogram, two for the vocal analysis and note estimation
-        int stages = 2, stage = 0;
+        // progress weights: one per spectrogram, two for the note estimation
+        int stages = needEstimate ? 2 : 0, stage = 0;
         for (bool b : need) {
             stages += b;
         }
+        stages = std::max(1, stages);
+        if (needSpec) {
+            computeSpec(stage, stages);
+        }
+        if (cancel) {
+            return;
+        }
+        if (needEstimate) {
+            estimate([&](double f) {
+                permille = (int)(1000 * (stage + f * 2) / stages);
+                return !cancel;
+            });
+        }
+        if (cancel) {
+            return;
+        }
+        permille = 1000;
+        done = true;
+    }
+
+    void computeSpec(int &stage, int stages) {
         for (int ch = 0; ch < 4; ch++) {
             if (!need[ch]) {
                 continue;
@@ -227,18 +278,6 @@ struct Job {
             spec = raw[channel];
         }
         vocal = analyzeVocal(spec);
-        if (cancel) {
-            return;
-        }
-        estimate([&](double f) {
-            permille = (int)(1000 * (stage + f * 2) / stages);
-            return !cancel;
-        });
-        if (cancel) {
-            return;
-        }
-        permille = 1000;
-        done = true;
     }
 };
 static std::unique_ptr<Job> g_job;
@@ -255,12 +294,12 @@ void cancelJob() {
     g_job.reset();
 }
 
-static void install(const ChannelCache &c) {
+static void install(const ChannelCache &c, const Estimate &e) {
     g_analysis.spec = c.spec;
     g_analysis.contour = c.vocal.contour, g_analysis.segments = c.vocal.segments,
     g_analysis.onsets = c.vocal.onsets;
-    g_analysis.estimated = c.vocal.estimated, g_analysis.estimatedVoice = c.vocal.estimatedVoice,
-    g_analysis.estimateNote = c.vocal.estimateNote;
+    g_analysis.estimated = e.estimated, g_analysis.estimatedVoice = e.estimatedVoice,
+    g_analysis.estimateNote = e.note;
     g_analysis.snapTimes.clear();
     for (int f : g_analysis.onsets) {
         g_analysis.snapTimes.push_back(frameTime(f));
@@ -298,35 +337,42 @@ void requestAnalysis(bool autoCalibrateAfter) {
         redraw();
         return;
     }
-    const AnalysisKey key = {g_settings.np,          g_session.audioPos,  g_session.audioLen,
-                             g_session.audioOffs,    g_session.audioRate, g_settings.estimateVote,
-                             g_session.audioIdentity};
+    const AudioKey audio = {
+        g_session.audioIdentity, g_session.audioLen, g_session.audioOffs, g_session.audioRate
+    };
     const int ch = g_settings.channel;
-    if (cached(ch, key) && g_cache[ch].vocalValid) {
-        install(g_cache[ch]);
+    const SpecKey key = {audio, g_settings.np};
+    const EstimateKey estKey = {audio, ch, g_settings.estimateVote};
+    const bool haveSpec = cached(ch, key) && g_cache[ch].vocalValid,
+               haveEstimate = g_estimate.valid && g_estimate.key == estKey;
+    if (haveSpec && haveEstimate) {
+        install(g_cache[ch], g_estimate.est);
         return;
     }
 
     std::unique_ptr<Job> job(new Job);
-    job->key = key, job->channel = ch, job->modelPath = basicPitchModel();
-    const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
-    for (int r : rawCh) {
-        if (r < 0) {
-            continue;
+    job->key = key, job->estKey = estKey, job->channel = ch, job->modelPath = basicPitchModel();
+    job->needSpec = !haveSpec, job->needEstimate = !haveEstimate;
+    if (job->needSpec) {
+        const int rawCh[2] = {ch == CH_CENTRE ? CH_MIX : ch, ch == CH_CENTRE ? CH_SIDE : -1};
+        for (int r : rawCh) {
+            if (r < 0) {
+                continue;
+            }
+            if (cached(r, key)) {
+                job->raw[r] = g_cache[r].spec;
+            } else {
+                job->need[r] = true;
+            }
         }
-        if (cached(r, key)) {
-            job->raw[r] = g_cache[r].spec;
-        } else {
-            job->need[r] = true;
+        if (ch == CH_CENTRE && cached(CH_CENTRE, key)) { // only the vocal analysis is missing
+            job->need[CH_MIX] = job->need[CH_SIDE] = false;
+            job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
         }
     }
-    if (ch == CH_CENTRE && cached(CH_CENTRE, key)) // only the vocal analysis is missing
-    {
-        job->need[CH_MIX] = job->need[CH_SIDE] = false;
-        job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
+    if (job->needEstimate || job->need[0] || job->need[1] || job->need[2] || job->need[3]) {
+        readAudio(take, g_session.audioLen, g_settings.np.sampleRate, job->left, job->right);
     }
-    readAudio(take, g_session.audioLen, g_settings.np.sampleRate, job->left,
-              job->right); // the note estimator always needs it
     Job *j = job.get();
     job->thread = std::thread([j] { j->run(); });
     g_job = std::move(job);
@@ -351,18 +397,24 @@ void pollJob() {
         redraw();
         return;
     }
-    for (int r = 0; r < 4; r++) {
-        if (j.need[r] && r != j.channel) {
-            ChannelCache &c = g_cache[r];
-            c = ChannelCache();
-            c.valid = true, c.key = j.key, c.spec = std::move(j.raw[r]);
+    if (j.needSpec) {
+        for (int r = 0; r < 4; r++) {
+            if (j.need[r] && r != j.channel) {
+                ChannelCache &c = g_cache[r];
+                c = ChannelCache();
+                c.valid = true, c.key = j.key, c.spec = std::move(j.raw[r]);
+            }
         }
+        ChannelCache &c = g_cache[j.channel];
+        c.valid = true, c.key = j.key, c.spec = std::move(j.spec), c.vocal = std::move(j.vocal),
+        c.vocalValid = true;
     }
-    ChannelCache &c = g_cache[j.channel];
-    c.valid = true, c.key = j.key, c.spec = std::move(j.spec), c.vocal = std::move(j.vocal),
-    c.vocalValid = true;
+    if (j.needEstimate) {
+        g_estimate.valid = true, g_estimate.key = j.estKey, g_estimate.est = std::move(j.est);
+    }
+    const int ch = j.channel;
     g_job.reset();
-    install(c);
+    install(g_cache[ch], g_estimate.est);
 }
 
 // Progress of the running analysis in permille, -1 if none.
