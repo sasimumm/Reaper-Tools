@@ -73,6 +73,7 @@
 #define REAPERAPI_WANT_TrackFX_Delete
 #define REAPERAPI_WANT_TrackFX_GetCount
 #define REAPERAPI_WANT_TrackFX_GetFXName
+#define REAPERAPI_WANT_TrackFX_GetFXGUID
 #define REAPERAPI_WANT_TrackFX_SetParam
 #define REAPERAPI_WANT_RecursiveCreateDirectory
 #define REAPERAPI_WANT_Undo_BeginBlock2
