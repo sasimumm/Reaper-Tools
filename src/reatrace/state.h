@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -46,7 +47,8 @@ inline Session g_session;
 
 // The installed analysis of the item (written only by analysis.cpp's install()).
 struct AnalysisResult {
-    Spectrogram spec;
+    // shared with the analysis cache (no copy of ~150 MB per 15 minutes); never null
+    std::shared_ptr<Spectrogram> spec = std::make_shared<Spectrogram>();
     std::vector<unsigned char> val; // renderValues() output, one byte per cell
     unsigned int lut[256] = {};
     int valVersion = 0;

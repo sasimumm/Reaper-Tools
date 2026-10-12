@@ -59,7 +59,7 @@ static void renderLayer(const Rect &n) {
     const double S = g_scale;
     const int w = (n.r - n.l) * g_scale, h = (n.b - n.t) * g_scale;
     g_layer.assign((size_t)w * h, 0xff000000 | C_AREA);
-    const Spectrogram &s = g_analysis.spec;
+    const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
         return;
     }
@@ -162,7 +162,7 @@ static void renderOverview(int w, int h) {
     g_ovLayer.assign((size_t)w * h, 0xff000000 | C_AREA);
     g_ovW = w, g_ovH = h, g_ovVersion = g_analysis.valVersion, g_ovPos = g_session.audioPos,
     g_ovLen = g_session.audioLen;
-    const Spectrogram &s = g_analysis.spec;
+    const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
         return;
     }
@@ -238,7 +238,7 @@ static bool isBlack(int p) { return (0x54A >> (((p % 12) + 12) % 12)) & 1; }
 
 // Strongest level (dB) within half a semitone of `pitch` between times a and b.
 static double levelDb(double pitch, double a, double b) {
-    const Spectrogram &s = g_analysis.spec;
+    const Spectrogram &s = *g_analysis.spec;
     if (!s.frames) {
         return -200;
     }
@@ -316,7 +316,7 @@ static void drawHoverGuides(Canvas &cv, HDC dc, const Rect &n) {
     for (const auto &c : below) {
         const double pc = overtonePitch(p0, 1) - 12 * log2((double)c.h);
         const int y = (int)lround(g_ui.view.y(pc));
-        if (y < n.t || y >= n.b || g_analysis.spec.binOfPitch(pc) < 0) {
+        if (y < n.t || y >= n.b || g_analysis.spec->binOfPitch(pc) < 0) {
             continue;
         }
         const double rel = levelDb(pc, tA, tB) - own;
@@ -366,7 +366,7 @@ static void drawContour(Canvas &cv, const Rect &n) {
     if (!g_settings.showContour || g_analysis.contour.pitch.empty()) {
         return;
     }
-    const double fr = g_analysis.spec.frameRate();
+    const double fr = g_analysis.spec->frameRate();
     auto pitchAt = [&](double f) -> double { // linear between voiced frames, -1 if unvoiced
         const int a = (int)floor(f), b = a + 1;
         if (a < 0 || b >= (int)g_analysis.contour.pitch.size()) {
@@ -529,7 +529,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         const int ip = (int)floor(p + 0.5);
         pitchName(ip, buf, sizeof(buf)), col[0] = buf;
         snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12)), col[1] = buf;
-        const Spectrogram &sp = g_analysis.spec;
+        const Spectrogram &sp = *g_analysis.spec;
         const int f = (int)lround((t - g_session.audioPos) * sp.frameRate());
         if (f >= 0 && f < sp.frames) {
             const int b0 = std::max(0, (int)floor(sp.binOfPitch(ip - 1))),
@@ -617,7 +617,7 @@ static void drawEmptyStates(Canvas &cv, HDC dc, const Rect &n) {
         text(dc, msg, cx - w / 2, y - 14, cx + w / 2, y + 14, g_theme.text, DT_CENTER);
     };
     char buf[300];
-    if (!g_analysis.spec.frames) {
+    if (!g_analysis.spec->frames) {
         if (const int pm = analysisProgress(); pm >= 0) {
             snprintf(buf, sizeof(buf), "Analysing…  %d%%", pm / 10);
             banner(buf, cy);

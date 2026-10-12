@@ -302,9 +302,10 @@ static int widgetAt(int y) {
 
 static void autoCalibrateView() {
     const Rect n = noteArea();
-    const int f0 = (int)((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec.frameRate());
-    const int f1 = (int)((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec.frameRate()) + 1;
-    autoCalibrate(g_analysis.spec, g_settings.rp, f0, f1);
+    const int f0 = (int)((g_ui.view.t(n.l) - g_session.audioPos) * g_analysis.spec->frameRate());
+    const int f1 =
+        (int)((g_ui.view.t(n.r) - g_session.audioPos) * g_analysis.spec->frameRate()) + 1;
+    autoCalibrate(*g_analysis.spec, g_settings.rp, f0, f1);
 }
 
 static void applyNotesVolume();
@@ -316,7 +317,7 @@ static void changedSetting(const Widget &w) {
         return;
     } // recomputed on mouse up
     if (w.value == &g_settings.rp.noiseFraction) {
-        estimateNoise(g_analysis.spec, g_settings.rp.noiseFraction);
+        estimateNoise(*g_analysis.spec, g_settings.rp.noiseFraction);
     }
     if (w.value == &g_notesDb) {
         applyNotesVolume();
@@ -366,7 +367,7 @@ static void pressButton(int b) {
         return;
     }
     if (b == B_AUTO_ALL) {
-        autoCalibrate(g_analysis.spec, g_settings.rp);
+        autoCalibrate(*g_analysis.spec, g_settings.rp);
     } else if (b == B_AUTO_VIEW) {
         autoCalibrateView();
     } else if (b == B_RESET) {

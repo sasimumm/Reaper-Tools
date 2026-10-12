@@ -205,7 +205,7 @@ void acceptVisibleSuggestions() {
 
 // A freshly drawn note takes the median sung pitch under it when that is within two semitones.
 void pitchFromContour(Note &nt) {
-    const double fr = g_analysis.spec.frameRate();
+    const double fr = g_analysis.spec->frameRate();
     double sung = 0;
     if (contourMedian(g_analysis.contour, (int)lround((nt.start - g_session.audioPos) * fr),
                       (int)lround((nt.end - g_session.audioPos) * fr), (int)lround(0.05 * fr),

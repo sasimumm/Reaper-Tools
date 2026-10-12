@@ -9,13 +9,13 @@
 // --- spectrogram ---------------------------------------------------------------
 
 void updateValues() {
-    renderValues(g_analysis.spec, g_settings.rp, g_analysis.val);
+    renderValues(*g_analysis.spec, g_settings.rp, g_analysis.val);
     makeColormap(g_settings.rp.bias, g_analysis.lut, g_settings.rp.colormap);
     g_analysis.valVersion++;
     redraw();
 }
 
-double frameTime(double f) { return g_session.audioPos + f / g_analysis.spec.frameRate(); }
+double frameTime(double f) { return g_session.audioPos + f / g_analysis.spec->frameRate(); }
 
 // The samples analysed: the recording and the part of it the item plays. The item's position isn't
 // in it (samples are read from the item start; frames map to time through the live position).
@@ -73,7 +73,7 @@ static Vocal analyzeVocal(const Spectrogram &s) {
 struct ChannelCache {
     bool valid = false;
     SpecKey key;
-    Spectrogram spec;
+    std::shared_ptr<Spectrogram> spec; // shared with the job and the installed analysis
     bool vocalValid = false;
     Vocal vocal;
 };
@@ -132,10 +132,10 @@ struct Job {
     EstimateKey estKey;
     int channel = CH_MIX;
     std::vector<float> left, right;
-    bool needSpec = false; // the display spectrogram and contour
-    bool need[4] = {};     // raw channels (CH_MIX..CH_SIDE) to compute for it
-    Spectrogram raw[4];    // computed, or copied from the cache when only needed for the centre
-    Spectrogram spec;      // the requested channel
+    bool needSpec = false;               // the display spectrogram and contour
+    bool need[4] = {};                   // raw channels (CH_MIX..CH_SIDE) to compute for it
+    std::shared_ptr<Spectrogram> raw[4]; // computed, or the cache's when only needed for the centre
+    std::shared_ptr<Spectrogram> spec;   // the requested channel
     Vocal vocal;
     bool needEstimate = false;
     Estimate est;
@@ -152,11 +152,12 @@ struct Job {
                       : channel == CH_SIDE  ? 0.5f * (a - b)
                                             : 0.5f * (a + b);
         }
+        std::vector<float>().swap(left), std::vector<float>().swap(right); // ~80 MB each at 15 min
         const NSGTParams ep = estimateNSGTParams();
-        const bool same = needSpec && spec.p.sampleRate == ep.sampleRate &&
-                          spec.p.fmin == ep.fmin && spec.p.fmax == ep.fmax &&
-                          spec.p.binsPerOctave == ep.binsPerOctave && spec.p.hop == ep.hop &&
-                          spec.p.gamma == ep.gamma;
+        const bool same = needSpec && spec->p.sampleRate == ep.sampleRate &&
+                          spec->p.fmin == ep.fmin && spec->p.fmax == ep.fmax &&
+                          spec->p.binsPerOctave == ep.binsPerOctave && spec->p.hop == ep.hop &&
+                          spec->p.gamma == ep.gamma;
         auto part = [&](double a, double b) {
             return [&, a, b](double f) { return progress(a + (b - a) * f); };
         };
@@ -173,7 +174,7 @@ struct Job {
                 },
                 part(0, 0.2));
         }
-        const Spectrogram &es = same ? spec : own;
+        const Spectrogram &es = same ? *spec : own;
         if (cancel) {
             return;
         }
@@ -244,7 +245,7 @@ struct Job {
                 continue;
             }
             const std::vector<float> &l = left, &r = right;
-            raw[ch] = computeNSGT(
+            raw[ch] = std::make_shared<Spectrogram>(computeNSGT(
                 key.p, (long long)l.size(),
                 [&](long long start, int n, float *out) {
                     for (int i = 0; i < n; i++) {
@@ -260,24 +261,27 @@ struct Job {
                 [&](double f) {
                     permille = (int)(1000 * (stage + f) / stages);
                     return !cancel;
-                });
+                }));
             stage++;
             if (cancel) {
                 return;
             }
         }
-        if (channel == CH_CENTRE) {
+        if (channel == CH_CENTRE && raw[CH_SIDE]) {
             // centre-panned content (usually the lead vocal): mid magnitudes minus side magnitudes
-            spec = raw[CH_MIX];
-            if (raw[CH_SIDE].mag.size() == spec.mag.size()) {
-                for (size_t i = 0; i < spec.mag.size(); i++) {
-                    spec.mag[i] = std::max(0.0f, spec.mag[i] - raw[CH_SIDE].mag[i]);
+            // (not its noise: the main thread may be rewriting that one's; install() recomputes it)
+            const Spectrogram &mid = *raw[CH_MIX];
+            spec = std::make_shared<Spectrogram>();
+            spec->p = mid.p, spec->bins = mid.bins, spec->frames = mid.frames, spec->mag = mid.mag;
+            if (raw[CH_SIDE]->mag.size() == spec->mag.size()) {
+                for (size_t i = 0; i < spec->mag.size(); i++) {
+                    spec->mag[i] = std::max(0.0f, spec->mag[i] - raw[CH_SIDE]->mag[i]);
                 }
             }
-        } else {
-            spec = raw[channel];
+        } else { // a plain channel, or a cached centre missing only its contour
+            spec = raw[channel == CH_CENTRE ? CH_MIX : channel];
         }
-        vocal = analyzeVocal(spec);
+        vocal = analyzeVocal(*spec);
     }
 };
 static std::unique_ptr<Job> g_job;
@@ -295,7 +299,7 @@ void cancelJob() {
 }
 
 static void install(const ChannelCache &c, const Estimate &e) {
-    g_analysis.spec = c.spec;
+    g_analysis.spec = c.spec ? c.spec : std::make_shared<Spectrogram>();
     g_analysis.contour = c.vocal.contour, g_analysis.segments = c.vocal.segments,
     g_analysis.onsets = c.vocal.onsets;
     g_analysis.estimated = e.estimated, g_analysis.estimatedVoice = e.estimatedVoice,
@@ -309,9 +313,9 @@ static void install(const ChannelCache &c, const Estimate &e) {
             g_analysis.snapTimes.push_back(frameTime(sg.f1 + 1));
     }
     std::sort(g_analysis.snapTimes.begin(), g_analysis.snapTimes.end());
-    estimateNoise(g_analysis.spec, g_settings.rp.noiseFraction);
+    estimateNoise(*g_analysis.spec, g_settings.rp.noiseFraction);
     if (g_autoOnInstall) {
-        autoCalibrate(g_analysis.spec, g_settings.rp), g_autoOnInstall = false;
+        autoCalibrate(*g_analysis.spec, g_settings.rp), g_autoOnInstall = false;
     }
     g_ui.analysisDirty = false;
     updateValues();
@@ -367,7 +371,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
         }
         if (ch == CH_CENTRE && cached(CH_CENTRE, key)) { // only the vocal analysis is missing
             job->need[CH_MIX] = job->need[CH_SIDE] = false;
-            job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = Spectrogram();
+            job->raw[CH_MIX] = g_cache[CH_CENTRE].spec, job->raw[CH_SIDE] = nullptr;
         }
     }
     if (job->needEstimate || job->need[0] || job->need[1] || job->need[2] || job->need[3]) {
