@@ -8,6 +8,7 @@
 using RGB = unsigned int;  // 0xRRGGBB
 using ARGB = unsigned int; // 0xAARRGGBB: a backbuffer or layer pixel, always opaque
 
+// c as a backbuffer pixel.
 inline ARGB opaque(RGB c) { return 0xff000000 | c; }
 
 // col over the pixel d with alpha a (0..256). Red and blue are blended together, green apart:

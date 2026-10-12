@@ -14,6 +14,7 @@ struct Canvas {
     Rect clip;
     int scale; // device pixels per point
 
+    // Fills [x0, x1) by [y0, y1) with col at alpha a (0..256), clipped.
     void fill(int x0, int y0, int x1, int y1, RGB col, int a = 256) {
         const int s = scale;
         x0 = std::max(std::max(x0, clip.l) * s, 0);
@@ -35,6 +36,7 @@ struct Canvas {
             }
         }
     }
+
     // Rectangles with their corners cut by a point: notes and suggestions.
     void rounded(int x0, int y0, int x1, int y1, unsigned int col, int a = 256) {
         if (x1 - x0 < 3 || y1 - y0 < 3) {
@@ -45,13 +47,24 @@ struct Canvas {
         fill(x0, y0 + 1, x1, y1 - 1, col, a);
         fill(x0 + 1, y1 - 1, x1 - 1, y1, col, a);
     }
-    void roundedFrame(int x0, int y0, int x1, int y1, unsigned int col, int t = 1, int a = 256) {
-        fill(x0 + 1, y0, x1 - 1, y0 + t, col, a), fill(x0 + 1, y1 - t, x1 - 1, y1, col, a);
-        fill(x0, y0 + 1, x0 + t, y1 - 1, col, a), fill(x1 - t, y0 + 1, x1, y1 - 1, col, a);
+
+    // The outline of rounded(), t thick.
+    void roundedFrame(int x0, int y0, int x1, int y1, RGB col, int t = 1, int a = 256) {
+        fill(x0 + 1, y0, x1 - 1, y0 + t, col, a); // top
+        fill(x0 + 1, y1 - t, x1 - 1, y1, col, a); // bottom
+        fill(x0, y0 + 1, x0 + t, y1 - 1, col, a); // left
+        fill(x1 - t, y0 + 1, x1, y1 - 1, col, a); // right
     }
-    void frame(int x0, int y0, int x1, int y1, unsigned int col, int t = 1) {
-        fill(x0, y0, x1, y0 + t, col), fill(x0, y1 - t, x1, y1, col);
-        fill(x0, y0, x0 + t, y1, col), fill(x1 - t, y0, x1, y1, col);
+
+    // A square-cornered outline, t thick.
+    void frame(int x0, int y0, int x1, int y1, RGB col, int t = 1) {
+        fill(x0, y0, x1, y0 + t, col); // top
+        fill(x0, y1 - t, x1, y1, col); // bottom
+        fill(x0, y0, x0 + t, y1, col); // left
+        fill(x1 - t, y0, x1, y1, col); // right
     }
 };
+
+// Draws one line of text in the rectangle (points), vertically centred; col is 0xRRGGBB, flags
+// are DT_* alignment flags.
 void text(HDC dc, const char *s, int l, int t, int r, int b, unsigned int col, int flags);

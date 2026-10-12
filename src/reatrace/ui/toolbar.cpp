@@ -1,3 +1,5 @@
+// The toolbar: one row of labels, segmented choices, toggles and buttons, laid out again on each
+// paint, click and tooltip from the window's width.
 #include "ui/toolbar.h"
 
 #include "notes/commands.h"
@@ -7,6 +9,7 @@
 
 namespace {
 
+// What an item is and does; segments of one group share a kind and differ by Item::arg.
 enum Kind {
     LABEL,
     VOICE,
@@ -24,25 +27,30 @@ enum Kind {
     PANEL
 };
 
+// One thing on the toolbar.
 struct Item {
-    Rect r;
+    Rect r; // window points
     Kind kind;
-    int arg;
-    const char *label, *tip;
-    bool first, last; // ends of a segmented group
+    int arg;           // the voice or segment index
+    const char *label; // static strings
+    const char *tip;   // shown on the status line
+    bool first, last;  // ends of a segmented group
 };
 
 const std::array<const char *, WINDOW_VOICES> VOICE_LABELS = {"Lead", "2", "3", "4"};
 
-// 12 px Helvetica, roughly
+// The width of s in points: 12 pt Helvetica, roughly.
 int textWidth(const char *s) { return 7 * static_cast<int>(std::string_view(s).size()); }
 
 // The items left to right (the help and panel buttons on the right); what doesn't fit is left out.
 std::vector<Item> items(const Layout &L) {
     std::vector<Item> out;
-    const int t = L.toolbar.t + 6, b = L.toolbar.b - 6;
+    const int t = L.toolbar.t + 6;
+    const int b = L.toolbar.b - 6;
     const int rightEdge = L.toolbar.r - 8 - 28 - 6 - 64 - 12; // room for ? and Panel
     int x = 10;
+
+    // adds an item w wide at x; the gap after it is left out inside a segmented group
     auto add = [&](Kind k, int arg, const char *label, const char *tip, int w, bool first = true,
                    bool last = true) {
         if (x + w > rightEdge) {
@@ -52,7 +60,8 @@ std::vector<Item> items(const Layout &L) {
         out.push_back({{x, t, x + w, b}, k, arg, label, tip, first, last});
         x += w + (last ? 6 : 0);
     };
-    auto gap = [&] { x += 10; };
+    auto gap = [&] { x += 10; }; // between groups
+    // a segmented group: one item per label, touching
     auto segment = [&](Kind k, std::span<const char *const> labels,
                        std::span<const char *const> tips) {
         const int n = static_cast<int>(labels.size());
@@ -61,6 +70,7 @@ std::vector<Item> items(const Layout &L) {
                 i == n - 1);
         }
     };
+
     static const std::array<const char *, WINDOW_VOICES> VOICE_TIPS = {
         "Edit the lead (1)  ·  Shift-click: hide or show a voice",
         "Edit voice 2 (2)  ·  Shift-click: hide or show",
@@ -73,6 +83,7 @@ std::vector<Item> items(const Layout &L) {
             textWidth(VOICE_LABELS[idx(v)]) + 30);
     }
     gap();
+
     static const char *const SNAPS[] = {"Off", "Onsets", "Grid"};
     static const char *const SNAP_TIPS[] = {
         "No snapping (G cycles)", "Snap to onsets and pitch changes within 30 ms (G)",
@@ -81,6 +92,7 @@ std::vector<Item> items(const Layout &L) {
     add(LABEL, 0, "SNAP", "", 36);
     segment(SNAP, SNAPS, SNAP_TIPS);
     gap();
+
     add(SUGGEST, 0, "Suggestions", "Show suggested notes (N)  ·  A: accept all in view",
         textWidth("Suggestions") + 16);
     static const char *const FROM[] = {"Estimator", "Lead contour"};
@@ -90,11 +102,13 @@ std::vector<Item> items(const Layout &L) {
     };
     segment(SUGGEST_FROM, FROM, FROM_TIPS);
     gap();
+
     add(CONTOUR, 0, "Contour", "The sung pitch as a line (P)", textWidth("Contour") + 16);
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
         textWidth("Ghosts") + 16);
     add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + 16);
     gap();
+
     static const char *const HEAR[] = {"Both", "Audio", "Notes"};
     static const char *const HEAR_TIPS[] = {
         "Hear the audio and the notes", "Hear only the audio (B swaps)",
@@ -112,14 +126,17 @@ std::vector<Item> items(const Layout &L) {
     };
     segment(SPEED, SPEEDS, SPEED_TIPS);
     gap();
+
     add(FOLLOW, 0, "Follow", "Page the view along with playback (T)", textWidth("Follow") + 16);
-    // right-aligned
+
+    // right-aligned: Panel 64 wide, then ? 28 wide 6 to its left
     const int r = L.toolbar.r - 8;
     out.push_back({{r - 64, t, r, b}, PANEL, 0, "Panel", "Settings panel (S)", true, true});
     out.push_back({{r - 64 - 34, t, r - 70, b}, HELP, 0, "?", "Shortcuts (?)", true, true});
     return out;
 }
 
+// Whether the item shows as on: the chosen voice or segment, a toggle that is on.
 bool isOn(const Item &it) {
     switch (it.kind) {
     case VOICE: return it.arg == g_session.voice;
@@ -140,6 +157,7 @@ bool isOn(const Item &it) {
     return false;
 }
 
+// The clickable item at (x, y), or null.
 const Item *itemAt(int x, int y, const std::vector<Item> &all) {
     for (const Item &it : all) {
         if (it.kind != LABEL && it.r.in(x, y)) {
@@ -156,40 +174,48 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
     cv.clip = tb;
     cv.fill(tb.l, tb.t, tb.r, tb.b, g_theme.panel);
     cv.fill(tb.l, tb.b - 1, tb.r, tb.b, g_theme.separator);
+
     const std::vector<Item> all = items(L);
     const Item *hover = itemAt(g_ui.mouseX, g_ui.mouseY, all);
     for (const Item &it : all) {
         const Rect &r = it.r;
-        const bool on = isOn(it), hov = &it == hover;
+        const bool on = isOn(it);
+        const bool hov = &it == hover;
         switch (it.kind) {
         case LABEL: text(dc, it.label, r.l, r.t, r.r, r.b, g_theme.dim, DT_LEFT); break;
         case VOICE: {
+            // a swatch in the voice's colour, framed when edited, faded and struck when hidden
             const unsigned int col = g_theme.voices[idx(it.arg)];
             const bool hidden = g_ui.hiddenVoices >> it.arg & 1;
             cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
             if (on) {
                 cv.roundedFrame(r.l, r.t, r.r, r.b, col, 2);
             }
-            cv.rounded(r.l + 8, (r.t + r.b) / 2 - 4, r.l + 16, (r.t + r.b) / 2 + 4, col,
-                       hidden ? 90 : 256);
+            const int cy = (r.t + r.b) / 2;
+            cv.rounded(r.l + 8, cy - 4, r.l + 16, cy + 4, col, hidden ? 90 : 256);
             text(dc, it.label, r.l + 20, r.t, r.r - 4, r.b, hidden ? g_theme.dim : g_theme.text,
                  DT_LEFT);
             if (hidden) {
-                cv.fill(r.l + 20, (r.t + r.b) / 2, r.r - 6, (r.t + r.b) / 2 + 1, g_theme.dim);
+                cv.fill(r.l + 20, cy, r.r - 6, cy + 1, g_theme.dim);
             }
             break;
         }
         case SNAP:
         case SUGGEST_FROM:
         case LISTEN:
-        case SPEED:
-            // segments touch; the group gets one outline
-            cv.fill(r.l, r.t, r.r, r.b, on ? g_theme.on : hov ? g_theme.track : g_theme.button);
+        case SPEED: {
+            // segments touch, split by a 1-point line in the panel colour
+            RGB fill = hov ? g_theme.track : g_theme.button;
+            if (on) {
+                fill = g_theme.on;
+            }
+            cv.fill(r.l, r.t, r.r, r.b, fill);
             if (!it.last) {
                 cv.fill(r.r - 1, r.t, r.r, r.b, g_theme.panel);
             }
             text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.onText : g_theme.dim, DT_CENTER);
             break;
+        }
         case SUGGEST:
         case CONTOUR:
         case GHOSTS:
