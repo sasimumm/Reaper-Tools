@@ -17,7 +17,7 @@ static HDC g_memdc;
 static int g_memw, g_memh, g_scale = 1, g_fontScale;
 static bool g_layerValid;
 static HFONT g_font, g_mono;
-static std::vector<unsigned int> g_layer; // rendered spectrogram for the note area
+static std::vector<Pixel> g_layer; // rendered spectrogram for the note area
 struct LayerKey {
     double t0, pps, pitchTop, rowH;
     double audioPos;            // frames are mapped to time through the item's position
@@ -41,7 +41,7 @@ static void renderLayer(const Rect &n) {
     g_layer.resize((size_t)w * h);
     for (int y = 0; y < h; y++) {
         std::fill_n(&g_layer[(size_t)y * w], w,
-                    black[y] ? g_theme.shadeBlack(g_theme.area) : opaque(g_theme.area));
+                    black[y] ? g_theme.shadeBlack(opaque(g_theme.area)) : opaque(g_theme.area));
     }
     const Spectrogram &s = *g_analysis.spec;
     if (!s.frames || g_analysis.val.size() != s.mag.size()) {
@@ -120,7 +120,7 @@ static void renderLayer(const Rect &n) {
                 if (!dim.empty() && dim[at]) {
                     m = (unsigned char)(m * EXPLAIN_DIM);
                 }
-                const unsigned int c = opaque(g_analysis.lut[m]);
+                const Pixel c = opaque(g_analysis.lut[m]);
                 g_layer[at] = black[y] ? g_theme.shadeBlack(c) : c;
             }
         }
@@ -129,7 +129,7 @@ static void renderLayer(const Rect &n) {
 
 // The overview: the whole item over the overview's width, vocal range E2..C6 over its height.
 static const int OV_LOW = 40, OV_HIGH = 84;
-static std::vector<unsigned int> g_ovLayer;
+static std::vector<Pixel> g_ovLayer;
 static int g_ovW, g_ovH, g_ovVersion = -1;
 static double g_ovPos, g_ovLen;
 

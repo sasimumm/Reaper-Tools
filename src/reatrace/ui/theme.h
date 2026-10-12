@@ -4,13 +4,13 @@
 #include "state.h"
 
 using Colour = unsigned int; // 0xRRGGBB
+using Pixel = unsigned int;  // 0xAARRGGBB: a backbuffer or layer pixel, always opaque
 
-// A backbuffer pixel: 0xAARRGGBB, always opaque.
-inline unsigned int opaque(Colour c) { return 0xff000000 | c; }
+inline Pixel opaque(Colour c) { return 0xff000000 | c; }
 
 // col over the pixel d with alpha a (0..256). Red and blue are blended together, green apart:
 // two multiplies per channel pair.
-inline unsigned int blend(unsigned int d, Colour col, int a) {
+inline Pixel blend(Pixel d, Colour col, int a) {
     const unsigned int ia = (unsigned int)(256 - a), ua = (unsigned int)a;
     return opaque(((((d & 0xff00ff) * ia + (col & 0xff00ff) * ua) >> 8) & 0xff00ff) |
                   ((((d & 0xff00) * ia + (col & 0xff00) * ua) >> 8) & 0xff00));
@@ -60,7 +60,7 @@ struct Theme {
     Colour keyText = 0x202020; // octave names
 
     // A note area pixel in a black key's row.
-    unsigned int shadeBlack(unsigned int px) const { return blend(px, shadow, blackRowShade); }
+    Pixel shadeBlack(Pixel px) const { return blend(px, shadow, blackRowShade); }
 };
 inline Theme g_theme;
 
