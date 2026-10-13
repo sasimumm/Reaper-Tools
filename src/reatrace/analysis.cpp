@@ -182,7 +182,7 @@ struct Job {
     std::string modelPath;
 
     // The note estimator, on the channel's own signal (the centre uses the mid), with its own
-    // spectrogram unless the display's has the same settings.
+    // spectrogram unless the display's is of that signal with the same settings.
     void estimate(const std::function<bool(double)> &progress) {
         std::vector<float> mono(left.size());
         for (size_t i = 0; i < mono.size(); i++) {
@@ -194,7 +194,9 @@ struct Job {
         std::vector<float>().swap(right);
 
         const NSGTParams ep = estimateNSGTParams();
-        const bool same = needSpec && sameNSGT(spec->p, ep);
+        // the centre's display spectrogram is mid minus side, not the mid the estimator reads: it
+        // gets its own, so the estimate doesn't depend on what the display computed before
+        const bool same = needSpec && channel != CH_CENTRE && sameNSGT(spec->p, ep);
         // progress over [a, b) of the whole: the spectrogram is the first fifth
         auto part = [&](double a, double b) {
             return [&, a, b](double f) { return progress(a + (b - a) * f); };
