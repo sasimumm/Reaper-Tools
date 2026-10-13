@@ -22,6 +22,7 @@
 #define REAPERAPI_WANT_GetMediaItemInfo_Value
 #define REAPERAPI_WANT_GetMediaItemTake_Source
 #define REAPERAPI_WANT_GetMediaItemTakeInfo_Value
+#define REAPERAPI_WANT_EnumProjects
 #define REAPERAPI_WANT_GetProjectStateChangeCount
 #define REAPERAPI_WANT_GetSelectedTrack
 #define REAPERAPI_WANT_GetSet_LoopTimeRange2

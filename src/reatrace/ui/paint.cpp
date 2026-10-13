@@ -870,18 +870,22 @@ unsigned laneLabelAt(int x, int y, const Layout &L) {
 }
 
 // The chord items' chords, from the ReaChords extension when it is installed (looked up on use:
-// it may load after this one). Read again after each project change.
+// it may load after this one). Read again after each project change or switch.
 struct ChordSpan {
     double start = 0, end = 0; // project seconds
     std::string name;
 };
 static const std::vector<ChordSpan> &projectChords() {
     static std::vector<ChordSpan> spans;
+    // the change count alone could match another project's, after switching project tabs
+    static ReaProject *lastProj = NULL;
     static int lastChange = -1;
-    const int change = GetProjectStateChangeCount(NULL);
-    if (change == lastChange) {
+    ReaProject *proj = EnumProjects(-1, NULL, 0);
+    const int change = GetProjectStateChangeCount(proj);
+    if (proj == lastProj && change == lastChange) {
         return spans;
     }
+    lastProj = proj;
     lastChange = change;
     spans.clear();
     using GetChord = int (*)(int, double *, double *, char *, int);

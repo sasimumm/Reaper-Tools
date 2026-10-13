@@ -571,11 +571,15 @@ void Chords_Timer() {
 const std::vector<ChordSpan> &Chords_Spans() {
     // all items are scanned again after each project change; fine for typical project sizes
     static std::vector<ChordSpan> spans;
+    // the change count alone could match another project's, after switching project tabs
+    static ReaProject *lastProj = NULL;
     static int lastChange = -1;
-    const int change = GetProjectStateChangeCount(NULL);
-    if (change == lastChange) {
+    ReaProject *proj = EnumProjects(-1, NULL, 0);
+    const int change = GetProjectStateChangeCount(proj);
+    if (proj == lastProj && change == lastChange) {
         return spans;
     }
+    lastProj = proj;
     lastChange = change;
     spans.clear();
     for (int i = 0; i < CountMediaItems(NULL); i++) {
