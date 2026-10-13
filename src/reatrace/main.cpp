@@ -243,14 +243,23 @@ static void openSelected() {
 }
 
 // See shared/guard.h.
-void ReportFailure(const char *where, const char *what) {
-    // a failure in the timer would otherwise repeat 30x a second
-    static std::set<std::string> reported;
-    // At most 511 characters, as the fixed buffer this was formatted into allowed.
-    const std::string msg =
-        (std::string("ReaTrace: ") + where + " failed: " + what + "\n").substr(0, 511);
-    if (reported.insert(msg).second) {
-        ShowConsoleMsg(msg.c_str());
+void ReportFailure(const char *where, const char *what) noexcept {
+    try {
+        // a failure in the timer would otherwise repeat 30x a second
+        static std::set<std::string> reported;
+        // At most 511 characters, as the fixed buffer this was formatted into allowed.
+        const std::string msg =
+            (std::string("ReaTrace: ") + where + " failed: " + what + "\n").substr(0, 511);
+        if (reported.insert(msg).second) {
+            ShowConsoleMsg(msg.c_str());
+        }
+    } catch (...) {
+        // out of memory while formatting: a fixed message, once
+        static bool shown = false;
+        if (!shown) {
+            shown = true;
+            ShowConsoleMsg("ReaTrace: a failure couldn't be reported (out of memory)\n");
+        }
     }
 }
 
