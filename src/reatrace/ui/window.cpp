@@ -761,6 +761,8 @@ void Window_Close() {
         finishLyric();
         DestroyWindow(g_ui.hwnd);
     }
+    // also without a window: Window_Open starts the analysis before creating it, which can fail
+    cancelJob();
 }
 
 void Window_Timer() {
