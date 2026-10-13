@@ -137,12 +137,17 @@ class ChordSource : public PCM_source {
                 break;
             }
 
+            // malformed numbers (none, nan, inf, a length <= 0) are skipped: they would break the
+            // chords' order and reach REAPER's time conversions
             if (s.starts_with(LENGTH)) {
-                length = parseNumber(std::string(s.substr(LENGTH.size()))).first;
+                const auto [len, used] = parseNumber(std::string(s.substr(LENGTH.size())));
+                if (used > 0 && std::isfinite(len) && len > 0) {
+                    length = len;
+                }
             } else if (s.starts_with(BEAT)) {
                 const std::string rest(s.substr(BEAT.size()));
                 const auto [qn, used] = parseNumber(rest);
-                if (used < rest.size() && rest[used] == ' ') {
+                if (used > 0 && std::isfinite(qn) && used < rest.size() && rest[used] == ' ') {
                     chords.push_back({qn, rest.substr(used + 1)});
                 }
             }
