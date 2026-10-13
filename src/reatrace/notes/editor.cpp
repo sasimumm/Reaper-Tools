@@ -280,7 +280,7 @@ bool NoteEditor::nudgeSelected(const std::function<double(double)> &move, int se
         n.end = move(n.end);
         n.pitch += semitones;
         any = true;
-        if (n.pitch < 0 || n.pitch > 127 || n.start < 0) {
+        if (n.pitch < 0 || n.pitch > 127 || n.start < 0 || !(n.end > n.start)) {
             return false;
         }
     }

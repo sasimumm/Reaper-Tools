@@ -58,16 +58,22 @@ static double snapToGrid(double t) {
 }
 
 // Arrow keys: left/right one grid step (a bar when zoomed out to bars), up/down a semitone.
+// Every start and end moves by the same number of quarter notes (a bar: the earliest selected
+// note's), so durations stay positive across time signature changes.
 void nudgeSelected(int steps, int semitones) {
-    const auto move = [steps](double t) {
-        const double qn = TimeMap2_timeToQN(NULL, t);
-        double step = gridStepQN();
-        if (step <= 0) {
-            double ms = 0, me = 0;
-            TimeMap_QNToMeasures(NULL, qn, &ms, &me);
-            step = me - ms;
-        }
-        return TimeMap2_QNToTime(NULL, qn + steps * step);
+    const int first = firstSelected();
+    if (first < 0) {
+        return;
+    }
+    double step = gridStepQN();
+    if (step <= 0) {
+        double ms = 0, me = 0;
+        TimeMap_QNToMeasures(NULL, TimeMap2_timeToQN(NULL, g_session.ed.notes[idx(first)].start),
+                             &ms, &me);
+        step = me - ms;
+    }
+    const auto move = [delta = steps * step](double t) {
+        return TimeMap2_QNToTime(NULL, TimeMap2_timeToQN(NULL, t) + delta);
     };
     if (!g_session.ed.nudgeSelected(move, semitones)) {
         return;

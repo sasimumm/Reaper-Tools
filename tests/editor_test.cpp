@@ -130,6 +130,9 @@ int main() {
         assert(!e.nudgeSelected([](double t) { return t; }, 12) && e.notes[1].pitch == 121 &&
                e.notes[0].pitch == 61); // 133 is out of range: nothing moves
         assert(!e.nudgeSelected([](double t) { return t - 2; }, 0) && near(e.notes[0].start, 1.5));
+        // a move that would reverse a note (its end before its start) moves nothing
+        assert(!e.nudgeSelected([](double t) { return t < 1.6 ? t + 2 : t; }, 0) &&
+               near(e.notes[0].start, 1.5));
         e.selectAll(false);
         assert(!e.nudgeSelected(later, 0));
 

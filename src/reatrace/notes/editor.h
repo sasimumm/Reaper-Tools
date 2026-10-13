@@ -74,7 +74,7 @@ class NoteEditor {
     bool splitAt(double t, int note = -1); // that note, or selected notes spanning t
     bool joinSelected();                   // one note from the first's start to the last's end
     // Arrow keys: selected notes' starts and ends through `move`, pitches by `semitones`; nothing
-    // moves if any note would leave 0..127 or start before 0.
+    // moves if any note would leave 0..127, start before 0 or not end after its start.
     bool nudgeSelected(const std::function<double(double)> &move, int semitones);
 
     struct Box {
