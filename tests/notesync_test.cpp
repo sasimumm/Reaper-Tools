@@ -122,6 +122,28 @@ int main() {
         assert(n[0].lyric == "ah" && n[1].lyric.empty());
     }
 
+    // transposing one of two notes starting together past the other keeps each note's lyric, also
+    // when only the upper one has a lyric, and when a new lower note joins them
+    {
+        FakeTake t;
+        t.notes = {{0, 480, 60, false, 96}, {0, 480, 64, false, 96}};
+        t.texts = {{0, LYRIC_EVENT, "lo"}, {0, LYRIC_EVENT, "hi"}};
+        std::vector<Note> n =
+            roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].pitch = 67; });
+        assert(n[0].pitch == 64 && n[0].lyric == "hi" && n[1].pitch == 67 && n[1].lyric == "lo");
+
+        t.texts = {{0, LYRIC_EVENT, "up"}};
+        t.notes = {{0, 480, 60, false, 96}, {0, 480, 64, false, 96}};
+        n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].pitch = 67; });
+        assert(n[0].pitch == 64 && n[0].lyric.empty() && n[1].pitch == 67 && n[1].lyric == "up");
+        n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e.push_back({0, 0.5, 50, false, -1});
+        });
+        assert(n[0].pitch == 50 && n[0].lyric.empty() && n[2].pitch == 67 && n[2].lyric == "up");
+        n = roundTrip(t, &c, [](std::vector<Note> &, std::vector<int> &) {});
+        assert(!c.data && n[2].lyric == "up"); // placeholders read back as no lyric
+    }
+
     // nothing changed: nothing written but the sort, no undo point
     {
         FakeTake t = song();

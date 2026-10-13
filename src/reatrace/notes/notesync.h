@@ -81,8 +81,10 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
 // returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take
 // indices removed (highest first), new notes (idx < 0) inserted (with `velocity` unless they have
-// their own). If lyrics changed, the lyric events attached to
-// loaded notes are replaced by one per edited note with a lyric; other text events are left alone.
+// their own). If lyrics need rewriting, the lyric events attached to loaded notes are replaced by
+// one per edited note with a lyric, in the sorted take's order (with empty ones on lyric-less notes
+// before them in a group starting together, so each pairs with its own note); other text events
+// are left alone.
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
                 std::span<const Note> edited, std::span<const int> deleted, int velocity);
 

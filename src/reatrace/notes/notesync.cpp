@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <numeric>
 #include <span>
 
@@ -66,22 +67,61 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
                       std::span<const int> deleted) {
     NoteChanges c;
     c.data = !deleted.empty();
-    for (int i : deleted) {
-        c.lyrics |= i >= 0 && i < static_cast<int>(loaded.size()) &&
-                    loaded[static_cast<size_t>(i)].lyricIdx >= 0;
+    // Lyrics pair with notes starting together by order, which inserting, deleting, moving or
+    // transposing any note can change: then they are rewritten, if there are any.
+    bool reordered = !deleted.empty(), anyLyric = false;
+    for (const Note &o : loaded) {
+        anyLyric |= o.lyricIdx >= 0;
     }
     for (const Note &n : edited) {
+        anyLyric |= !n.lyric.empty();
         if (!known(n, loaded)) {
-            c.data = true;
-            c.lyrics |= !n.lyric.empty();
+            c.data = reordered = true;
             continue;
         }
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         c.data |= n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
-        // a lyric event sits at its note's start, so it moves with it
-        c.lyrics |= n.lyric != o.lyric || (n.start != o.start && !n.lyric.empty());
+        c.lyrics |= n.lyric != o.lyric;
+        reordered |= n.start != o.start || n.pitch != o.pitch;
     }
+    c.lyrics |= reordered && anyLyric;
     return c;
+}
+
+// Inserts a lyric event per edited note with a lyric, into the sorted take. readNotes gives a lyric
+// to the first free note (in take order) starting within half a tick, so in a group of notes
+// starting together, each note before the last one with a lyric gets one too: empty if it has none.
+static void writeLyrics(Take &take, std::span<const Note> edited) {
+    // edited notes' lyrics by (start tick, pitch), to find them from the take's notes
+    std::map<std::pair<long long, int>, std::vector<const std::string *>> lyricOf;
+    for (const Note &n : edited) {
+        lyricOf[{std::llround(take.toPPQ(n.start)), n.pitch}].push_back(&n.lyric);
+    }
+    const int count = take.noteCount();
+    for (int i = 0; i < count;) {
+        // the group starting with note i
+        const double groupStart = take.note(i).start;
+        std::vector<std::pair<double, const std::string *>> group; // (start, lyric)
+        for (; i < count; i++) {
+            const Take::NoteEvent e = take.note(i);
+            if (e.start >= groupStart + 0.5) {
+                break;
+            }
+            std::vector<const std::string *> &l = lyricOf[{std::llround(e.start), e.pitch}];
+            group.push_back({e.start, l.empty() ? nullptr : l.front()});
+            if (!l.empty()) {
+                l.erase(l.begin());
+            }
+        }
+        size_t last = group.size();
+        while (last > 0 && (!group[last - 1].second || group[last - 1].second->empty())) {
+            last--;
+        }
+        for (size_t k = 0; k < last; k++) {
+            const std::string *l = group[k].second;
+            take.insertText({group[k].first, LYRIC_EVENT, l ? *l : std::string()});
+        }
+    }
 }
 
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
@@ -123,13 +163,12 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
         for (int i : old) {
             take.deleteText(i);
         }
-        for (const Note &n : edited) {
-            if (!n.lyric.empty()) {
-                take.insertText({take.toPPQ(n.start), LYRIC_EVENT, n.lyric});
-            }
-        }
     }
     take.sort();
+    if (lyrics) {
+        writeLyrics(take, edited);
+        take.sort();
+    }
     return true;
 }
 
