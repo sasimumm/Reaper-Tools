@@ -217,6 +217,13 @@ class ChordSource : public PCM_source {
         return TimeMap2_QNToTime(NULL, p.qn0 + qn);
     }
 
+    // Project time chord i's name is drawn from in an item view whose left edge is at viewStart:
+    // the chord's start, or the edge for a chord that started before it. Shared by paint() and
+    // clicks on the name.
+    double labelTime(const Placement &p, size_t i, double viewStart) const {
+        return std::max(timeOf(p, chords[i].qn), viewStart);
+    }
+
     // Index of the chord starting at qn, or -1.
     int chordAt(double qn) const {
         for (size_t i = 0; i < chords.size(); i++) {
@@ -399,8 +406,7 @@ class ChordSource : public PCM_source {
             LICE_FillRect(bm, x0, y0, x1 - x0, h, i % 2 ? C_CHORD_ALT : C_CHORD, 1.0f, 0);
             LICE_Line(bm, static_cast<float>(x0), static_cast<float>(y0), static_cast<float>(x0),
                       static_cast<float>(y0 + h), C_CHORD_LINE, 1.0f, 0, false);
-            // the name starts at the chord, or at the item's left edge for a chord started before
-            const int l = std::max(x0, 0) + 6;
+            const int l = xi(labelTime(p, i, pi->draw_start_time)) + 6;
             const int r = std::min(x1, pi->width) - 4;
             RECT rc = {l, y0, std::max(l, r), y0 + h};
             LICE__DrawText(fittingFont(chords[i].name, r - l, h), bm, chords[i].name.c_str(), -1,
@@ -461,7 +467,8 @@ static void beginEdit(MediaItem *item, double qn) {
 
     // arrange view client x of project time t
     const auto x = [&](double t) { return g_ce.originX + (t - g_ce.drawStart) * g_ce.pps; };
-    const double t = src->timeOf(p, qn);
+    // from the chord's start, or the view's left edge for one started before it (as its name)
+    const double t = std::max(src->timeOf(p, qn), g_ce.drawStart);
     const int x0 = static_cast<int>(lround(x(t)));
     const int w = static_cast<int>(std::clamp(x(next) - x(t) - 2, 60.0, 240.0));
     g_ce.item = item;
@@ -502,12 +509,14 @@ static void beginEditAtClick(MediaItem *item, double clickTime,
     g_ce.drawStart = pi->draw_start_time;
     g_ce.pps = pi->pixels_per_second;
 
-    // a later chord wins where labels overlap
+    // a later chord wins where labels overlap; a chord that ended before the view has none
     double qn = TimeMap2_timeToQN(NULL, SnapToGrid(NULL, clickTime)) - p.qn0;
-    for (const Chord &c : src->chords) {
-        const double t = src->timeOf(p, c.qn);
-        if (clickTime >= t && clickTime < t + 60 / pi->pixels_per_second) { // ~60 px of label
-            qn = c.qn;
+    for (size_t i = 0; i < src->chords.size(); i++) {
+        const double t = src->labelTime(p, i, pi->draw_start_time);
+        const double end =
+            i + 1 < src->chords.size() ? src->timeOf(p, src->chords[i + 1].qn) : HUGE_VAL;
+        if (t < end && clickTime >= t && clickTime < t + 60 / pi->pixels_per_second) { // ~60 px
+            qn = src->chords[i].qn;
         }
     }
     beginEdit(item, qn);
