@@ -44,6 +44,7 @@
 #define REAPERAPI_WANT_Master_GetPlayRate
 #define REAPERAPI_WANT_GetTrack
 #define REAPERAPI_WANT_GetTrackMediaItem
+#define REAPERAPI_WANT_GetTrackName
 #define REAPERAPI_WANT_InsertTrackAtIndex
 #define REAPERAPI_WANT_Main_OnCommand
 #define REAPERAPI_WANT_MIDI_CountEvts
@@ -119,7 +120,7 @@ static std::string voiceTrackName(int voice, const std::string &prefix = "ReaTra
 // The voice the track holds, or -1 if it isn't a ReaTrace voice track.
 static int voiceOfTrack(MediaTrack *tr) {
     char name[256] = "";
-    if (!tr || !GetSetMediaTrackInfo_String(tr, "P_NAME", name, false)) {
+    if (!tr || !GetTrackName(tr, name, sizeof name)) {
         return -1;
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
