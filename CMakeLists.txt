@@ -80,6 +80,7 @@ add_custom_target(basic_pitch_model ALL DEPENDS ${BASIC_PITCH_MODEL}/coremldata.
 
 set(USERPLUGINS "$ENV{HOME}/Library/Application Support/REAPER/UserPlugins")
 add_custom_target(deploy
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${USERPLUGINS}/reatrace
   COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:reaper_reatrace> $<TARGET_FILE:reaper_reachords> ${USERPLUGINS}/
   COMMAND ${CMAKE_COMMAND} -E remove_directory ${USERPLUGINS}/reatrace/nmp.mlmodelc
   COMMAND ${CMAKE_COMMAND} -E copy_directory ${BASIC_PITCH_MODEL} ${USERPLUGINS}/reatrace/nmp.mlmodelc
