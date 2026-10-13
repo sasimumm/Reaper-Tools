@@ -106,10 +106,10 @@ struct Fx {
 
     // Sets the parameters as ReaTrace sends them: width (cents), level (dB), the mode, then each
     // voice's changes, and runs @slider.
-    void set(double width, double bgDb, const std::vector<Changes> &voices, bool remove = false) {
+    void set(double width, double bgDb, const std::vector<Changes> &voices, bool duck = false) {
         *sliders[0] = width;
         *sliders[1] = bgDb;
-        *sliders[2] = remove ? 1 : 0;
+        *sliders[2] = duck ? 1 : 0;
         for (int v = 0; v < ISOLATE_VOICES; v++) {
             const Changes c = v < static_cast<int>(voices.size()) ? voices[idx(v)] : Changes();
             const size_t at = idx(isolateParam(v));
@@ -249,7 +249,7 @@ int main() {
         assert(a > -2 && e > -2 && d < -8 && fabs(unison) < 1.5 && fabs(octave) < 1.5);
     }
 
-    // removing A3: A3 (with vibrato) comes through near the level, C4 and a sine between the
+    // ducking A3: A3 (with vibrato) comes through near the level, C4 and a sine between the
     // bands pass
     {
         auto through = [](const std::vector<float> &x) {
@@ -265,7 +265,7 @@ int main() {
         const double a = through(tone(57, 1.5, 40));
         const double c = through(tone(60, 1.5));
         const double between = through(sine);
-        printf("remove A3: A3 with vibrato %.1f dB, C4 %.1f dB, between %.1f dB\n", a, c, between);
+        printf("duck A3: A3 with vibrato %.1f dB, C4 %.1f dB, between %.1f dB\n", a, c, between);
         assert(a < -10 && c > -6 && fabs(between) < 1.5);
     }
 

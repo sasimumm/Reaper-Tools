@@ -795,7 +795,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Loop the selection", "R"},
           {"Audio or notes only", "B"},
           {"Isolate the edited voice, all voices", "I, shift+I"},
-          {"Remove the notated pitches", "U"}}},
+          {"Duck the notated pitches", "U"}}},
         {"Display",
          {{"Brightness, contrast", "[ ], - ="},
           {"Resolution", ", ."},

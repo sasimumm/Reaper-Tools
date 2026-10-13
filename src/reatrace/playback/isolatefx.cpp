@@ -8,7 +8,7 @@
 // band-passes (two in series each, for steeper sides) at the pitch and its overtones, each `width`
 // cents wide (constant Q: vibrato stays inside every band; narrower where the overtones crowd
 // together). A band another voice already has (unisons, octaves, shared overtones) is used once,
-// so it isn't louder. Plus the rest of the signal at the background level. Removing instead runs
+// so it isn't louder. Plus the rest of the signal at the background level. Ducking instead runs
 // the signal through a notch at each band (the signal minus the band-pass, which has unit gain and
 // no phase shift at its centre), two in series for a wider, deeper notch, and mixes the result
 // with the signal at the level. No voice with a pitch: everything passes.
@@ -18,7 +18,7 @@ std::string isolateJSFX() {
     s << "desc:" << ISOLATE_DESC << " (written by the ReaTrace extension)\n"
       << "slider1:100<20,400,1>Width (cents)\n"
       << "slider2:-24<-60,0,1>Level (dB)\n"
-      << "slider3:0<0,1,1{Isolate,Remove}>Mode\n";
+      << "slider3:0<0,1,1{Isolate,Duck}>Mode\n";
     for (int v = 0; v < ISOLATE_VOICES; v++) {
         const int base = isolateParam(v) + 1; // sliders count from 1
         s << "slider" << base << ":0<0," << ISOLATE_CHANGES << ",1>-Voice " << v + 1

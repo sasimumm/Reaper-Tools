@@ -24,7 +24,7 @@ enum Kind {
     LISTEN,
     SPEED,
     ISOLATE,
-    REMOVE,
+    DUCK,
     FOLLOW,
     HELP,
     PANEL
@@ -123,9 +123,9 @@ std::vector<Item> items(const Layout &L) {
     add(ISOLATE, 0, isolate,
         "Hear only the edited voice's pitch and overtones (I)  ·  shift+I: all shown voices",
         textWidth(isolate) + 16);
-    add(REMOVE, 0, "Remove notes",
+    add(DUCK, 0, "Duck notes",
         "Lower every drawn note's pitch and overtones, to hear what isn't notated yet (U)",
-        textWidth("Remove notes") + 16);
+        textWidth("Duck notes") + 16);
     static const char *const SPEEDS[] = {"100%", "75%", "50%"};
     static const char *const SPEED_TIPS[] = {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"
@@ -155,8 +155,8 @@ bool isOn(const Item &it) {
     case LISTEN: return it.arg == listenMode();
     case SPEED: return it.arg == speedIndex();
     case FOLLOW: return g_settings.followPlay;
-    case ISOLATE: return isolateOn() && !g_settings.isolateRemove;
-    case REMOVE: return isolateOn() && g_settings.isolateRemove;
+    case ISOLATE: return isolateOn() && !g_settings.isolateDuck;
+    case DUCK: return isolateOn() && g_settings.isolateDuck;
     case HELP: return g_ui.help;
     case PANEL: return g_ui.panel;
     case LABEL: return false;
@@ -228,7 +228,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         case GHOSTS:
         case EXPLAIN:
         case ISOLATE:
-        case REMOVE:
+        case DUCK:
         case FOLLOW:
         case HELP:
         case PANEL: // toggles and buttons
@@ -275,7 +275,7 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
     case SPEED: setSpeed(it->arg); break;
     case FOLLOW: g_settings.followPlay = !g_settings.followPlay; break;
     case ISOLATE: toggleIsolate(false); break;
-    case REMOVE: toggleIsolate(true); break;
+    case DUCK: toggleIsolate(true); break;
     case HELP: g_ui.help = !g_ui.help; break;
     case PANEL: g_ui.panel = !g_ui.panel; break;
     case LABEL: break;
