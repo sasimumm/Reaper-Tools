@@ -37,6 +37,7 @@ struct LayerKey {
     double audioPos;                // frames are mapped to time through the item's position
     int w, h, version;              // device pixels; the analysis values' version
     int explain;                    // 0 off, else notes version * 32 + harmonics
+    int explainDrag;                // explain on: the drag step (NoteEditor::moves), -1 if none
     bool operator==(const LayerKey &) const = default;
 };
 static LayerKey g_layerKey;
@@ -1225,11 +1226,15 @@ void paint(HDC hdc) {
     SetBkMode(dc, TRANSPARENT);
 
     // spectrogram, rendered again only when what it shows changed
+    // explain dims around the notes: also as they are dragged (not committed yet), each step, and
+    // back when the drag is cancelled
     const int explainKey =
         g_settings.explain ? g_session.notesVersion * 32 + iround(g_settings.harmonics) : 0;
+    const int explainDrag = g_settings.explain && g_session.ed.active() ? g_session.ed.moves : -1;
     const LayerKey key = {g_ui.view.t0,    g_ui.view.pps,         g_ui.view.pitchTop,
                           g_ui.view.rowH,  g_session.audioPos,    (n.r - n.l) * S,
-                          (n.b - n.t) * S, g_analysis.valVersion, explainKey};
+                          (n.b - n.t) * S, g_analysis.valVersion, explainKey,
+                          explainDrag};
     if (!g_layerValid || key != g_layerKey) {
         renderLayer(n);
         g_layerKey = key;
