@@ -75,6 +75,8 @@ set(BASIC_PITCH_MODEL ${CMAKE_BINARY_DIR}/nmp.mlmodelc)
 add_custom_command(OUTPUT ${BASIC_PITCH_MODEL}/coremldata.bin
   COMMAND xcrun coremlcompiler compile ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/nmp.mlpackage ${CMAKE_BINARY_DIR}
   DEPENDS ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/nmp.mlpackage/Data/com.apple.CoreML/model.mlmodel
+    ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/nmp.mlpackage/Data/com.apple.CoreML/weights/weight.bin
+    ${CMAKE_SOURCE_DIR}/vendor/basic-pitch/nmp.mlpackage/Manifest.json
   COMMENT "Compiling the basic-pitch CoreML model")
 add_custom_target(basic_pitch_model ALL DEPENDS ${BASIC_PITCH_MODEL}/coremldata.bin)
 
