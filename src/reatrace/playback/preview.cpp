@@ -80,16 +80,16 @@ void previewPitch(int pitch) {
         return;
     }
 
-    // format 0, 96 ticks per quarter: note on; note off after 77 ticks (~0.4 s at 120 bpm); all
-    // notes off; end of track 96 ticks later, so the note-off isn't on the source's last tick
-    // (where it was not played, leaving the note hanging)
+    // format 0, 96 ticks per quarter: note on; note off after 77 ticks (~0.4 s at 120 bpm); end
+    // of track 106 ticks later, so the note-off isn't on the source's last tick (where it was not
+    // played, leaving the note hanging). No "all notes off": it would also stop the track's other
+    // sounding notes, playback's and overlapping previews' on the same channel.
     // clang-format off: the two chunk headers, then one MIDI event per line
     const unsigned char smf[] = {'M', 'T', 'h', 'd', 0, 0, 0, 6, 0, 0, 0, 1, 0, 96,
-                                 'M', 'T', 'r', 'k', 0, 0, 0, 16,
+                                 'M', 'T', 'r', 'k', 0, 0, 0, 12,
                                  0, 0x90, static_cast<unsigned char>(pitch), 96,
                                  77, 0x80, static_cast<unsigned char>(pitch), 0,
-                                 10, 0xb0, 0x7b, 0,
-                                 96, 0xff, 0x2f, 0};
+                                 106, 0xff, 0x2f, 0};
     // clang-format on
     const bool ok = write(fd, smf, sizeof(smf)) == static_cast<ssize_t>(sizeof(smf));
     close(fd);
