@@ -103,5 +103,5 @@ Rect overviewArea();
 Rect panelArea();
 void syncViewOrigin();   // puts the view's origin at the notes area's top left
 void redraw();           // invalidates the window, if open
-void selectVoice(int v); // makes voice v (0 = lead) the edited one
+void selectVoice(int v); // makes voice v (0 = lead) the edited one, and shows it
 int mods();              // MOD_* keys held now

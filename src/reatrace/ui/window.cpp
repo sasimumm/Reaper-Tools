@@ -208,7 +208,12 @@ static void followPlayback() {
 }
 
 void selectVoice(int v) {
-    if (v < 0 || v >= WINDOW_VOICES || v == g_session.voice) {
+    if (v < 0 || v >= WINDOW_VOICES) {
+        return;
+    }
+    g_ui.hiddenVoices &= ~(1u << v); // the edited voice is shown
+    if (v == g_session.voice) {
+        redraw();
         return;
     }
     if (g_ui.edit) {

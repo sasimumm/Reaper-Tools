@@ -258,7 +258,6 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
                 g_ui.hiddenVoices ^= 1u << it->arg;
             }
         } else {
-            g_ui.hiddenVoices &= ~(1u << it->arg);
             selectVoice(it->arg);
         }
         break;
