@@ -295,7 +295,9 @@ static bool onKey(int key) {
     } else if (key == 'L' && !m) {
         g_settings.linkArrange = !g_settings.linkArrange;
     } else if (key == 'I' && !m) {
-        setIsolate(!isolateOn());
+        toggleIsolate(false);
+    } else if (key == 'U' && !m) {
+        toggleIsolate(true);
     } else if (key == 'I' && m == MOD_SHIFT) {
         g_settings.isolateAll = !g_settings.isolateAll;
     } else if (key == 'T' && !m) {

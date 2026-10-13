@@ -8,14 +8,17 @@
 // band-passes (two in series each, for steeper sides) at the pitch and its overtones, each `width`
 // cents wide (constant Q: vibrato stays inside every band; narrower where the overtones crowd
 // together). A band another voice already has (unisons, octaves, shared overtones) is used once,
-// so it isn't louder. Plus the rest of the signal at the background level. No voice with a pitch:
-// everything passes.
+// so it isn't louder. Plus the rest of the signal at the background level. Removing instead runs
+// the signal through a notch at each band (the signal minus the band-pass, which has unit gain and
+// no phase shift at its centre), two in series for a wider, deeper notch, and mixes the result
+// with the signal at the level. No voice with a pitch: everything passes.
 std::string isolateJSFX() {
     std::ostringstream s;
-    // sliders: width, background, then per voice its change count and (time, pitch) pairs
+    // sliders: width, level, mode, then per voice its change count and (time, pitch) pairs
     s << "desc:" << ISOLATE_DESC << " (written by the ReaTrace extension)\n"
       << "slider1:100<20,400,1>Width (cents)\n"
-      << "slider2:-24<-60,0,1>Background (dB)\n";
+      << "slider2:-24<-60,0,1>Level (dB)\n"
+      << "slider3:0<0,1,1{Isolate,Remove}>Mode\n";
     for (int v = 0; v < ISOLATE_VOICES; v++) {
         const int base = isolateParam(v) + 1; // sliders count from 1
         s << "slider" << base << ":0<0," << ISOLATE_CHANGES << ",1>-Voice " << v + 1
@@ -29,7 +32,8 @@ std::string isolateJSFX() {
     }
 
     s << "in_pin:left\nin_pin:right\nout_pin:left\nout_pin:right\n\n@init\n"
-      << "VOICES = " << ISOLATE_VOICES << "; STRIDE = " << 1 + 2 * ISOLATE_CHANGES << ";\n"
+      << "VOICES = " << ISOLATE_VOICES << "; STRIDE = " << 1 + 2 * ISOLATE_CHANGES
+      << "; FIRST = " << isolateParam(0) + 1 << ";\n"
       << R"(H = 40; // most bands per voice
 SLOTS = VOICES * H; // band slots (EEL names ignore case): voice v's overtone k is slot v * H + k
 b0 = 0; a1 = SLOTS; a2 = 2 * SLOTS; on = 3 * SLOTS; fc = 4 * SLOTS; // coefficients, whether used, frequency
@@ -48,7 +52,7 @@ pass = 1;
 top = min(0.45 * srate, 12000);
 v = 0;
 loop(VOICES,
-  base = 3 + v * STRIDE;
+  base = FIRST + v * STRIDE;
   cnt = slider(base);
   target = cnt > 0 ? slider(base + 2) : -1; // before the first change: its pitch
   i = 0;
@@ -83,7 +87,19 @@ loop(VOICES,
 );
 
 @sample
-pass == 0 ? (
+pass == 0 && slider3 ? (
+  xl = spl0; xr = spl1; yl = xl; yr = xr; j = 0;
+  loop(SLOTS,
+    on[j] ? (
+      o = b0[j] * yl + zl1[j]; zl1[j] = zl2[j] - a1[j] * o; zl2[j] = -b0[j] * yl - a2[j] * o; yl -= o;
+      o = b0[j] * yl + zl3[j]; zl3[j] = zl4[j] - a1[j] * o; zl4[j] = -b0[j] * yl - a2[j] * o; yl -= o;
+      o = b0[j] * yr + zr1[j]; zr1[j] = zr2[j] - a1[j] * o; zr2[j] = -b0[j] * yr - a2[j] * o; yr -= o;
+      o = b0[j] * yr + zr3[j]; zr3[j] = zr4[j] - a1[j] * o; zr4[j] = -b0[j] * yr - a2[j] * o; yr -= o;
+    );
+    j += 1;
+  );
+  spl0 = bg * xl + (1 - bg) * yl; spl1 = bg * xr + (1 - bg) * yr;
+) : pass == 0 ? (
   xl = spl0; xr = spl1; yl = 0; yr = 0; j = 0;
   loop(SLOTS,
     on[j] ? (

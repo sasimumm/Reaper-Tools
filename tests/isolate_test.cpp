@@ -104,11 +104,12 @@ struct Fx {
     // A voice's pitch changes: (seconds, MIDI pitch).
     using Changes = std::vector<std::pair<double, int>>;
 
-    // Sets the parameters as ReaTrace sends them: width (cents), background (dB), then each
+    // Sets the parameters as ReaTrace sends them: width (cents), level (dB), the mode, then each
     // voice's changes, and runs @slider.
-    void set(double width, double bgDb, const std::vector<Changes> &voices) {
+    void set(double width, double bgDb, const std::vector<Changes> &voices, bool remove = false) {
         *sliders[0] = width;
         *sliders[1] = bgDb;
+        *sliders[2] = remove ? 1 : 0;
         for (int v = 0; v < ISOLATE_VOICES; v++) {
             const Changes c = v < static_cast<int>(voices.size()) ? voices[idx(v)] : Changes();
             const size_t at = idx(isolateParam(v));
@@ -246,6 +247,26 @@ int main() {
             "isolate A3 + E4: A3 %.1f dB, E4 %.1f dB, D4 %.1f dB; unison %.1f dB, octave %.1f dB\n",
             a, e, d, unison, octave);
         assert(a > -2 && e > -2 && d < -8 && fabs(unison) < 1.5 && fabs(octave) < 1.5);
+    }
+
+    // removing A3: A3 (with vibrato) comes through near the level, C4 and a sine between the
+    // bands pass
+    {
+        auto through = [](const std::vector<float> &x) {
+            Fx fx;
+            fx.set(100, -24, {{{0, 57}}}, true);
+            return gainDb(x, fx.run(x), 0.5, 1.5);
+        };
+        std::vector<float> sine(static_cast<size_t>(1.5 * SR));
+        for (size_t i = 0; i < sine.size(); i++) { // a tritone above A3
+            sine[i] =
+                static_cast<float>(0.3 * sin(2 * M_PI * hz(63) * static_cast<double>(i) / SR));
+        }
+        const double a = through(tone(57, 1.5, 40));
+        const double c = through(tone(60, 1.5));
+        const double between = through(sine);
+        printf("remove A3: A3 with vibrato %.1f dB, C4 %.1f dB, between %.1f dB\n", a, c, between);
+        assert(a < -10 && c > -6 && fabs(between) < 1.5);
     }
 
     printf("ok\n");

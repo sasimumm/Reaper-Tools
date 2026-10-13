@@ -78,6 +78,16 @@ void setIsolate(bool on) {
     updateIsolate();
 }
 
+void toggleIsolate(bool remove) {
+    if (isolateOn() && g_settings.isolateRemove == remove) {
+        setIsolate(false);
+        return;
+    }
+    g_settings.isolateRemove = remove;
+    g_sent.clear(); // already on in the other mode: send everything again
+    setIsolate(true);
+}
+
 // Sends the filter its parameters, only those that changed since the last call.
 void updateIsolate() {
     MediaTrack *tr = audioTrack();
@@ -96,7 +106,8 @@ void updateIsolate() {
     const auto inputs = std::make_tuple(
         now, g_session.notesVersion, g_session.ed.active() ? g_session.ed.moves : -1,
         g_analysis.valVersion, g_session.voice, g_settings.isolateAll, g_ui.hiddenVoices,
-        g_settings.isolateWidth, g_settings.isolateBackground, g_settings.suggestFrom);
+        g_settings.isolateWidth, g_settings.isolateBackground, g_settings.isolateRemove,
+        g_settings.suggestFrom);
     static std::remove_const_t<decltype(inputs)> s_inputs;
     if (!playing && inputs == s_inputs && g_sentTo == guid) {
         return;
@@ -109,11 +120,13 @@ void updateIsolate() {
 
     static_assert(ISOLATE_VOICES == WINDOW_VOICES);
     // what is followed: each voice's notes, and its suggestions where nothing covers them, over
-    // the next seconds (ISOLATE_CHANGES changes are sent; refreshed every tick)
+    // the next seconds (ISOLATE_CHANGES changes are sent; refreshed every tick). Removing follows
+    // only what is notated, in every shown voice.
+    const bool remove = g_settings.isolateRemove;
     const double horizon = now + HORIZON;
-    auto followed = [](int voice) {
-        return voice == g_session.voice ||
-               (g_settings.isolateAll && !(g_ui.hiddenVoices >> voice & 1));
+    auto followed = [remove](int voice) {
+        const bool shown = !(g_ui.hiddenVoices >> voice & 1);
+        return voice == g_session.voice || ((remove || g_settings.isolateAll) && shown);
     };
     std::array<std::vector<Note>, WINDOW_VOICES> spans;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
@@ -132,15 +145,16 @@ void updateIsolate() {
     for (size_t i = 0; i < sug.size(); i++) {
         const double a = frameTime(sug[i].f0), b = frameTime(sug[i].f1 + 1);
         const int voice = suggestionVoice(i);
-        if (voice >= 0 && b > now - 1 && a < horizon && followed(voice) && !covered(i)) {
+        if (!remove && voice >= 0 && b > now - 1 && a < horizon && followed(voice) && !covered(i)) {
             spans[idx(voice)].push_back({a, b, static_cast<int>(lround(sug[i].pitch)), false, -1});
         }
     }
 
-    // the parameters (see isolate.h): width, background, then per voice its changes
+    // the parameters (see isolate.h): width, level, mode, then per voice its changes
     std::vector<double> v(idx(isolateParam(WINDOW_VOICES)));
     v[0] = g_settings.isolateWidth;
     v[1] = g_settings.isolateBackground;
+    v[2] = remove ? 1 : 0;
     for (int voice = 0; voice < WINDOW_VOICES; voice++) {
         const auto sched = pitchSchedule(spans[idx(voice)], now - 1, ISOLATE_CHANGES);
         size_t at = idx(isolateParam(voice));
