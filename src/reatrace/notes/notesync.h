@@ -16,6 +16,8 @@ class Take {
         double start, end; // PPQ
         int pitch;
         bool sel;
+        int vel = 96, chan = 0;
+        bool muted = false;
     };
     struct TextEvent {
         double ppq = 0;
@@ -38,7 +40,7 @@ class Take {
     // Changes don't re-sort until sort(), so indices stay valid while writing.
     virtual void setNote(int i, const NoteEvent &n) = 0;
     virtual void deleteNote(int i) = 0;
-    virtual void insertNote(const NoteEvent &n, int velocity) = 0;
+    virtual void insertNote(const NoteEvent &n) = 0;
     virtual void deleteText(int i) = 0;
     virtual void insertText(const TextEvent &t) = 0;
     virtual void sort() = 0;
@@ -78,7 +80,8 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
 
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
 // returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take
-// indices removed (highest first), new notes (idx < 0) inserted. If lyrics changed, the lyric events attached to
+// indices removed (highest first), new notes (idx < 0) inserted (with `velocity` unless they have
+// their own). If lyrics changed, the lyric events attached to
 // loaded notes are replaced by one per edited note with a lyric; other text events are left alone.
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
                 std::span<const Note> edited, std::span<const int> deleted, int velocity);

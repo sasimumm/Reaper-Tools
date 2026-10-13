@@ -64,7 +64,7 @@ class ReaperTake : public Take {
 
     NoteEvent note(int i) override {
         NoteEvent e = {0, 0, 0, false};
-        MIDI_GetNote(m_take, i, &e.sel, NULL, &e.start, &e.end, NULL, &e.pitch, NULL);
+        MIDI_GetNote(m_take, i, &e.sel, &e.muted, &e.start, &e.end, &e.chan, &e.pitch, &e.vel);
         return e;
     }
 
@@ -94,9 +94,9 @@ class ReaperTake : public Take {
 
     void deleteNote(int i) override { MIDI_DeleteNote(m_take, i); }
 
-    void insertNote(const NoteEvent &n, int velocity) override {
+    void insertNote(const NoteEvent &n) override {
         const bool noSort = true;
-        MIDI_InsertNote(m_take, n.sel, false, n.start, n.end, 0, n.pitch, velocity, &noSort);
+        MIDI_InsertNote(m_take, n.sel, n.muted, n.start, n.end, n.chan, n.pitch, n.vel, &noSort);
     }
 
     void deleteText(int i) override { MIDI_DeleteTextSysexEvt(m_take, i); }

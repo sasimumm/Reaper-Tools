@@ -12,12 +12,7 @@
 // notes by start then pitch and text events by position. 960 PPQ per second.
 class FakeTake : public Take {
   public:
-    struct N {
-        NoteEvent e; // in PPQ
-        int velocity;
-    };
-
-    std::vector<N> notes;
+    std::vector<NoteEvent> notes; // in PPQ
     std::vector<TextEvent> texts;
     int sorts = 0;       // how many times sort() was called
     double position = 0; // where the item starts: moving it changes every note's project time
@@ -28,9 +23,8 @@ class FakeTake : public Take {
     std::string hash() override {
         std::string h;
         char buf[96];
-        for (const N &n : notes) {
-            snprintf(buf, sizeof(buf), "n%g,%g,%d,%d;", n.e.start, n.e.end, n.e.pitch,
-                     n.e.sel ? 1 : 0);
+        for (const NoteEvent &n : notes) {
+            snprintf(buf, sizeof(buf), "n%g,%g,%d,%d;", n.start, n.end, n.pitch, n.sel ? 1 : 0);
             h += buf;
         }
         for (const TextEvent &t : texts) {
@@ -44,7 +38,7 @@ class FakeTake : public Take {
     double toTime(double ppq) override { return position + ppq / 960; }
     double toPPQ(double time) override { return (time - position) * 960; }
     int noteCount() override { return static_cast<int>(notes.size()); }
-    NoteEvent note(int i) override { return notes[static_cast<size_t>(i)].e; }
+    NoteEvent note(int i) override { return notes[static_cast<size_t>(i)]; }
     int textCount() override { return static_cast<int>(texts.size()); }
 
     bool text(int i, TextEvent *out) override {
@@ -52,16 +46,16 @@ class FakeTake : public Take {
         return true;
     }
 
-    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)].e = n; }
+    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)] = n; }
     void deleteNote(int i) override { notes.erase(notes.begin() + i); }
-    void insertNote(const NoteEvent &n, int velocity) override { notes.push_back({n, velocity}); }
+    void insertNote(const NoteEvent &n) override { notes.push_back(n); }
     void deleteText(int i) override { texts.erase(texts.begin() + i); }
     void insertText(const TextEvent &t) override { texts.push_back(t); }
 
     void sort() override {
         sorts++;
-        std::stable_sort(notes.begin(), notes.end(), [](const N &a, const N &b) {
-            return a.e.start < b.e.start || (a.e.start == b.e.start && a.e.pitch < b.e.pitch);
+        std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent &a, const NoteEvent &b) {
+            return a.start < b.start || (a.start == b.start && a.pitch < b.pitch);
         });
         std::stable_sort(texts.begin(), texts.end(),
                          [](const TextEvent &a, const TextEvent &b) { return a.ppq < b.ppq; });
@@ -85,9 +79,7 @@ template <class F> static std::vector<Note> roundTrip(FakeTake &t, NoteChanges *
 // Three notes, a second apart, two with lyrics; an orphan lyric and a track name.
 static FakeTake song() {
     FakeTake t;
-    t.notes = {
-        {{0, 480, 60, false}, 96}, {{960, 1440, 62, false}, 96}, {{1920, 2400, 64, false}, 96}
-    };
+    t.notes = {{0, 480, 60, false, 96}, {960, 1440, 62, false, 96}, {1920, 2400, 64, false, 96}};
     t.texts = {
         {0, TRACK_NAME, "Lead"},
         {0, LYRIC_EVENT, "hel-"},
@@ -124,7 +116,7 @@ int main() {
     // a chord: the lyric goes on the first note starting there, not both
     {
         FakeTake t;
-        t.notes = {{{0, 480, 60, false}, 96}, {{0, 480, 67, false}, 96}};
+        t.notes = {{0, 480, 60, false, 96}, {0, 480, 67, false, 96}};
         t.texts = {{0.2, LYRIC_EVENT, "ah"}}; // within half a tick
         const std::vector<Note> n = readNotes(t);
         assert(n[0].lyric == "ah" && n[1].lyric.empty());
@@ -184,15 +176,33 @@ int main() {
         });
         assert(c.data && c.lyrics && n.size() == 4 && n[3].pitch == 67 && n[3].sel &&
                n[3].lyric == "world");
-        assert(n[0].lyric == "hey" && t.notes[3].velocity == 96);
+        assert(n[0].lyric == "hey" && t.notes[3].vel == 96);
         assert(lyricTexts(t).size() == 4); // hey, lo, orphan, world
+    }
+
+    // a note's velocity, channel and mute are read, and kept by notes made from it (a split half)
+    {
+        FakeTake t = song();
+        t.notes[0].vel = 25;
+        t.notes[0].chan = 3;
+        t.notes[0].muted = true;
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            Note half = e[0];
+            half.start = 0.25;
+            half.idx = half.lyricIdx = -1;
+            half.lyric.clear();
+            e[0].end = 0.25;
+            e.push_back(half);
+        });
+        assert(n.size() == 4 && n[1].start == 0.25 && n[1].vel == 25 && n[1].chan == 3 &&
+               n[1].muted && n[0].vel == 25);
     }
 
     // a resize alone doesn't touch the lyrics
     {
         FakeTake t = song();
         roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].end = 0.75; });
-        assert(c.data && !c.lyrics && t.notes[0].e.end == 720);
+        assert(c.data && !c.lyrics && t.notes[0].end == 720);
     }
 
     // the take changing after the notes were loaded makes writing them back refuse, leaving the
@@ -223,7 +233,7 @@ int main() {
         snap = snapshotOf(t);
         loaded = readNotes(t);
         edited = loaded;
-        t.insertNote({480, 700, 70, false}, 96);
+        t.insertNote({480, 700, 70, false});
         t.sort();
         edited[1].pitch = 63;
         assert(refused(t, snap, loaded, edited));
@@ -245,8 +255,8 @@ int main() {
     {
         FakeTake t = song();
         appendNotes(t, std::vector<Note>{{0.5, 0.75, 70, true, -1}}, 80);
-        assert(t.notes.size() == 4 && t.notes[1].e.pitch == 70 && !t.notes[1].e.sel &&
-               t.notes[1].velocity == 80);
+        assert(t.notes.size() == 4 && t.notes[1].pitch == 70 && !t.notes[1].sel &&
+               t.notes[1].vel == 80);
     }
 
     printf("ok\n");

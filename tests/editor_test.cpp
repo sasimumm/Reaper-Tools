@@ -136,6 +136,20 @@ int main() {
         e.selectAll(false);
         assert(!e.nudgeSelected(later, 0));
 
+        // split and copy keep velocity, channel and mute
+        {
+            NoteEditor f;
+            Note n = {1, 2, 60, true, 0, "la"};
+            n.vel = 25;
+            n.chan = 3;
+            n.muted = true;
+            f.notes = {n};
+            assert(f.splitAt(1.5) && f.notes[1].vel == 25 && f.notes[1].chan == 3 &&
+                   f.notes[1].muted && f.notes[1].lyric.empty() && f.notes[1].idx == -1);
+            const std::vector<Note> c = f.copySelected();
+            assert(c[0].vel == 25 && c[0].chan == 3 && c[0].muted && c[0].idx == -1);
+        }
+
         // split: the given note, or selected notes spanning t; not too close to an edge
         e.notes = {{1, 2, 60, false, 0, "la"}};
         assert(!e.splitAt(1.5)); // nothing selected

@@ -14,7 +14,11 @@ std::vector<Note> readNotes(Take &take) {
     const int count = take.noteCount();
     for (int i = 0; i < count; i++) {
         const Take::NoteEvent e = take.note(i);
-        notes.push_back({take.toTime(e.start), take.toTime(e.end), e.pitch, e.sel, i});
+        Note n = {take.toTime(e.start), take.toTime(e.end), e.pitch, e.sel, i};
+        n.vel = e.vel;
+        n.chan = e.chan;
+        n.muted = e.muted;
+        notes.push_back(n);
         startPPQ.push_back(e.start);
     }
 
@@ -49,9 +53,13 @@ static bool known(const Note &n, std::span<const Note> loaded) {
     return n.idx >= 0 && n.idx < static_cast<int>(loaded.size());
 }
 
-// n as a take note event, with its times in PPQ.
-static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel) {
-    return {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
+// n as a take note event, with its times in PPQ; `velocity` if n has none of its own.
+static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel, int velocity) {
+    Take::NoteEvent e = {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
+    e.vel = n.vel >= 0 ? n.vel : velocity;
+    e.chan = n.chan;
+    e.muted = n.muted;
+    return e;
 }
 
 NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited,
@@ -90,7 +98,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
         }
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
-            take.setNote(n.idx, toEvent(take, n, n.sel));
+            take.setNote(n.idx, toEvent(take, n, n.sel, velocity));
         }
     }
     std::vector<int> del(deleted.begin(), deleted.end());
@@ -100,7 +108,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
     }
     for (const Note &n : edited) {
         if (n.idx < 0) {
-            take.insertNote(toEvent(take, n, n.sel), velocity);
+            take.insertNote(toEvent(take, n, n.sel, velocity));
         }
     }
 
@@ -127,7 +135,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
 
 void appendNotes(Take &take, std::span<const Note> notes, int velocity) {
     for (const Note &n : notes) {
-        take.insertNote(toEvent(take, n, false), velocity);
+        take.insertNote(toEvent(take, n, false, velocity));
     }
     take.sort();
 }

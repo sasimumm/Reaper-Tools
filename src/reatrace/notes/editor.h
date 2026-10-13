@@ -16,6 +16,9 @@ struct Note {
     int idx; // index in the MIDI take, -1 for notes not written yet
     std::string lyric = {};
     int lyricIdx = -1; // index of the lyric text event in the take, -1 if none
+    int vel = -1;      // MIDI velocity, -1 for the editor's default
+    int chan = 0;      // MIDI channel, 0..15
+    bool muted = false;
 };
 
 // Maps window pixels to time (seconds) and continuous MIDI pitch. Note row P spans P-0.5 .. P+0.5.
@@ -67,7 +70,7 @@ class NoteEditor {
     bool deleteAt(const ViewMap &v, double x, double y); // the note at (x, y)
 
     // Editing commands; all return true if notes changed. New notes come out selected.
-    std::vector<Note> copySelected() const; // as unwritten notes, lyrics kept
+    std::vector<Note> copySelected() const; // as unwritten notes, lyrics and MIDI properties kept
     // Earliest clip note starts at `at`. clip must not view `notes`, which this appends to.
     void paste(std::span<const Note> clip, double at);
     bool duplicateSelected();              // right after the selection

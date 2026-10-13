@@ -229,7 +229,10 @@ std::vector<Note> NoteEditor::copySelected() const {
     std::vector<Note> out;
     for (const Note &n : notes) {
         if (n.sel) {
-            out.push_back({n.start, n.end, n.pitch, true, -1, n.lyric});
+            Note c = n;
+            c.sel = true;
+            c.idx = c.lyricIdx = -1;
+            out.push_back(c);
         }
     }
     return out;
@@ -298,8 +301,11 @@ bool NoteEditor::splitAt(double t, int note) {
         if (!wanted || t < notes[i].start + minLen || t > notes[i].end - minLen) {
             continue;
         }
-        // the lyric stays on the first half
-        Note second = {t, notes[i].end, notes[i].pitch, notes[i].sel, -1};
+        // the lyric stays on the first half; velocity, channel and mute go to both
+        Note second = notes[i];
+        second.start = t;
+        second.idx = second.lyricIdx = -1;
+        second.lyric.clear();
         notes[i].end = t;
         notes.push_back(second);
         any = true;
