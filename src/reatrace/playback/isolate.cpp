@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string_view>
 #include <tuple>
+#include <utility>
 
 #include "analysis.h"
 #include "index.h"
@@ -42,39 +43,73 @@ static MediaTrack *audioTrack() {
                                                              : NULL;
 }
 
-// Index of the isolate JSFX on tr (found by its description), or -1.
-static int findFX(MediaTrack *tr) {
+// The FX's GUID as a string, "" if there is no such FX.
+static std::string fxGUID(MediaTrack *tr, int fx) {
+    char guid[64] = "";
+    if (const GUID *g = TrackFX_GetFXGUID(tr, fx)) {
+        guidToString(g, guid);
+    }
+    return guid;
+}
+
+// Where the filter is: kept, so it is removed from there even after the audio item was moved to
+// another track or deleted.
+static struct {
+    ReaProject *proj = NULL;
+    MediaTrack *track = NULL;
+    std::string guid;
+} g_fx;
+
+// The filter's track and index there; {NULL, -1} if it is gone. One found on the audio track by its
+// description (left by an earlier session) is taken as the filter.
+static std::pair<MediaTrack *, int> findFX() {
+    if (g_fx.track && ValidatePtr2(NULL, g_fx.proj, "ReaProject*") &&
+        ValidatePtr2(g_fx.proj, g_fx.track, "MediaTrack*")) {
+        for (int i = 0; i < TrackFX_GetCount(g_fx.track); i++) {
+            if (fxGUID(g_fx.track, i) == g_fx.guid) {
+                return {g_fx.track, i};
+            }
+        }
+    }
+    g_fx = {};
+    MediaTrack *tr = audioTrack();
     for (int i = 0; tr && i < TrackFX_GetCount(tr); i++) {
         char name[256] = "";
         TrackFX_GetFXName(tr, i, name, sizeof(name));
         if (std::string_view(name).find(ISOLATE_DESC) != std::string_view::npos) {
-            return i;
+            g_fx = {EnumProjects(-1, NULL, 0), tr, fxGUID(tr, i)};
+            return {tr, i};
         }
     }
-    return -1;
+    return {NULL, -1};
 }
 
 static std::vector<double> g_sent; // parameter values last sent, to only send changes...
 static std::string g_sentTo;       // ...to this FX instance (its GUID): a re-added one has defaults
 
-bool isolateOn() { return findFX(audioTrack()) >= 0; }
+bool isolateOn() { return findFX().second >= 0; }
 
-// Adds (installing the JSFX first) or removes the filter on the audio track.
+// Adds (installing the JSFX first) the filter on the audio track, or removes it from where it is.
 void setIsolate(bool on) {
-    MediaTrack *tr = audioTrack();
-    const int fx = findFX(tr);
+    const auto [fxTrack, fx] = findFX();
     g_sent.clear();
-    if (!tr || on == (fx >= 0)) {
-        return;
-    }
     if (!on) {
-        TrackFX_Delete(tr, fx);
+        if (fx >= 0) {
+            TrackFX_Delete(fxTrack, fx);
+        }
+        g_fx = {};
         return;
     }
-    if (!installJSFX() || TrackFX_AddByName(tr, FX_NAME, false, -1) < 0) {
+    MediaTrack *tr = audioTrack();
+    if (!tr || fx >= 0) {
+        return;
+    }
+    const int added = installJSFX() ? TrackFX_AddByName(tr, FX_NAME, false, -1) : -1;
+    if (added < 0) {
         ReportFailure("isolate", "couldn't add the ReaTrace isolate JSFX to the audio track");
         return;
     }
+    g_fx = {EnumProjects(-1, NULL, 0), tr, fxGUID(tr, added)};
     updateIsolate();
 }
 
@@ -90,15 +125,16 @@ void toggleIsolate(bool duck) {
 
 // Sends the filter its parameters, only those that changed since the last call.
 void updateIsolate() {
-    MediaTrack *tr = audioTrack();
-    const int fx = findFX(tr);
+    const auto [tr, fx] = findFX();
     if (fx < 0) {
         return;
     }
-    char guid[64] = "";
-    if (const GUID *g = TrackFX_GetFXGUID(tr, fx)) {
-        guidToString(g, guid);
+    if (tr != audioTrack()) { // the audio item moved to another track: the filter goes with it
+        setIsolate(false);
+        setIsolate(true);
+        return;
     }
+    const std::string guid = fxGUID(tr, fx);
     const bool playing = GetPlayState() & 1;
     const double now = playing ? GetPlayPosition2() : GetCursorPosition();
 

@@ -99,6 +99,7 @@
 #define REAPERAPI_WANT_guidToString
 #define REAPERAPI_WANT_DockWindowAddEx
 #define REAPERAPI_WANT_DockWindowRemove
+#define REAPERAPI_WANT_EnumProjects
 #define REAPERAPI_WANT_DockWindowActivate
 #define REAPERAPI_WANT_ValidatePtr2
 #define REAPERAPI_WANT_plugin_getapi
