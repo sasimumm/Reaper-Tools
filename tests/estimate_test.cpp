@@ -145,6 +145,14 @@ int main() {
         const std::vector<int> c = assignVoices(
             std::vector<NoteEstimate>{{0, 10, 60, 1}, {0, 10, 64, 0.5f}, {0, 10, 67, 0.9f}}, fr, 2);
         assert(c[1] == -1 && c[0] >= 0 && c[2] >= 0 && c[0] != c[2]);
+        // ... but a stronger note that can't go anywhere (on the free lower strand it would cross the
+        // held 70) doesn't crowd out a weaker one that fits
+        const std::vector<int> e = assignVoices(
+            std::vector<NoteEstimate>{
+                {0, 20, 70, 1}, {0, 10, 50, 1}, {10, 20, 75, 1}, {10, 20, 55, 0.5f}
+            },
+            fr, 2);
+        assert(e[0] >= 0 && e[1] >= 0 && e[2] == -1 && e[3] == e[1]);
         const std::vector<int> d = assignVoices(
             std::vector<NoteEstimate>{{0, 10, 60, 1}, {10, 20, 62, 1}, {20, 30, 64, 1}}, fr, 4);
         assert(d[0] == 0 && d[1] == 0 && d[2] == 0);

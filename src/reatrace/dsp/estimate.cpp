@@ -13,6 +13,8 @@
 #include <ranges>
 #include <span>
 #include <thread>
+#include <tuple>
+#include <utility>
 
 #include "dsp/parallel.h"
 #include "dsp/wdlfft.h"
@@ -1509,6 +1511,8 @@ static const double AGE = 2.0;
 static const double AGE_CAP = 2.0;
 // share of sung frames a number of simultaneous notes needs to count as a voice
 static const double POLYPHONY_SHARE = 0.003;
+// new notes on one frame that voice assignment considers (it tries every subset of them)
+static const size_t MAX_FRESH = 10;
 
 std::vector<int> assignVoices(std::span<const NoteEstimate> notes, double frameRate,
                               int maxVoices) {
@@ -1594,81 +1598,94 @@ std::vector<int> assignVoices(std::span<const NoteEstimate> notes, double frameR
                 free.push_back(v);
             }
         }
-        // more new notes than free strands: the strongest get a strand
+        // Places as many of `cand` as fit without crossing, at the lowest cost (k = all of them
+        // first, then fewer): every k-subset of the notes onto every k-subset of the free strands,
+        // in order. Gives the strands and their notes.
+        const auto place = [&](std::vector<int> cand) {
+            std::sort(cand.begin(), cand.end(),
+                      [&](int a, int b) { return notes[idx(a)].pitch > notes[idx(b)].pitch; });
+            const int nf = static_cast<int>(cand.size());
+            const int nfree = static_cast<int>(free.size());
+            std::vector<int> best, bestNotes;
+            for (int k = std::min(nf, nfree); k >= 0 && best.empty() && (k > 0 || nf == 0); k--) {
+                double bestCost = 1e30;
+                for (int nm = 0; nm < (1 << nf); nm++) {
+                    if (__builtin_popcount(static_cast<unsigned int>(nm)) != k) {
+                        continue;
+                    }
+                    for (int sm = 0; sm < (1 << nfree); sm++) {
+                        if (__builtin_popcount(static_cast<unsigned int>(sm)) != k) {
+                            continue;
+                        }
+                        std::vector<int> sub, combo;
+                        for (int i = 0; i < nf; i++) {
+                            if (nm >> i & 1) {
+                                sub.push_back(cand[idx(i)]); // high to low
+                            }
+                        }
+                        for (int i = 0; i < nfree; i++) {
+                            if (sm >> i & 1) {
+                                combo.push_back(free[idx(i)]); // top to bottom
+                            }
+                        }
+
+                        // pitches down the strands, -1000 for silent ones: crossing if any rises
+                        std::vector<int> pitchOn(idx(nv), -1000);
+                        for (int v = 0; v < nv; v++) {
+                            if (current[idx(v)] >= 0) {
+                                pitchOn[idx(v)] = notes[idx(current[idx(v)])].pitch;
+                            }
+                        }
+                        for (int i = 0; i < k; i++) {
+                            pitchOn[idx(combo[idx(i)])] = notes[idx(sub[idx(i)])].pitch;
+                        }
+                        bool crossing = false;
+                        int above = 1000;
+                        for (int v = 0; v < nv; v++) {
+                            if (pitchOn[idx(v)] > -1000) {
+                                crossing |= pitchOn[idx(v)] > above;
+                                above = pitchOn[idx(v)];
+                            }
+                        }
+                        if (crossing) {
+                            continue;
+                        }
+
+                        // the leap from the strand's last (or resting) pitch, plus its silence
+                        double cost = 0;
+                        for (int i = 0; i < k; i++) {
+                            const int v = combo[idx(i)];
+                            const double silent =
+                                silentFrom[idx(v)] < 0
+                                    ? AGE_CAP
+                                    : std::min(AGE_CAP, (t - silentFrom[idx(v)]) / frameRate);
+                            const double from = last[idx(v)] >= 0 ? last[idx(v)] : rest[idx(v)];
+                            cost += fabs(notes[idx(sub[idx(i)])].pitch - from) + AGE * silent;
+                        }
+                        if (cost < bestCost) {
+                            bestCost = cost;
+                            best = combo;
+                            bestNotes = sub;
+                        }
+                    }
+                }
+            }
+            return std::make_pair(best, bestNotes);
+        };
+
+        // more new notes than free strands: the strongest get a strand; but if some of those
+        // can't go anywhere, weaker ones that fit fill in (the strongest MAX_FRESH are tried)
         std::sort(fresh.begin(), fresh.end(),
                   [&](int a, int b) { return notes[idx(a)].strength > notes[idx(b)].strength; });
-        if (fresh.size() > free.size()) {
-            fresh.resize(free.size());
-        }
-        std::sort(fresh.begin(), fresh.end(),
-                  [&](int a, int b) { return notes[idx(a)].pitch > notes[idx(b)].pitch; });
-
-        // place as many as fit without crossing, at the lowest cost (k = all of them first, then
-        // fewer): every k-subset of the notes onto every k-subset of the free strands, in order
-        const int nf = static_cast<int>(fresh.size());
-        const int nfree = static_cast<int>(free.size());
-        std::vector<int> best, bestNotes;
-        for (int k = nf; k >= 0 && best.empty() && (k > 0 || nf == 0); k--) {
-            double bestCost = 1e30;
-            for (int nm = 0; nm < (1 << nf); nm++) {
-                if (__builtin_popcount(static_cast<unsigned int>(nm)) != k) {
-                    continue;
-                }
-                for (int sm = 0; sm < (1 << nfree); sm++) {
-                    if (__builtin_popcount(static_cast<unsigned int>(sm)) != k) {
-                        continue;
-                    }
-                    std::vector<int> sub, combo;
-                    for (int i = 0; i < nf; i++) {
-                        if (nm >> i & 1) {
-                            sub.push_back(fresh[idx(i)]); // high to low
-                        }
-                    }
-                    for (int i = 0; i < nfree; i++) {
-                        if (sm >> i & 1) {
-                            combo.push_back(free[idx(i)]); // top to bottom
-                        }
-                    }
-
-                    // pitches down the strands, -1000 for silent ones: crossing if any rises
-                    std::vector<int> pitchOn(idx(nv), -1000);
-                    for (int v = 0; v < nv; v++) {
-                        if (current[idx(v)] >= 0) {
-                            pitchOn[idx(v)] = notes[idx(current[idx(v)])].pitch;
-                        }
-                    }
-                    for (int i = 0; i < k; i++) {
-                        pitchOn[idx(combo[idx(i)])] = notes[idx(sub[idx(i)])].pitch;
-                    }
-                    bool crossing = false;
-                    int above = 1000;
-                    for (int v = 0; v < nv; v++) {
-                        if (pitchOn[idx(v)] > -1000) {
-                            crossing |= pitchOn[idx(v)] > above;
-                            above = pitchOn[idx(v)];
-                        }
-                    }
-                    if (crossing) {
-                        continue;
-                    }
-
-                    // the leap from the strand's last (or resting) pitch, plus its silence
-                    double cost = 0;
-                    for (int i = 0; i < k; i++) {
-                        const int v = combo[idx(i)];
-                        const double silent =
-                            silentFrom[idx(v)] < 0
-                                ? AGE_CAP
-                                : std::min(AGE_CAP, (t - silentFrom[idx(v)]) / frameRate);
-                        const double from = last[idx(v)] >= 0 ? last[idx(v)] : rest[idx(v)];
-                        cost += fabs(notes[idx(sub[idx(i)])].pitch - from) + AGE * silent;
-                    }
-                    if (cost < bestCost) {
-                        bestCost = cost;
-                        best = combo;
-                        bestNotes = sub;
-                    }
-                }
+        const std::vector<int> strongest(
+            fresh.begin(),
+            fresh.begin() + static_cast<std::ptrdiff_t>(std::min(fresh.size(), free.size())));
+        auto [best, bestNotes] = place(strongest);
+        if (best.size() < strongest.size() && fresh.size() > strongest.size()) {
+            fresh.resize(std::min(fresh.size(), MAX_FRESH));
+            auto more = place(fresh);
+            if (more.first.size() > best.size()) {
+                std::tie(best, bestNotes) = std::move(more);
             }
         }
 
