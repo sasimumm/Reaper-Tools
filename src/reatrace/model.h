@@ -17,6 +17,9 @@ enum { SNAP_OFF, SNAP_ONSETS, SNAP_GRID };
 // analysis channels; centre = mid minus side
 enum { CH_MIX, CH_LEFT, CH_RIGHT, CH_SIDE, CH_CENTRE };
 
+// where suggestions come from: the note estimator, the lead's contour, reference MIDI tracks
+enum { FROM_ESTIMATOR, FROM_CONTOUR, FROM_REFERENCE };
+
 // Everything remembered per item (settings.cpp keeps it in the project): the defaults are here
 // only.
 struct Settings {
@@ -32,7 +35,10 @@ struct Settings {
     // bright is what still needs transcribing.
     bool explain = false;
     bool showContour = true, suggest = true, pitchFromContour = true;
-    int suggestFrom = 0;      // SUGGEST_FROM
+    int suggestFrom = FROM_ESTIMATOR;
+    // FROM_REFERENCE: the reference tracks' GUIDs, space separated; in order they suggest notes
+    // for the lead, voice 2, ... (a single track for the edited voice)
+    std::string reference;
     bool estimateVote = true; // the estimator's front-end vote (EstimateParams::vote)
     bool audition = true;     // play a note through the notes track when clicked or drawn
     bool followTheme = true;  // else the built-in dark colours

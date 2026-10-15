@@ -6,6 +6,7 @@
 #include "notes/notesync.h"
 #include <array>
 #include <span>
+#include <sstream>
 
 static std::vector<Note> g_loaded; // notes as read from the take, by take index
 
@@ -240,4 +241,99 @@ void insertIntoVoice(int v, std::span<const Note> notes) {
         appendNotes(t, notes, g_session.ed.velocity);
         fitItemToNotes(take);
     }
+}
+
+// --- reference tracks ------------------------------------------------------------
+
+static std::string trackGUID(MediaTrack *tr) {
+    char buf[64] = "";
+    guidToString(GetTrackGUID(tr), buf);
+    return buf;
+}
+
+static bool hasMIDI(MediaTrack *tr) {
+    for (int i = 0; i < CountTrackMediaItems(tr); i++) {
+        MediaItem_Take *take = GetActiveTake(GetTrackMediaItem(tr, i));
+        if (take && TakeIsMIDI(take)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool pickReference() {
+    std::vector<MediaTrack *> voices;
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        if (MediaItem *item = VoiceItem(g_session.audio, v, false)) {
+            voices.push_back(GetMediaItem_Track(item));
+        }
+    }
+    std::string ref;
+    int inside = 0; // folder depth inside a selected folder
+    for (int i = 0; i < CountTracks(NULL); i++) {
+        MediaTrack *tr = GetTrack(NULL, i);
+        const bool selected = GetMediaTrackInfo_Value(tr, "I_SELECTED") != 0;
+        if ((inside > 0 || selected) && hasMIDI(tr) &&
+            std::find(voices.begin(), voices.end(), tr) == voices.end()) {
+            ref += (ref.empty() ? "" : " ") + trackGUID(tr);
+        }
+        const int depth = static_cast<int>(GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH"));
+        inside = inside > 0 ? std::max(0, inside + depth) : (selected && depth > 0 ? depth : 0);
+    }
+    if (ref.empty()) {
+        return false;
+    }
+    g_settings.reference = ref;
+    return true;
+}
+
+void loadReference() {
+    if (g_settings.suggestFrom != FROM_REFERENCE) {
+        return;
+    }
+    std::vector<Segment> segs;
+    std::vector<int> from;
+    int tracks = 0;
+    const double fr = g_analysis.spec->frameRate();
+    const double a = g_session.audioPos, b = a + g_session.audioLen;
+    std::istringstream guids(g_settings.reference);
+    // a deleted track keeps its place, so the voices after it stay put
+    for (std::string guid; guids >> guid; tracks++) {
+        MediaTrack *tr = NULL;
+        for (int i = 0; i < CountTracks(NULL) && !tr; i++) {
+            if (trackGUID(GetTrack(NULL, i)) == guid) {
+                tr = GetTrack(NULL, i);
+            }
+        }
+        for (int i = 0; tr && i < CountTrackMediaItems(tr); i++) {
+            MediaItem *item = GetTrackMediaItem(tr, i);
+            MediaItem_Take *take = GetActiveTake(item);
+            if (!take || !TakeIsMIDI(take)) {
+                continue;
+            }
+            // what sounds: the notes within the item, over the audio item
+            const double itemPos = GetMediaItemInfo_Value(item, "D_POSITION");
+            const double pos = std::max(a, itemPos);
+            const double end = std::min(b, itemPos + GetMediaItemInfo_Value(item, "D_LENGTH"));
+            ReaperTake t(take);
+            for (const Note &n : readNotes(t)) {
+                const double s = std::max(n.start, pos), e = std::min(n.end, end);
+                if (e > s) {
+                    const int f0 = static_cast<int>(lround((s - a) * fr));
+                    const int f1 = std::max(f0, static_cast<int>(lround((e - a) * fr)) - 1);
+                    segs.push_back({f0, f1, static_cast<double>(n.pitch)});
+                    from.push_back(tracks);
+                }
+            }
+        }
+    }
+    if (segs == g_session.reference && from == g_session.referenceTrack &&
+        tracks == g_session.referenceTracks) {
+        return;
+    }
+    g_session.reference = std::move(segs);
+    g_session.referenceTrack = std::move(from);
+    g_session.referenceTracks = tracks;
+    g_session.notesVersion++; // the suggestions changed
+    redraw();
 }

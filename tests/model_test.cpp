@@ -18,11 +18,14 @@ int main() {
         a.snapMode = SNAP_GRID;
         a.guideOpacity = 0.4;
         a.estimateVote = false;
+        a.suggestFrom = FROM_REFERENCE;
+        a.reference = "{0A1B-2C} {3D4E-5F}";
         Settings b;
         decodeSettings(encodeSettings(a).c_str(), b);
         assert(encodeSettings(b) == encodeSettings(a));
         assert(b.np.gamma == 25 && b.rp.contrast == 1.75 && b.channel == CH_CENTRE && !b.ghosts);
         assert(b.snapMode == SNAP_GRID && !b.estimateVote && b.guideOpacity == 0.4);
+        assert(b.suggestFrom == FROM_REFERENCE && b.reference == a.reference);
     }
 
     // defaults survive an empty or unrelated string; unknown names are ignored

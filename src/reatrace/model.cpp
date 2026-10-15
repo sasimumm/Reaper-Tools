@@ -11,13 +11,14 @@
 #include <string_view>
 
 // One stored setting: its name in the "name=value;" text and a pointer to exactly one of the
-// fields d, b or i of a Settings.
+// fields d, b, i or s of a Settings.
 struct Setting {
     const char *name = nullptr;
     double *d = nullptr;
     bool *b = nullptr;
     int *i = nullptr;
-    double lo = 0, hi = 0; // loaded values are clamped to this range
+    std::string *s = nullptr; // text without '=' or ';'
+    double lo = 0, hi = 0;    // loaded values are clamped to this range
 };
 
 // The fields of `s`, as stored (pointing into `s`).
@@ -44,7 +45,8 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "explain", .b = &s.explain},
         {.name = "contour", .b = &s.showContour},
         {.name = "suggest", .b = &s.suggest},
-        {.name = "suggestfrom", .i = &s.suggestFrom, .lo = 0, .hi = 1},
+        {.name = "suggestfrom", .i = &s.suggestFrom, .lo = 0, .hi = FROM_REFERENCE},
+        {.name = "reference", .s = &s.reference},
         {.name = "estimatevote", .b = &s.estimateVote},
         {.name = "pitchfromcontour", .b = &s.pitchFromContour},
         {.name = "audition", .b = &s.audition},
@@ -81,6 +83,8 @@ std::string encodeSettings(const Settings &settings) {
             value = *st.b ? "1" : "0";
         } else if (st.i) {
             value = std::to_string(*st.i);
+        } else if (st.s) {
+            value = *st.s;
         } else {
             continue;
         }
@@ -99,9 +103,12 @@ void decodeSettings(const char *str, Settings &settings) {
         }
 
         const std::string name(p.substr(0, eq));
-        const double v = toNumber(std::string(p.substr(eq + 1, end - eq - 1)));
+        const std::string text(p.substr(eq + 1, end - eq - 1));
+        const double v = toNumber(text);
         for (const Setting &st : fs) {
-            if (name == st.name) {
+            if (name == st.name && st.s) {
+                *st.s = text;
+            } else if (name == st.name) {
                 const double c = v >= st.lo ? std::min(v, st.hi) : st.lo; // NaN -> lo
                 if (st.d) {
                     *st.d = c;

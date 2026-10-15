@@ -13,3 +13,8 @@ void loadOtherVoices(bool force); // the other voices' notes, for display; force
 void commitNotes();
 // Adds notes to voice v's take, creating its track and item if needed.
 void insertIntoVoice(int v, std::span<const Note> notes);
+// Makes REAPER's selected tracks with MIDI items (and those in selected folders) the reference,
+// leaving out the voice tracks; false if there are none.
+bool pickReference();
+// The reference tracks' notes over the audio item into the session, when suggesting from them.
+void loadReference();

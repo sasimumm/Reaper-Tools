@@ -5,6 +5,7 @@
 #include <span>
 
 #include "notes/commands.h"
+#include "notes/takesync.h"
 #include "playback/isolate.h"
 #include "ui/panel.h"
 #include "ui/theme.h"
@@ -98,10 +99,11 @@ std::vector<Item> items(const Layout &L) {
 
     add(SUGGEST, 0, "Suggestions", "Show suggested notes (N)  ·  A: accept all in view",
         textWidth("Suggestions") + 16);
-    static const char *const FROM[] = {"Estimator", "Lead contour"};
+    static const char *const FROM[] = {"Estimator", "Lead contour", "Reference"};
     static const char *const FROM_TIPS[] = {
         "Suggestions from the note estimator, in voices",
-        "Suggestions from the lead's pitch contour"
+        "Suggestions from the lead's pitch contour",
+        "Suggestions from MIDI tracks selected in REAPER (or their folder), in voices by order"
     };
     segment(SUGGEST_FROM, FROM, FROM_TIPS);
     gap();
@@ -266,7 +268,16 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
         setupEditorSnap();
         break;
     case SUGGEST: g_settings.suggest = !g_settings.suggest; break;
-    case SUGGEST_FROM: g_settings.suggestFrom = it->arg; break;
+    case SUGGEST_FROM:
+        // the reference is picked again from REAPER's selected tracks when there are any
+        if (it->arg == FROM_REFERENCE && !pickReference() && g_settings.reference.empty()) {
+            ShowMessageBox("Select the reference MIDI track (or a folder of them) in REAPER first.",
+                           "ReaTrace", 0);
+            break;
+        }
+        g_settings.suggestFrom = it->arg;
+        loadReference();
+        break;
     case CONTOUR: g_settings.showContour = !g_settings.showContour; break;
     case GHOSTS: g_settings.ghosts = !g_settings.ghosts; break;
     case EXPLAIN: g_settings.explain = !g_settings.explain; break;

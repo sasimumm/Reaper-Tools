@@ -14,15 +14,28 @@ static const double ONSET_SNAP_RANGE = 0.03; // seconds
 static const double MIN_GRID_PX = 10;        // grid lines at least this far apart
 static const int SUGGESTION_HIT_SLOP = 2;    // pixels around a suggestion that still hit it
 
-// The suggestions shown: the contour's segments or the note estimator's.
+// The suggestions shown: the note estimator's, the contour's segments or the reference tracks'
+// notes.
 const std::vector<Segment> &suggestions() {
-    return g_settings.suggestFrom ? g_analysis.segments : g_analysis.estimated;
+    switch (g_settings.suggestFrom) {
+    case FROM_CONTOUR: return g_analysis.segments;
+    case FROM_REFERENCE: return g_session.reference;
+    default: return g_analysis.estimated;
+    }
 }
 
-// The voice a suggestion goes to with A: the estimator's assignment; contour suggestions are the
-// active voice's.
+// The voice a suggestion goes to with A: the estimator's assignment; a reference track's place
+// among the reference tracks (a single one is the active voice's, past the voices crowded out);
+// contour suggestions are the active voice's.
 int suggestionVoice(size_t i) {
-    if (g_settings.suggestFrom || i >= g_analysis.estimatedVoice.size()) {
+    if (g_settings.suggestFrom == FROM_REFERENCE && i < g_session.referenceTrack.size()) {
+        const int t = g_session.referenceTrack[i];
+        if (g_session.referenceTracks == 1) {
+            return g_session.voice;
+        }
+        return t < WINDOW_VOICES ? t : -1;
+    }
+    if (g_settings.suggestFrom != FROM_ESTIMATOR || i >= g_analysis.estimatedVoice.size()) {
         return g_session.voice;
     }
     return g_analysis.estimatedVoice[i];

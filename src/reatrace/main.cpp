@@ -14,6 +14,8 @@
 #define REAPERAPI_MINIMAL
 #define REAPERAPI_WANT_AddExtensionsMainMenu
 #define REAPERAPI_WANT_CountTrackMediaItems
+#define REAPERAPI_WANT_CountTracks
+#define REAPERAPI_WANT_GetTrackGUID
 #define REAPERAPI_WANT_CreateNewMIDIItemInProj
 #define REAPERAPI_WANT_CreateTakeAudioAccessor
 #define REAPERAPI_WANT_DestroyAudioAccessor

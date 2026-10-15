@@ -53,6 +53,11 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
   voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
 - Suggestions come from a note estimator (harmonic-template NMF on the spectrogram, confirmed by
   basic-pitch), assigned to voices; accept them one by one or all in view.
+- Reference: after playing a rough take in on a MIDI keyboard, select its track (or a folder of
+  tracks) in REAPER and click **Reference** in the toolbar. Its notes then show as suggestions,
+  the same as the estimator's, to accept or redraw for the final pass. One track suggests for the
+  edited voice; with several, the first goes to the lead, the next to voice 2 and so on. Clicking
+  Reference again with other tracks selected switches to those.
 - Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's
   notation editor and lyrics view.
 - Settings are remembered per audio item; "Save as default" makes the current ones the starting

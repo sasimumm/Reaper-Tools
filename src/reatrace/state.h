@@ -49,6 +49,11 @@ struct Session {
     NoteEditor ed;
     TakeSnapshot snapshot; // of the take when the notes were loaded
     int notesVersion = 0;  // bumped whenever notes are loaded
+    // the reference tracks' notes (Settings::reference) as suggestions, and which of the
+    // `referenceTracks` tracks each came from
+    std::vector<Segment> reference;
+    std::vector<int> referenceTrack;
+    int referenceTracks = 0;
 };
 inline Session g_session;
 

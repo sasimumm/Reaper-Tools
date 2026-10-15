@@ -755,6 +755,7 @@ void Window_Open(MediaItem *audio, int voice) {
     setupEditorSnap();
     loadNotes();
     loadOtherVoices(true);
+    loadReference();
 
     const char *d = globalState("docked");
     g_docked = d && *d == '1';
@@ -844,6 +845,7 @@ void Window_Timer() {
             }
         }
         loadOtherVoices(false);
+        loadReference();
     }
     updateIsolate();
 

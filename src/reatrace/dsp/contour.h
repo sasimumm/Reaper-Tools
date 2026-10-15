@@ -18,6 +18,7 @@ Contour trackPitch(const Spectrogram &s, double lowPitch = 36, double highPitch 
 struct Segment {
     int f0, f1;   // frames, inclusive
     double pitch; // median pitch, skipping the first `skipStart` seconds (scoops)
+    bool operator==(const Segment &) const = default;
 };
 
 // Boundaries are refined: between two notes, to where the raw pitch crosses halfway; a start,
