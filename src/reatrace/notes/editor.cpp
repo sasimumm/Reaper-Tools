@@ -164,10 +164,24 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
             if (!orig[i].sel) {
                 continue;
             }
+            // an edge stops at the next (or previous) note of its pitch: MIDI can't overlap them
+            const Note &o = orig[i];
+            double next = 1e300, prev = -1e300;
+            for (size_t j = 0; j < orig.size(); j++) {
+                const Note &q = orig[j];
+                if (j == i || q.pitch != o.pitch || q.chan != o.chan) {
+                    continue;
+                }
+                if (q.start > o.start) {
+                    next = std::min(next, q.start);
+                } else if (q.start < o.start) {
+                    prev = std::max(prev, q.end);
+                }
+            }
             if (mode == RESIZE_R) {
-                notes[i].end = std::max(orig[i].start + minLen, orig[i].end + dt);
+                notes[i].end = std::min(std::max(o.start + minLen, o.end + dt), next);
             } else {
-                notes[i].start = std::min(orig[i].end - minLen, orig[i].start + dt);
+                notes[i].start = std::max(std::min(o.end - minLen, o.start + dt), prev);
             }
         }
     } else if (const std::optional<Box> r = marquee()) {

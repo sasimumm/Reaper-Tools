@@ -6,6 +6,7 @@
 #include <map>
 #include <numeric>
 #include <span>
+#include <tuple>
 
 TakeSnapshot snapshotOf(Take &take) { return {take.identity(), take.hash(), take.timeMapping()}; }
 
@@ -61,6 +62,25 @@ static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel, int velocity
     e.chan = n.chan;
     e.muted = n.muted;
     return e;
+}
+
+bool trimOverlaps(std::span<Note> notes) {
+    std::vector<size_t> order(notes.size());
+    std::iota(order.begin(), order.end(), size_t{0});
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const Note &x = notes[a], &y = notes[b];
+        return std::tie(x.chan, x.pitch, x.start) < std::tie(y.chan, y.pitch, y.start);
+    });
+    bool any = false;
+    for (size_t k = 1; k < order.size(); k++) {
+        Note &a = notes[order[k - 1]];
+        const Note &b = notes[order[k]];
+        if (a.chan == b.chan && a.pitch == b.pitch && a.end > b.start && b.start > a.start) {
+            a.end = b.start;
+            any = true;
+        }
+    }
+    return any;
 }
 
 NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited,

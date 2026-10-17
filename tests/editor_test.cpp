@@ -130,6 +130,18 @@ int main() {
         assert(near(e.notes[3].start, 4) && near(e.notes[3].end, 5));   // qn 4..5 -> 8..9
     }
 
+    // Resizing stops at the next or previous note of the same pitch (another pitch doesn't).
+    {
+        NoteEditor e;
+        e.notes = {{1, 2, 60, false, 0}, {3, 4, 60, false, 1}, {2.5, 2.8, 62, false, 2}};
+        e.mouseDown(v, v.x(2) - 1, v.y(60), 0); // the first note's right edge
+        assert(e.mouseUp(v, v.x(3.6), v.y(60), 0));
+        assert(near(e.notes[0].end, 3));        // stopped at the second note
+        e.mouseDown(v, v.x(3) + 1, v.y(60), 0); // the second note's left edge
+        e.mouseUp(v, v.x(1.2), v.y(60), 0);
+        assert(near(e.notes[1].start, 3)); // the first note now ends there
+    }
+
     // Shift+Delete clears the selected notes' lyrics, nothing else.
     {
         NoteEditor e;

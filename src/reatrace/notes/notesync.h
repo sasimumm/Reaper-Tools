@@ -70,6 +70,11 @@ TakeSnapshot snapshotOf(Take &take);
 // note (by index) starting within half a tick of it.
 std::vector<Note> readNotes(Take &take);
 
+// MIDI can't hold two notes of one pitch and channel at once (a note-off would end either), so an
+// overlapping earlier note is cut to end where the later one starts; notes starting together are
+// left. True if any changed.
+bool trimOverlaps(std::span<Note> notes);
+
 // What writing `edited` over `loaded` (as read by readNotes) would change.
 struct NoteChanges {
     bool data = false;   // notes or lyrics: worth an undo point (selection alone isn't)

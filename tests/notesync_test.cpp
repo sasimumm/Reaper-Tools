@@ -183,6 +183,18 @@ int main() {
         assert(!c.data && !c.lyrics && n[2].sel && t.texts.size() == 4);
     }
 
+    // overlapping notes of one pitch and channel: the earlier ends where the later starts
+    {
+        std::vector<Note> n = {{1, 3, 60, false, 0},   {2, 4, 60, false, 1},
+                               {1.5, 5, 62, false, 2}, {2.5, 2.7, 60, false, 3},
+                               {1, 2, 64, false, 4},   {1, 3, 64, false, 5}};
+        n[3].chan = 1; // another channel: left alone
+        assert(trimOverlaps(n));
+        assert(n[0].end == 2 && n[1].end == 4 && n[2].end == 5 && n[3].end == 2.7);
+        assert(n[4].end == 2 && n[5].end == 3); // starting together: left
+        assert(!trimOverlaps(n));
+    }
+
     // notes moved off whole ticks (a paste at the cursor, a resize onto an onset, quantising)
     // keep their lyrics, though the take truncates their starts
     {
