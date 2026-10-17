@@ -97,7 +97,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
 | P | pitch contour (yellow line: the sung pitch) |
-| C | chord tones: shade each chord's notes (from the chords lane) under it, the root stronger; notes outside the chord get a light dot in their corner (the edited voice's also a darker fill) |
+| C | chord tones: shade each chord's notes (from the chords lane) under it, the root stronger; where a note is outside the chord sounding then it gets a light dot (the edited voice's notes also a darker fill there), each part of a note judged by its own chord, ignoring overlaps under 80 ms |
 | key | the MIDI take's scale (REAPER's key snap), else the project's key signature as last saved (the first one; key changes aren't read yet): its notes are marked on the keyboard (the root wider), their rows are faintly lighter, and the status bar shows it |
 | N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice, drag over one to draw |
 | A | accept all suggested notes in view, each into the voice it is coloured as (voice tracks are created as needed; grey ones are left) |

@@ -987,23 +987,32 @@ static NoteBox noteBox(const Note &nt) {
     return {x0, y0, x1, y1};
 }
 
-// With chord tones on: whether the note's pitch is outside the chord sounding at its start (and
-// isn't a slash chord's bass). Without a chord there, or one that can't be read, it is inside.
-static bool outsideChord(const Note &nt, std::span<const ChordSpan> spans,
-                         std::span<const std::optional<ChordTones>> tones) {
+// Overlaps with a chord shorter than this (seconds) don't count, so a note starting just before a
+// chord change isn't judged by the chord before it.
+static const double CHORD_SLACK = 0.08;
+
+// With chord tones on: the parts of a note (seconds) where its pitch is outside the chord sounding
+// then and isn't a slash chord's bass. Where there is no chord, or one that can't be read, it is
+// inside.
+static std::vector<std::pair<double, double>>
+outsideChord(const Note &nt, std::span<const ChordSpan> spans,
+             std::span<const std::optional<ChordTones>> tones) {
+    std::vector<std::pair<double, double>> out;
+    const int pc = (nt.pitch % 12 + 12) % 12;
     for (size_t i = 0; i < spans.size(); i++) {
         const std::optional<ChordTones> &c = tones[i];
-        if (nt.start >= spans[i].start - 1e-6 && nt.start < spans[i].end - 1e-6 && c) {
-            const int pc = (nt.pitch % 12 + 12) % 12;
-            return !(c->tones >> ((pc - c->root + 12) % 12) & 1) && pc != c->bass;
+        const double a = std::max(nt.start, spans[i].start), b = std::min(nt.end, spans[i].end);
+        if (c && b - a >= CHORD_SLACK && !(c->tones >> ((pc - c->root + 12) % 12) & 1) &&
+            pc != c->bass) {
+            out.emplace_back(a, b);
         }
     }
-    return false;
+    return out;
 }
 
 // Other voices (dimmed, not editable), the edited voice's notes, their lyrics, and the marquee.
-// Notes outside the chord (chord tones on) get a light dot in their corner, the edited voice's
-// also a darker fill.
+// Where notes are outside the chord (chord tones on) they get a light dot at the start, the edited
+// voice's also a darker fill there.
 static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
     std::span<const ChordSpan> spans;
     std::vector<std::optional<ChordTones>> tones;
@@ -1014,6 +1023,7 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         }
     }
     const auto outside = [&](const Note &nt) { return outsideChord(nt, spans, tones); };
+    const auto x = [](double t) { return iround(g_ui.view.x(t)); };
     const auto dot = [&](int x0, int y0) {
         cv.fill(x0 + 2, y0 + 2, x0 + 5, y0 + 5, g_theme.highlight);
     };
@@ -1027,8 +1037,8 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
                 const auto [x0, y0, x1, y1] = noteBox(nt);
                 cv.rounded(x0, y0, x1, y1, g_theme.voices[idx(v)], 70);
                 cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(v)]);
-                if (outside(nt)) {
-                    dot(x0, y0);
+                if (const auto out = outside(nt); !out.empty()) {
+                    dot(std::max(x0, x(out[0].first)), y0);
                 }
             }
         }
@@ -1041,11 +1051,15 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         const Note &nt = g_session.ed.notes[i];
         const auto [x0, y0, x1, y1] = noteBox(nt);
         const bool sel = nt.sel || static_cast<int>(i) == drawing;
-        const bool out = outside(nt);
-        cv.rounded(x0, y0, x1, y1, out ? mix(noteColour, g_theme.shadow, 0.45) : noteColour, 245);
+        cv.rounded(x0, y0, x1, y1, noteColour, 245);
+        const auto out = outside(nt);
+        for (const auto &[a, b] : out) { // inside the frame
+            cv.fill(std::max(x0 + 1, x(a)), y0 + 1, std::min(x1 - 1, x(b)), y1 - 1, g_theme.shadow,
+                    115);
+        }
         cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, g_theme.shadow, 0.55));
-        if (out) {
-            dot(x0, y0);
+        if (!out.empty()) {
+            dot(std::max(x0, x(out[0].first)), y0);
         }
         if (sel) {
             cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.outline, y1 - y0 > 6 ? 2 : 1);
