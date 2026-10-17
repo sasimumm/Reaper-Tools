@@ -188,6 +188,40 @@ int main() {
                tr.size() == 2);
     }
 
+    // chord names to their notes
+    {
+        const auto tones = [](const char *name) {
+            const std::optional<ChordTones> c = chordTones(name);
+            assert(c);
+            return c.value_or(ChordTones{});
+        };
+        const auto bits = [](std::initializer_list<int> st) {
+            unsigned m = 0;
+            for (const int s : st) {
+                m |= 1u << s;
+            }
+            return m;
+        };
+        assert(tones("C").root == 0 && tones("C").tones == bits({0, 4, 7}) && tones("C").bass < 0);
+        assert(tones("F#m").root == 6 && tones("F#m").tones == bits({0, 3, 7}));
+        assert(tones("Bb7").root == 10 && tones("Bb7").tones == bits({0, 4, 7, 10}));
+        assert(tones("Ebmaj7").root == 3 && tones("Ebmaj7").tones == bits({0, 4, 7, 11}));
+        assert(tones("Am7b5").tones == bits({0, 3, 6, 10}));
+        assert(tones("Bdim7").tones == bits({0, 3, 6, 9}) &&
+               tones("Bdim").tones == bits({0, 3, 6}));
+        assert(tones("Caug").tones == bits({0, 4, 8}) && tones("C+").tones == bits({0, 4, 8}));
+        assert(tones("Dsus4").tones == bits({0, 5, 7}) && tones("Dsus2").tones == bits({0, 2, 7}));
+        assert(tones("C6/9").tones == bits({0, 2, 4, 7, 9}));
+        assert(tones("Cadd9").tones == bits({0, 2, 4, 7}));
+        assert(tones("G9").tones == bits({0, 2, 4, 7, 10}));
+        assert(tones("Cm(maj7)").tones == bits({0, 3, 7, 11}));
+        assert(tones("C5").tones == bits({0, 7}));
+        const ChordTones slash = tones("C/E");
+        assert(slash.root == 0 && slash.bass == 4 && slash.tones == bits({0, 4, 7}));
+        assert(tones("D\u266D").root == 1 && tones("F\u266F").root == 6);
+        assert(!chordTones("N.C.") && !chordTones("") && !chordTones("Cxyz"));
+    }
+
     // a project's key signature
     {
         const auto k = keySigLine("    0 4 1 0xAB5");

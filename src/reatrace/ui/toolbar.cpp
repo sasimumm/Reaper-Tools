@@ -22,6 +22,7 @@ enum Kind {
     CONTOUR,
     GHOSTS,
     EXPLAIN,
+    CHORD_TONES,
     LISTEN,
     SPEED,
     ISOLATE,
@@ -112,6 +113,8 @@ std::vector<Item> items(const Layout &L) {
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
         textWidth("Ghosts") + 16);
     add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + 16);
+    add(CHORD_TONES, 0, "Chord tones", "Shade the notes of each chord in the chords lane (C)",
+        textWidth("Chord tones") + 16);
     gap();
 
     static const char *const HEAR[] = {"Both", "Audio", "Notes"};
@@ -154,6 +157,7 @@ bool isOn(const Item &it) {
     case CONTOUR: return g_settings.showContour;
     case GHOSTS: return g_settings.ghosts;
     case EXPLAIN: return g_settings.explain;
+    case CHORD_TONES: return g_settings.chordTones;
     case LISTEN: return it.arg == listenMode();
     case SPEED: return it.arg == speedIndex();
     case FOLLOW: return g_settings.followPlay;
@@ -229,6 +233,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         case CONTOUR:
         case GHOSTS:
         case EXPLAIN:
+        case CHORD_TONES:
         case ISOLATE:
         case DUCK:
         case FOLLOW:
@@ -281,6 +286,7 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
     case CONTOUR: g_settings.showContour = !g_settings.showContour; break;
     case GHOSTS: g_settings.ghosts = !g_settings.ghosts; break;
     case EXPLAIN: g_settings.explain = !g_settings.explain; break;
+    case CHORD_TONES: g_settings.chordTones = !g_settings.chordTones; break;
     case LISTEN: setListen(it->arg); break;
     case SPEED: setSpeed(it->arg); break;
     case FOLLOW: g_settings.followPlay = !g_settings.followPlay; break;

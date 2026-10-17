@@ -44,6 +44,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "harmonics", .d = &s.harmonics, .lo = 2, .hi = 16},
         {.name = "guideopacity", .d = &s.guideOpacity, .lo = 0, .hi = 1},
         {.name = "explain", .b = &s.explain},
+        {.name = "chordtones", .b = &s.chordTones},
         {.name = "contour", .b = &s.showContour},
         {.name = "suggest", .b = &s.suggest},
         {.name = "suggestfrom", .i = &s.suggestFrom, .lo = 0, .hi = FROM_REFERENCE},
@@ -389,6 +390,143 @@ bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, i
         }
     }
     return any;
+}
+
+// A note letter with an optional sharp or flat (#, b, or the Unicode signs) as a pitch class,
+// consumed from s; -1 if s doesn't start with one.
+static int notePitchClass(std::string_view &s) {
+    static const std::array LETTERS = {9, 11, 0, 2, 4, 5, 7}; // A..G
+    if (s.empty() || s.front() < 'A' || s.front() > 'G') {
+        return -1;
+    }
+    int pc = LETTERS[idx(s.front() - 'A')];
+    s.remove_prefix(1);
+    if (s.starts_with("#") || s.starts_with("b")) {
+        pc += s.front() == '#' ? 1 : -1;
+        s.remove_prefix(1);
+    } else if (s.starts_with("\u266F") || s.starts_with("\u266D")) { // sharp, flat sign
+        pc += s.starts_with("\u266F") ? 1 : -1;
+        s.remove_prefix(std::string_view("\u266F").size());
+    }
+    return (pc + 12) % 12;
+}
+
+std::optional<ChordTones> chordTones(std::string_view name) {
+    ChordTones c;
+    name = trim(name);
+    c.root = notePitchClass(name);
+    if (c.root < 0) {
+        return std::nullopt;
+    }
+    // a slash bass: the last '/' followed by a note
+    if (const size_t slash = name.rfind('/'); slash != name.npos) {
+        std::string_view b = name.substr(slash + 1);
+        if (const int bass = notePitchClass(b); bass >= 0 && b.empty()) {
+            c.bass = bass;
+            name = name.substr(0, slash);
+        }
+    }
+
+    int third = 4, fifth = 7, seventh = -1; // semitones above the root; -1 for none
+    unsigned extra = 0;
+    bool dim = false;
+    const auto add = [&](std::initializer_list<int> st) {
+        for (const int s : st) {
+            extra |= 1u << s;
+        }
+    };
+    const auto ext = [&](int sev) { seventh = seventh >= 0 ? seventh : sev; };
+    // longer tokens first where one starts another
+    while (!name.empty()) {
+        const auto take = [&](std::string_view t) {
+            if (!name.starts_with(t)) {
+                return false;
+            }
+            name.remove_prefix(t.size());
+            return true;
+        };
+        if (take("maj13") || take("M13")) {
+            seventh = 11;
+            add({2, 9});
+        } else if (take("maj11") || take("M11")) {
+            seventh = 11;
+            add({2, 5});
+        } else if (take("maj9") || take("M9")) {
+            seventh = 11;
+            add({2});
+        } else if (take("maj7") || take("M7") || take("maj") || take("\u0394")) { // triangle
+            take("7");
+            seventh = 11;
+        } else if (take("dim7") || take("\u00B07") || take("o7")) { // degree sign
+            third = 3;
+            fifth = 6;
+            seventh = 9;
+            dim = true;
+        } else if (take("dim") || take("\u00B0") || take("o")) {
+            third = 3;
+            fifth = 6;
+            dim = true;
+        } else if (take("\u00F8")) { // half-diminished
+            take("7");
+            third = 3;
+            fifth = 6;
+            seventh = 10;
+        } else if (take("min") || take("m") || take("-")) {
+            third = 3;
+        } else if (take("aug") || take("+")) {
+            fifth = 8;
+        } else if (take("sus2")) {
+            third = -1;
+            add({2});
+        } else if (take("sus4") || take("sus")) {
+            third = -1;
+            add({5});
+        } else if (take("add9") || take("add2")) {
+            add({2});
+        } else if (take("add11") || take("add4")) {
+            add({5});
+        } else if (take("add13") || take("add6")) {
+            add({9});
+        } else if (take("6/9") || take("69")) {
+            add({9, 2});
+        } else if (take("b5")) {
+            fifth = 6;
+        } else if (take("#5")) {
+            fifth = 8;
+        } else if (take("b9")) {
+            add({1});
+        } else if (take("#9")) {
+            add({3});
+        } else if (take("#11")) {
+            add({6});
+        } else if (take("b13")) {
+            add({8});
+        } else if (take("13")) {
+            ext(10);
+            add({2, 9});
+        } else if (take("11")) {
+            ext(10);
+            add({2, 5});
+        } else if (take("9")) {
+            ext(10);
+            add({2});
+        } else if (take("7")) {
+            ext(dim ? 9 : 10);
+        } else if (take("6")) {
+            add({9});
+        } else if (take("5")) {
+            third = -1; // a power chord
+        } else if (!take("(") && !take(")") && !take(",") && !take(" ")) {
+            return std::nullopt;
+        }
+    }
+    c.tones = 1u | extra;
+    for (const int s : {third, fifth, seventh}) {
+        if (s >= 0) {
+            c.tones |= 1u << s;
+        }
+    }
+    return c;
 }
 
 std::optional<std::pair<int, int>> keySigLine(std::string_view line) {

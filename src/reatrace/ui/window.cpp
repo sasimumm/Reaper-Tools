@@ -289,6 +289,8 @@ static bool onKey(int key) {
         g_settings.showContour = !g_settings.showContour;
     } else if (key == 'X' && !m) {
         g_settings.explain = !g_settings.explain;
+    } else if (key == 'C' && !m) {
+        g_settings.chordTones = !g_settings.chordTones;
     } else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) {
         selectVoice(key - '1');
     } else if (key >= '1' && key < '1' + WINDOW_VOICES && m == MOD_CMD) {
@@ -388,8 +390,8 @@ static bool isOurKey(int key, int flags) {
         return !cmd && !(flags & FALT) && firstSelected() >= 0;
     case 'A': return true;
     case 'I': return !cmd;
-    case 'V':
-    case 'C': return cmd;
+    case 'V': return cmd;
+    case 'C': return cmd || !(flags & (FALT | FSHIFT));
     case 'X':
     case 'D': return cmd || !(flags & (FALT | FSHIFT));
     case '1':

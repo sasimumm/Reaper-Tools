@@ -36,6 +36,7 @@ struct Settings {
     // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
     // bright is what still needs transcribing.
     bool explain = false;
+    bool chordTones = false; // shade each chord's notes under it (C)
     bool showContour = true, suggest = true;
     int suggestFrom = FROM_ESTIMATOR;
     // FROM_REFERENCE: the reference tracks' GUIDs, space separated; in order they suggest notes
@@ -133,6 +134,15 @@ int intervalPitch(int pitch, Interval iv, int root, int scale);
 // the lowest, for negative ones), as long as that note; or transposes the selected notes, unless
 // one would leave 0..127. True if notes changed.
 bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, int scale);
+
+// A chord name's notes, as ReaChords and Logic write them: C, Cm, C7, Cmaj7, Cm7b5, Cdim7, C+,
+// Csus4, C6/9, Cadd9, C13, C/E, ... root and bass are pitch classes (0 = C; bass -1 without a
+// slash), tones a bit per pitch class above the root. Nothing for N.C. or a name it can't read.
+struct ChordTones {
+    int root = 0, bass = -1;
+    unsigned tones = 0;
+};
+std::optional<ChordTones> chordTones(std::string_view name);
 
 // A line of a project file's <KEYSIG> block, "<position> <root> <flags> <scale>" (as in
 // "0 4 1 0xAB5", E major): the root (0 = C) and the scale as MIDI_GetScale gives it.

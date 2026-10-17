@@ -804,6 +804,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Edit voice", "1-4"},
           {"Move selected to voice", "cmd+1-4"},
           {"Contour, ghosts, explain", "P, H, X"},
+          {"Chord tones", "C"},
           {"Snap mode", "G"}}},
         {"Lyrics",
          {{"Type a syllable", "Enter, double-click"},
@@ -933,7 +934,8 @@ static unsigned scalePitchClasses(int *root) {
     return ((s << r) | (s >> (12 - r))) & 0xfff; // rotated from the root to C
 }
 
-// Rows in the key faintly lighter.
+// Rows in the key faintly lighter; with chord tones on, each chord's notes shaded under
+// it, its root stronger.
 static void drawKeyAndChords(Canvas &cv, const Rect &n, int pLo, int pHi) {
     cv.clip = n;
     int root = 0;
@@ -942,6 +944,24 @@ static void drawKeyAndChords(Canvas &cv, const Rect &n, int pLo, int pHi) {
             if (key >> ((p % 12 + 12) % 12) & 1) {
                 cv.fill(n.l, iround(g_ui.view.y(p + 0.5)), n.r, iround(g_ui.view.y(p - 0.5)),
                         g_theme.grid, 10);
+            }
+        }
+    }
+    if (!g_settings.chordTones) {
+        return;
+    }
+    for (const ChordSpan &span : projectChords()) {
+        const int xa = iround(g_ui.view.x(span.start));
+        const int xb = iround(g_ui.view.x(span.end));
+        const std::optional<ChordTones> c = chordTones(span.name);
+        if (!c || xb < n.l || xa > n.r) {
+            continue;
+        }
+        for (int p = pLo; p <= pHi; p++) {
+            const int rel = ((p - c->root) % 12 + 12) % 12;
+            if (c->tones >> rel & 1) {
+                cv.fill(xa, iround(g_ui.view.y(p + 0.5)), xb, iround(g_ui.view.y(p - 0.5)),
+                        g_theme.accent, rel == 0 ? 70 : 38);
             }
         }
     }
