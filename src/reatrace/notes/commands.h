@@ -22,6 +22,9 @@ void acceptSuggestion(int i);
 void acceptVisibleSuggestions();
 void copyNotes(bool cut);
 void moveSelectedToVoice(int v); // cmd+1..4
+// The key: the edited voice's take scale (see MIDI_GetScale), else the project's key signature as
+// last saved; its root, scale and name. False without either.
+bool currentKey(int *root, int *scale, std::string *name);
 // Shift+I: a field under the earliest selected note for intervals to add (see parseIntervals).
 // Enter adds them (commit; the field stays open on a typo), Esc closes it.
 void beginIntervals();

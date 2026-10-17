@@ -188,5 +188,17 @@ int main() {
                tr.size() == 2);
     }
 
+    // a project's key signature
+    {
+        const auto k = keySigLine("    0 4 1 0xAB5");
+        assert(k && k->first == 4 && k->second == 0xAB5);
+        assert(keySigLine("    0 4 1 0xAB5\r") == std::make_pair(4, 0xAB5)); // CRLF line ends
+        assert(keySigLine("12.5 9 0 5AD") == std::make_pair(9, 0x5AD));
+        for (const char *bad :
+             {"", "0 4 1", "0 12 1 0xAB5", "0 4 1 0x1000", "0 4 1 0xAB5 7", "0 x 1 1"}) {
+            assert(!keySigLine(bad));
+        }
+    }
+
     printf("ok\n");
 }

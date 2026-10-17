@@ -390,3 +390,37 @@ bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, i
     }
     return any;
 }
+
+std::optional<std::pair<int, int>> keySigLine(std::string_view line) {
+    line = trim(line); // also the \r of a project saved with CRLF line ends
+    std::array<std::string_view, 4> f;
+    for (std::string_view &field : f) {
+        line = trim(line);
+        const size_t end = std::min(line.size(), line.find_first_of(" \t"));
+        field = line.substr(0, end);
+        line.remove_prefix(end);
+    }
+    int root = -1, scale = 0;
+    std::string_view hex = f[3];
+    if (hex.starts_with("0x") || hex.starts_with("0X")) {
+        hex.remove_prefix(2);
+    }
+    // a whole field of digits in base 10 or 16, at most 0xffff
+    const auto num = [](std::string_view s, int *out, int base) {
+        *out = 0;
+        for (const char ch : s) {
+            const int c = tolower(static_cast<unsigned char>(ch));
+            const int d = isdigit(c) ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : base;
+            if (d >= base || *out > 0xffff) {
+                return false;
+            }
+            *out = *out * base + d;
+        }
+        return !s.empty();
+    };
+    if (!trim(line).empty() || !num(f[1], &root, 10) || !num(hex, &scale, 16) || root < 0 ||
+        root > 11 || scale <= 0 || scale > 0xfff) {
+        return std::nullopt;
+    }
+    return std::make_pair(root, scale);
+}

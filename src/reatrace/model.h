@@ -134,6 +134,10 @@ int intervalPitch(int pitch, Interval iv, int root, int scale);
 // one would leave 0..127. True if notes changed.
 bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, int scale);
 
+// A line of a project file's <KEYSIG> block, "<position> <root> <flags> <scale>" (as in
+// "0 4 1 0xAB5", E major): the root (0 = C) and the scale as MIDI_GetScale gives it.
+std::optional<std::pair<int, int>> keySigLine(std::string_view line);
+
 // The isolate filter's pitch changes: (start seconds, pitch) of the first `max` spans by start that
 // end after `from`.
 std::vector<std::pair<double, int>> pitchSchedule(std::vector<Note> spans, double from, size_t max);

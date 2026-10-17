@@ -88,7 +88,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | shift while moving | lock the move to time or pitch, whichever the drag mostly went along |
 | click, cmd+click, shift+drag | select, toggle selection, marquee select |
 | cmd+drag a note | copy the selected notes (and that one) and move the copies, by whole grid steps in beats so they keep their place in the bar across tempo changes (no onset snapping; snap off or alt: freely) |
-| shift+I | add intervals, as in Dorico: type `3` (a third above, in the take's key), `-3` (below), `m3`, `M6`, `P5`, `aug4`, `dim5`, several as `3,5`, then Enter. Above goes from the highest selected note at each time, below from the lowest, so `3` again stacks another third. `t3` or `t-m2` transposes the selected notes instead. The key is the MIDI take's scale (C major without one) |
+| shift+I | add intervals, as in Dorico: type `3` (a third above, in the key), `-3` (below), `m3`, `M6`, `P5`, `aug4`, `dim5`, several as `3,5`, then Enter. Above goes from the highest selected note at each time, below from the lowest, so `3` again stacks another third. `t3` or `t-m2` transposes the selected notes instead. The key is the one shown on the keyboard (C major without one) |
 | right-click, Delete/Backspace | delete note / selected notes |
 | hover | overtone marks (1–8) for the pitch under the mouse, and the octave check: level at the pitch one octave, a 12th and two octaves below; orange means the real note is probably lower |
 | alt while dragging | no snapping |
@@ -97,6 +97,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
 | P | pitch contour (yellow line: the sung pitch) |
+| key | the MIDI take's scale (REAPER's key snap), else the project's key signature as last saved (the first one; key changes aren't read yet): its notes are marked on the keyboard (the root wider), their rows are faintly lighter, and the status bar shows it |
 | N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice, drag over one to draw |
 | A | accept all suggested notes in view, each into the voice it is coloured as (voice tracks are created as needed; grey ones are left) |
 | cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |

@@ -8,6 +8,8 @@
 #include "notes/takesync.h"
 #include "playback/preview.h"
 #include <array>
+#include <filesystem>
+#include <fstream>
 #include <span>
 
 static const double ONSET_SNAP_RANGE = 0.03; // seconds
@@ -359,6 +361,62 @@ void moveSelectedToVoice(int v) {
     Undo_EndBlock2(NULL, "ReaTrace: move notes to another voice", UNDO_STATE_ITEMS);
 }
 
+// The first key signature in the saved project file, read again when the file changes. REAPER
+// has no API for the project's key signatures, and how a later one's position is stored isn't
+// known yet, so key changes are left out.
+static std::optional<std::pair<int, int>> projectKeySig() {
+    static std::string lastPath;
+    static std::filesystem::file_time_type lastTime;
+    static std::optional<std::pair<int, int>> key;
+    char path[4096] = "";
+    EnumProjects(-1, path, sizeof(path));
+    std::error_code ec;
+    const auto time = std::filesystem::last_write_time(path, ec);
+    if (!*path || ec) {
+        return std::nullopt; // not saved yet
+    }
+    if (path == lastPath && time == lastTime) {
+        return key;
+    }
+    lastPath = path;
+    lastTime = time;
+    key.reset();
+    std::ifstream in(path);
+    bool inBlock = false;
+    for (std::string line; std::getline(in, line);) {
+        const size_t at = line.find_first_not_of(" \t");
+        const std::string_view l = at == line.npos ? "" : std::string_view(line).substr(at);
+        if (l.starts_with("<KEYSIG")) {
+            inBlock = true;
+        } else if (inBlock) {
+            key = keySigLine(l);
+            break;
+        }
+    }
+    return key;
+}
+
+bool currentKey(int *root, int *scale, std::string *name) {
+    MediaItem_Take *take = midiTake();
+    char buf[64] = "";
+    if (take && MIDI_GetScale(take, root, scale, buf, sizeof(buf)) && *scale) {
+        if (name) {
+            *name = buf;
+        }
+        return true;
+    }
+    const std::optional<std::pair<int, int>> k = projectKeySig();
+    if (!k) {
+        return false;
+    }
+    *root = k->first;
+    *scale = k->second;
+    if (name) {
+        *name = *scale == 0xAB5 ? "major" : *scale == 0x5AD ? "minor" : "";
+    }
+    return true;
+}
+
 void beginIntervals() {
     const int first = firstSelected();
     if (first < 0) {
@@ -400,11 +458,9 @@ void endIntervals(bool commit) {
     g_ui.intervals = NULL;
     SetFocus(g_ui.hwnd);
     if (commit) {
-        // the take's scale (C major without one); diatonic intervals count its steps
+        // the key (C major without one); diatonic intervals count its steps
         int root = 0, scale = 0;
-        char name[64] = "";
-        if (MediaItem_Take *take = midiTake();
-            !take || !MIDI_GetScale(take, &root, &scale, name, sizeof(name))) {
+        if (!currentKey(&root, &scale, NULL)) {
             root = scale = 0;
         }
         if (addIntervals(g_session.ed.notes, *in, root, scale)) {

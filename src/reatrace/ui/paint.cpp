@@ -556,7 +556,7 @@ static void monoText(HDC dc, const char *s, int l, int t, int r, int b, unsigned
 // What a click or drag does where the mouse is.
 static std::string hoverHint(const Layout &L) {
     if (g_ui.intervals) {
-        return "Intervals: 3, -3 (in the take's key), m3, M6, P5, aug4, dim5; 3,5 for several; "
+        return "Intervals: 3, -3 (in the key), m3, M6, P5, aug4, dim5; 3,5 for several; "
                "t3: transpose  ·  Enter: add  ·  Esc: cancel";
     }
     const int x = g_ui.mouseX, y = g_ui.mouseY;
@@ -723,6 +723,16 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
             text(dc, note.c_str(), x, s.t, right, s.b, g_theme.warn, DT_RIGHT);
             right -= 8 + 6 * static_cast<int>(note.size());
         }
+    }
+    int root = 0, scale = 0;
+    std::string scaleName;
+    if (currentKey(&root, &scale, &scaleName)) {
+        static const std::array<const char *, 12> KEYS = {"C",  "C#", "D",  "Eb", "E",  "F",
+                                                          "F#", "G",  "Ab", "A",  "Bb", "B"};
+        const std::string k = std::string("key: ") + KEYS[idx(((root % 12) + 12) % 12)] + " " +
+                              (scaleName.empty() ? "scale" : scaleName);
+        right = chip(cv, dc, right, s.t, s.b, k.c_str(), g_theme.button, g_theme.dim);
+        right -= 6;
     }
     right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[idx(g_session.voice)],
                  g_theme.voices[idx(g_session.voice)], g_theme.onText);
@@ -910,6 +920,33 @@ static const std::vector<ChordSpan> &projectChords() {
 
 // --- the note area and the lanes --------------------------------------------------------
 
+// The key's pitch classes (see currentKey) as a bit per class from C, and its root; 0 without
+// one.
+static unsigned scalePitchClasses(int *root) {
+    int scale = 0;
+    *root = 0;
+    if (!currentKey(root, &scale, NULL)) {
+        return 0;
+    }
+    const unsigned s = static_cast<unsigned>(scale) & 0xfff;
+    const unsigned r = static_cast<unsigned>(*root % 12);
+    return ((s << r) | (s >> (12 - r))) & 0xfff; // rotated from the root to C
+}
+
+// Rows in the key faintly lighter.
+static void drawKeyAndChords(Canvas &cv, const Rect &n, int pLo, int pHi) {
+    cv.clip = n;
+    int root = 0;
+    if (const unsigned key = scalePitchClasses(&root)) {
+        for (int p = pLo; p <= pHi; p++) {
+            if (key >> ((p % 12 + 12) % 12) & 1) {
+                cv.fill(n.l, iround(g_ui.view.y(p + 0.5)), n.r, iround(g_ui.view.y(p - 0.5)),
+                        g_theme.grid, 10);
+            }
+        }
+    }
+}
+
 // How strongly a grid line of this level (GridLine::level) shows, of 256.
 static int gridAlpha(int level) {
     if (level == 0) {
@@ -995,6 +1032,8 @@ static void drawKeyboard(Canvas &cv, HDC dc, const Rect &n, int pLo, int pHi) {
     const bool overNotes = n.in(g_ui.mouseX, g_ui.mouseY);
     const bool overKeys = g_ui.mouseX < n.l && g_ui.mouseY >= n.t && g_ui.mouseY < n.b;
     const int hoverPitch = overNotes || overKeys ? g_ui.view.pitchAt(g_ui.mouseY) : -1;
+    int root = 0;
+    const unsigned inKey = scalePitchClasses(&root);
     for (int p = pLo; p <= pHi; p++) {
         const int y0 = iround(g_ui.view.y(p + 0.5));
         const int y1 = iround(g_ui.view.y(p - 0.5));
@@ -1004,6 +1043,11 @@ static void drawKeyboard(Canvas &cv, HDC dc, const Rect &n, int pLo, int pHi) {
         }
         cv.fill(0, y0, n.l, y1, key);
         cv.fill(0, y1 - 1, n.l, y1, g_theme.keyEdge);
+        // the key: a mark on its keys, wider on the root
+        const int pc = (p % 12 + 12) % 12;
+        if (inKey >> pc & 1) {
+            cv.fill(n.l - (pc == root % 12 ? 7 : 4), y0 + 1, n.l - 1, y1 - 1, g_theme.accent);
+        }
         if (p % 12 == 0 && y1 - y0 >= 8) { // octave names on the Cs, when there is room
             text(dc, pitchName(p).c_str(), 2, y0, n.l - 4, y1, g_theme.keyText, DT_RIGHT);
         }
@@ -1267,6 +1311,7 @@ void paint(HDC hdc) {
         cv.fill(g.x, n.t, g.x + 1, n.b, g_theme.grid, gridAlpha(g.level));
     }
 
+    drawKeyAndChords(cv, n, pLo, pHi);
     drawGhosts(cv);
     drawContour(cv, n);
     drawSuggestions(cv, n);
