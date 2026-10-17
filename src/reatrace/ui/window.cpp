@@ -564,13 +564,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         g_drag = DRAG_NONE;
         ReleaseCapture();
 
-        // a note just drawn takes the sung pitch (alt: keep the drawn one)
-        const int drawn = d == DRAG_NOTES ? g_session.ed.drawing() : -1;
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
-            if (drawn >= 0 && drawn < static_cast<int>(g_session.ed.notes.size()) &&
-                g_settings.pitchFromContour && !(mods() & MOD_ALT)) {
-                pitchFromContour(g_session.ed.notes[idx(drawn)]);
-            }
             commitNotes();
         }
         if (d == DRAG_PANEL) {

@@ -34,7 +34,7 @@ struct Settings {
     // Explain-away: dim spectrogram energy on drawn notes and their overtones, so what is still
     // bright is what still needs transcribing.
     bool explain = false;
-    bool showContour = true, suggest = true, pitchFromContour = true;
+    bool showContour = true, suggest = true;
     int suggestFrom = FROM_ESTIMATOR;
     // FROM_REFERENCE: the reference tracks' GUIDs, space separated; in order they suggest notes
     // for the lead, voice 2, ... (a single track for the edited voice)

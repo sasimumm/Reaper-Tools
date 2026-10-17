@@ -88,7 +88,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | click, cmd+click, shift+drag | select, toggle selection, marquee select |
 | right-click, Delete/Backspace | delete note / selected notes |
 | hover | overtone marks (1–8) for the pitch under the mouse, and the octave check: level at the pitch one octave, a 12th and two octaves below; orange means the real note is probably lower |
-| alt while dragging | no snapping; a drawn note otherwise takes the sung pitch under it |
+| alt while dragging | no snapping |
 | scroll / shift+scroll / horizontal scroll | scroll pitch / time / time |
 | cmd+scroll or pinch, alt+scroll | zoom time, zoom pitch |
 | F, Z | fit item, zoom to selection |

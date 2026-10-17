@@ -48,7 +48,6 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "suggestfrom", .i = &s.suggestFrom, .lo = 0, .hi = FROM_REFERENCE},
         {.name = "reference", .s = &s.reference},
         {.name = "estimatevote", .b = &s.estimateVote},
-        {.name = "pitchfromcontour", .b = &s.pitchFromContour},
         {.name = "audition", .b = &s.audition},
         {.name = "theme", .b = &s.followTheme},
         {.name = "linkarrange", .b = &s.linkArrange},

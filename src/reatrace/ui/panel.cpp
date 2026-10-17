@@ -128,7 +128,6 @@ static std::vector<Widget> allWidgets(Settings &s = g_settings) {
          .label = "Front-end vote (slower)",
          .flag = &s.estimateVote,
          .analysis = true},
-        {.type = W_TOGGLE, .label = "Drawn notes take the sung pitch", .flag = &s.pitchFromContour},
         {.type = W_SLIDER,
          .label = "Overtones",
          .value = &s.harmonics,

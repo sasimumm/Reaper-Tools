@@ -20,7 +20,6 @@ int firstSelected();    // earliest selected note's index, -1 if none
 void setupEditorSnap(); // sets the editor's snap from the snap mode setting
 void acceptSuggestion(int i);
 void acceptVisibleSuggestions();
-void pitchFromContour(Note &nt);
 void copyNotes(bool cut);
 void paste();
 void setSelection(double a, double b); // time selection and loop points, seconds

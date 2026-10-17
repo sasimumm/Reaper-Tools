@@ -294,18 +294,6 @@ void acceptVisibleSuggestions() {
     }
 }
 
-// A freshly drawn note takes the median sung pitch under it when that is within two semitones.
-void pitchFromContour(Note &nt) {
-    const double fr = g_analysis.spec->frameRate();
-    const int f0 = static_cast<int>(lround((nt.start - g_session.audioPos) * fr));
-    const int f1 = static_cast<int>(lround((nt.end - g_session.audioPos) * fr));
-    const int skip = static_cast<int>(lround(0.05 * fr)); // the scoop into the note
-    double sung = 0;
-    if (contourMedian(g_analysis.contour, f0, f1, skip, &sung) && fabs(sung - nt.pitch) <= 2) {
-        nt.pitch = static_cast<int>(lround(sung));
-    }
-}
-
 // cmd+V pastes notes after a copy here, until other text is copied (the system clipboard's text
 // at copy time is remembered; it isn't overwritten). Otherwise it pastes lyrics.
 static std::vector<Note> g_noteClip;
