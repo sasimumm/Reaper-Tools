@@ -11,12 +11,15 @@
 // A take like REAPER's: indices stay put until sort(), inserted events are appended, sort() orders
 // notes by start then pitch and text events by position. 960 PPQ per second. Notes are kept on
 // whole ticks, truncated: what REAPER does with a fractional position need not be our rounding.
+// Deleting from a take with unsorted changes fails the check, as REAPER can then delete the wrong
+// note-off.
 class FakeTake : public Take {
   public:
     std::vector<NoteEvent> notes; // in PPQ
     std::vector<TextEvent> texts;
-    int sorts = 0;       // how many times sort() was called
-    double position = 0; // where the item starts: moving it changes every note's project time
+    int sorts = 0;         // how many times sort() was called
+    bool unsorted = false; // notes set or inserted since the last sort()
+    double position = 0;   // where the item starts: moving it changes every note's project time
 
     const void *identity() override { return this; }
 
@@ -47,19 +50,32 @@ class FakeTake : public Take {
         return true;
     }
 
-    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)] = ticks(n); }
-    void deleteNote(int i) override { notes.erase(notes.begin() + i); }
-    void insertNote(const NoteEvent &n) override { notes.push_back(ticks(n)); }
+    void setNote(int i, const NoteEvent &n) override {
+        notes[static_cast<size_t>(i)] = ticks(n);
+        unsorted = true;
+    }
+    void deleteNote(int i) override {
+        assert(!unsorted);
+        notes.erase(notes.begin() + i);
+    }
+    void insertNote(const NoteEvent &n) override {
+        notes.push_back(ticks(n));
+        unsorted = true;
+    }
     static NoteEvent ticks(NoteEvent n) {
         n.start = floor(n.start);
         n.end = floor(n.end);
         return n;
     }
-    void deleteText(int i) override { texts.erase(texts.begin() + i); }
+    void deleteText(int i) override {
+        assert(!unsorted);
+        texts.erase(texts.begin() + i);
+    }
     void insertText(const TextEvent &t) override { texts.push_back(t); }
 
     void sort() override {
         sorts++;
+        unsorted = false;
         std::stable_sort(notes.begin(), notes.end(), [](const NoteEvent &a, const NoteEvent &b) {
             return a.start < b.start || (a.start == b.start && a.pitch < b.pitch);
         });

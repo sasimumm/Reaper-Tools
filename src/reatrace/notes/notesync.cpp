@@ -151,27 +151,9 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
     }
     const bool lyrics = diffNotes(loaded, edited, deleted).lyrics;
 
-    // changed notes in place, then deletions, then new notes: indices stay valid until sort()
-    for (const Note &n : edited) {
-        if (!known(n, loaded)) {
-            continue;
-        }
-        const Note &o = loaded[static_cast<size_t>(n.idx)];
-        if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
-            take.setNote(n.idx, toEvent(take, n, n.sel, velocity));
-        }
-    }
-    std::vector<int> del(deleted.begin(), deleted.end());
-    std::sort(del.rbegin(), del.rend()); // highest first so earlier indices stay valid
-    for (int i : del) {
-        take.deleteNote(i);
-    }
-    for (const Note &n : edited) {
-        if (n.idx < 0) {
-            take.insertNote(toEvent(take, n, n.sel, velocity));
-        }
-    }
-
+    // Deletions first, while the take is sorted as loaded: REAPER pairs note-ons with note-offs
+    // by order, so deleting from a take with unsorted changes can take another note's note-off,
+    // leaving a note that sounds to the item's end. Highest index first, so the rest stay valid.
     if (lyrics) {
         std::vector<int> old;
         for (const Note &o : loaded) {
@@ -182,6 +164,30 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
         std::sort(old.rbegin(), old.rend());
         for (int i : old) {
             take.deleteText(i);
+        }
+    }
+    std::vector<int> del(deleted.begin(), deleted.end());
+    std::sort(del.rbegin(), del.rend());
+    for (int i : del) {
+        take.deleteNote(i);
+    }
+    std::sort(del.begin(), del.end());
+
+    // then changed notes in place (their indices less the deleted notes before them), and new
+    // notes, unsorted until sort()
+    for (const Note &n : edited) {
+        if (!known(n, loaded)) {
+            continue;
+        }
+        const Note &o = loaded[static_cast<size_t>(n.idx)];
+        if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
+            const auto before = std::lower_bound(del.begin(), del.end(), n.idx) - del.begin();
+            take.setNote(n.idx - static_cast<int>(before), toEvent(take, n, n.sel, velocity));
+        }
+    }
+    for (const Note &n : edited) {
+        if (n.idx < 0) {
+            take.insertNote(toEvent(take, n, n.sel, velocity));
         }
     }
     take.sort();
