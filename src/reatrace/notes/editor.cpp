@@ -57,6 +57,9 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
     }
     if (mods & MOD_CMD) {
         notes[idx(i)].sel = !notes[idx(i)].sel;
+        if (notes[idx(i)].sel) {
+            lastLen = notes[idx(i)].end - notes[idx(i)].start;
+        }
         changed = true;
         mode = IDLE;
         return;
@@ -159,6 +162,11 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
             changed |= n.sel;
             n.sel = false;
         }
+        if (lastLen > 0 && (clickPlaces || (mods & MOD_ALT))) {
+            const double t = (mods & MOD_ALT) ? v.t(downX) : snap(v.t(downX));
+            notes.push_back({t, t + lastLen, clampPitch(v.pitchAt(downY)), true, -1});
+            changed = true;
+        }
     } else if (mode == PENDING_DRAG) {
         // click on an already selected note: select just it
         for (size_t i = 0; i < notes.size(); i++) {
@@ -176,6 +184,9 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
         }
     }
 
+    if (const int last = drawIndex >= 0 ? drawIndex : anchor; last >= 0) {
+        lastLen = notes[idx(last)].end - notes[idx(last)].start;
+    }
     mode = IDLE;
     anchor = drawIndex = -1;
     return changed;

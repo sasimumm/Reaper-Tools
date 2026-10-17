@@ -32,6 +32,16 @@ int main() {
     assert(ed.mouseUp(v, v.x(5) + 1, y60, 0));
     assert(ed.notes.size() == 1 && !ed.notes[0].sel);
 
+    // With clickPlaces, the click places a note as long as the last one drawn, start snapped.
+    ed.clickPlaces = true;
+    ed.mouseDown(v, v.x(5.1), v.y(62), 0);
+    assert(ed.mouseUp(v, v.x(5.1), v.y(62), 0));
+    assert(ed.notes.size() == 2 && ed.notes[1].sel && ed.notes[1].pitch == 62);
+    assert(near(ed.notes[1].start, 5.0) && near(ed.notes[1].end, 6.0));
+    ed.notes.pop_back();
+    ed.notes[0].sel = false;
+    ed.clickPlaces = false;
+
     // Dragging the body moves time (snapped via the note's start) and pitch.
     ed.notes.push_back({3.0, 3.5, 64, false, 7});
     ed.mouseDown(v, v.x(1.5), y60, 0);

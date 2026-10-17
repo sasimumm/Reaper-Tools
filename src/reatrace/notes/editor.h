@@ -53,6 +53,10 @@ class NoteEditor {
     std::function<double(double)> snap = [](double t) { return t; }; // seconds to seconds
     double minLen = 0.05;                                            // seconds
     int velocity = 96;
+    // A click on empty space places a note as long as the last one drawn or pressed (when it has
+    // one); without this, or without such a note, the click only deselects. Alt allows it too.
+    bool clickPlaces = false;
+    double lastLen = 0; // seconds, 0 until a note is drawn or pressed
     int moves = 0; // counts mouse moves, so caches of the notes can tell a drag step happened
 
     // What is at (x, y), the topmost note's index in *noteIndex.

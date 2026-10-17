@@ -236,6 +236,8 @@ void setupEditorSnap() {
     } else {
         g_session.ed.snap = [](double t) { return t; };
     }
+    // onsets snap a drawn note's both ends; elsewhere a click repeats the last note's length
+    g_session.ed.clickPlaces = g_settings.snapMode != SNAP_ONSETS;
 }
 
 // Suggestion i as a new, solely selected note of the active voice.
