@@ -54,3 +54,15 @@ func TestQuote(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkerEnd(t *testing.T) {
+	p := logicx.ProjectData{
+		Markers:   []logicx.Marker{{Position: 100, Length: 50}, {Position: 200, Length: 1}, {Position: 300, Length: 1}},
+		Transport: &logicx.Transport{End: 1000},
+	}
+	for i, want := range []uint32{150, 300, 1000} {
+		if got := markerEnd(p, i); got != want {
+			t.Errorf("markerEnd(%d) = %d, want %d", i, got, want)
+		}
+	}
+}

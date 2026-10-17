@@ -70,10 +70,12 @@ TakeSnapshot snapshotOf(Take &take);
 // note (by index) starting within half a tick of it.
 std::vector<Note> readNotes(Take &take);
 
-// MIDI can't hold two notes of one pitch and channel at once (a note-off would end either), so an
-// overlapping earlier note is cut to end where the later one starts, and notes starting together
-// become one (dropped notes read from the take are added to `deleted`). True if any changed.
-bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted);
+// MIDI can't hold two notes of one pitch and channel at once (a note-off would end either), so where
+// a note drawn, moved, resized or transposed since `loaded` overlaps another, the earlier is cut to
+// end where the later starts, and notes starting together become one (dropped notes read from the
+// take are added to `deleted`). Overlaps already in the take are left. True if any changed.
+bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted,
+                  std::span<const Note> loaded);
 
 // What writing `edited` over `loaded` (as read by readNotes) would change.
 struct NoteChanges {
@@ -84,9 +86,9 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
                       std::span<const int> deleted);
 
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
-// returns false: the caller reloads). Moved, resized and re-selected notes are set, `deleted` take
-// indices removed (highest first), new notes (idx < 0) inserted (with `velocity` unless they have
-// their own). If lyrics need rewriting, the lyric events attached to loaded notes are replaced by
+// returns false: the caller reloads). `deleted` take indices are removed (highest first), moved,
+// resized and transposed notes removed and reinserted, re-selected ones set, new notes (idx < 0)
+// inserted (with `velocity` unless they have their own). If lyrics need rewriting, the lyric events attached to loaded notes are replaced by
 // one per edited note with a lyric, in the sorted take's order (with empty ones on lyric-less notes
 // before them in a group starting together, so each pairs with its own note); other text events
 // are left alone.

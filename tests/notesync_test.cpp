@@ -12,7 +12,7 @@
 // notes by start then pitch and text events by position. 960 PPQ per second. Notes are kept on
 // whole ticks, truncated: what REAPER does with a fractional position need not be our rounding.
 // Deleting from a take with unsorted changes fails the check, as REAPER can then delete the wrong
-// note-off.
+// note-off; so does setting a note's position or pitch, which can pair it with another's note-off.
 class FakeTake : public Take {
   public:
     std::vector<NoteEvent> notes; // in PPQ
@@ -51,6 +51,8 @@ class FakeTake : public Take {
     }
 
     void setNote(int i, const NoteEvent &n) override {
+        const NoteEvent &o = notes[static_cast<size_t>(i)];
+        assert(ticks(n).start == o.start && ticks(n).end == o.end && n.pitch == o.pitch);
         notes[static_cast<size_t>(i)] = ticks(n);
         unsorted = true;
     }
@@ -191,18 +193,44 @@ int main() {
         n[3].chan = 1; // another channel: left alone
         n[4].lyric = "la";
         std::vector<int> del;
-        assert(trimOverlaps(n, del));
+        assert(trimOverlaps(n, del, {}));
         assert(n.size() == 5 && n[0].end == 2 && n[1].end == 4 && n[2].end == 5 && n[3].end == 2.7);
         // starting together: one note, the longer, keeping the lyric; the other deleted
         assert(n[4].end == 3 && n[4].lyric == "la" && n[4].idx == 4 && del == std::vector<int>{5});
-        assert(!trimOverlaps(n, del));
+        assert(!trimOverlaps(n, del, {}));
+    }
+
+    // overlaps already in the take are left, unless an edited note collides with them
+    {
+        const std::vector<Note> loaded = {{0, 2, 60, false, 0}, {1, 3, 60, false, 1},
+                                          {0, 1, 62, false, 2}, {0, 2, 62, false, 3}};
+        std::vector<Note> n = loaded;
+        std::vector<int> del;
+        n[0].sel = true;
+        assert(!trimOverlaps(n, del, loaded) && n.size() == 4 && n[0].end == 2 && del.empty());
+        n[1].start = 1.5; // moved: the note it overlaps is cut there
+        assert(trimOverlaps(n, del, loaded) && n[0].end == 1.5 && n[2].end == 1 && n[3].end == 2);
+    }
+
+    // and through a write: selecting a note keeps the take's overlap
+    {
+        FakeTake t;
+        t.notes = {{0, 1920, 60, false, 96}, {960, 1440, 60, false, 96}};
+        const TakeSnapshot snap = snapshotOf(t);
+        const std::vector<Note> loaded = readNotes(t);
+        std::vector<Note> edited = loaded;
+        std::vector<int> del;
+        edited[0].sel = true;
+        assert(!trimOverlaps(edited, del, loaded));
+        assert(writeNotes(t, snap, loaded, edited, del, 96));
+        assert(t.notes[0].end == 1920 && t.notes[0].sel && t.notes[1].end == 1440);
     }
 
     // a twin doesn't hide an overlap from the note before it
     {
         std::vector<Note> n = {{0, 10, 60, false, 0}, {0, 4, 60, false, 1}, {5, 8, 60, false, 2}};
         std::vector<int> del;
-        assert(trimOverlaps(n, del) && n.size() == 2 && n[0].end == 5 && del == std::vector<int>{1});
+        assert(trimOverlaps(n, del, {}) && n.size() == 2 && n[0].end == 5 && del == std::vector<int>{1});
     }
 
     // notes moved off whole ticks (a paste at the cursor, a resize onto an onset, quantising)
@@ -296,11 +324,13 @@ int main() {
                n[1].muted && n[0].vel == 25);
     }
 
-    // a resize alone doesn't touch the lyrics
+    // a resized note is reinserted, so the lyrics are rewritten to stay with their notes
     {
         FakeTake t = song();
-        roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].end = 0.75; });
-        assert(c.data && !c.lyrics && t.notes[0].end == 720);
+        const std::vector<Note> n =
+            roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].end = 0.75; });
+        assert(c.data && c.lyrics && t.notes[0].end == 720);
+        assert(n[0].lyric == "hel-" && n[1].lyric == "lo");
     }
 
     // the take changing after the notes were loaded makes writing them back refuse, leaving the
@@ -366,6 +396,42 @@ int main() {
                     80);
         const std::vector<Note> n = readNotes(t);
         assert(n.size() == 4 && n[0].end < n[1].start + 1e-9 && n[1].pitch == first.pitch);
+    }
+
+    // moving several notes of one pitch past each other reinserts them rather than setting them
+    {
+        FakeTake t;
+        t.notes = {{0, 480, 60, false, 70}, {960, 1440, 60, false, 80}, {1920, 2400, 60, false, 90}};
+        t.notes[1].chan = 0;
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            for (Note &x : e) {
+                x.start += 1.5;
+                x.end += 1.5;
+            }
+        });
+        assert(n.size() == 3 && n[0].vel == 70 && n[1].vel == 80 && n[2].vel == 90);
+        assert(t.notes[0].start == 1440 && t.notes[2].end == 3840);
+    }
+
+    // a lyric stays on its note's channel, with another channel's note of the pitch starting too
+    {
+        FakeTake t;
+        t.notes = {{0, 480, 60, false, 96}, {0, 480, 60, false, 96}};
+        t.notes[1].chan = 1;
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e[1].lyric = "la";
+        });
+        assert(n.size() == 2 && n[0].chan == 0 && n[0].lyric.empty() && n[1].chan == 1 &&
+               n[1].lyric == "la");
+    }
+
+    // a note never ends before it starts
+    {
+        FakeTake t;
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e.push_back({1, 0.5, 60, false, -1});
+        });
+        assert(n.size() == 1 && t.notes[0].end > t.notes[0].start);
     }
 
     printf("ok\n");

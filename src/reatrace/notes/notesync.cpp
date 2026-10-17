@@ -8,6 +8,7 @@
 #include <numeric>
 #include <span>
 #include <tuple>
+#include <utility>
 
 TakeSnapshot snapshotOf(Take &take) { return {take.identity(), take.hash(), take.timeMapping()}; }
 
@@ -59,29 +60,48 @@ static bool known(const Note &n, std::span<const Note> loaded) {
 // n as a take note event, with its times in PPQ; `velocity` if n has none of its own.
 static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel, int velocity) {
     Take::NoteEvent e = {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
+    e.end = std::max(e.end, e.start + 1); // at least a tick: a note-off before its note-on would
+                                          // pair with the next note's
     e.vel = n.vel >= 0 ? n.vel : velocity;
     e.chan = n.chan;
     e.muted = n.muted;
     return e;
 }
 
-bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted) {
+// Whether n was drawn, moved, resized or transposed since it was read from the take.
+static bool retimed(const Note &n, std::span<const Note> loaded) {
+    if (!known(n, loaded)) {
+        return true;
+    }
+    const Note &o = loaded[static_cast<size_t>(n.idx)];
+    return n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.chan != o.chan;
+}
+
+bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted,
+                  std::span<const Note> loaded) {
     std::vector<size_t> order(notes.size());
     std::iota(order.begin(), order.end(), size_t{0});
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
         const Note &x = notes[a], &y = notes[b];
         return std::tie(x.chan, x.pitch, x.start) < std::tie(y.chan, y.pitch, y.start);
     });
-    // Each note is cut at the next one's start, so every earlier note ends by the current one's
-    // start and only the last kept note can overlap it.
-    std::vector<bool> drop(notes.size());
+    std::vector<bool> moved(notes.size()), drop(notes.size());
+    for (size_t i = 0; i < notes.size(); i++) {
+        moved[i] = retimed(notes[i], loaded);
+    }
     bool any = false;
-    size_t prev = SIZE_MAX;
+    std::vector<size_t> open; // kept notes of b's pitch and channel that may still sound at b
     for (const size_t k : order) {
         const Note &b = notes[k];
-        if (prev != SIZE_MAX) {
-            Note &a = notes[prev];
-            if (a.chan == b.chan && a.pitch == b.pitch && a.start == b.start) {
+        std::erase_if(open, [&](size_t a) {
+            return notes[a].chan != b.chan || notes[a].pitch != b.pitch || notes[a].end <= b.start;
+        });
+        for (const size_t ai : open) {
+            Note &a = notes[ai];
+            if (!moved[ai] && !moved[k]) {
+                continue; // the take's own overlap: not ours to change
+            }
+            if (a.start == b.start) {
                 // a duplicate: one note, as long as the longer, keeping a lyric and selection
                 a.end = std::max(a.end, b.end);
                 if (a.lyric.empty()) {
@@ -89,14 +109,14 @@ bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted) {
                 }
                 a.sel |= b.sel;
                 drop[k] = any = true;
-                continue;
+                break;
             }
-            if (a.chan == b.chan && a.pitch == b.pitch && a.end > b.start) {
-                a.end = b.start;
-                any = true;
-            }
+            a.end = b.start;
+            any = true;
         }
-        prev = k;
+        if (!drop[k]) {
+            open.push_back(k);
+        }
     }
     size_t w = 0;
     for (size_t i = 0; i < notes.size(); i++) {
@@ -117,8 +137,8 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
                       std::span<const int> deleted) {
     NoteChanges c;
     c.data = !deleted.empty();
-    // Lyrics pair with notes starting together by order, which inserting, deleting, moving or
-    // transposing any note can change: then they are rewritten, if there are any.
+    // Lyrics pair with notes starting together by order, which inserting, deleting or retiming
+    // (reinserting) any note can change: then they are rewritten, if there are any.
     bool reordered = !deleted.empty(), anyLyric = false;
     for (const Note &o : loaded) {
         anyLyric |= o.lyricIdx >= 0;
@@ -132,7 +152,7 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         c.data |= n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.lyric != o.lyric;
         c.lyrics |= n.lyric != o.lyric;
-        reordered |= n.start != o.start || n.pitch != o.pitch;
+        reordered |= retimed(n, loaded); // reinserted: its place among notes starting together may change
     }
     c.lyrics |= reordered && anyLyric;
     return c;
@@ -142,23 +162,23 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
 // to the first free note (in take order) starting within half a tick, so in a group of notes
 // starting together, each note before the last one with a lyric gets one too: empty if it has none.
 static void writeLyrics(Take &take, std::span<const Note> edited) {
-    // edited notes' lyrics by pitch, with their starts in PPQ, to find them from the take's notes:
+    // edited notes' lyrics by channel and pitch, with their starts in PPQ, to find them from the take's notes:
     // the take keeps whole ticks, rounded its own way, so a start matches within a tick
     struct Lyric {
         double start;
         const std::string *text;
         bool used = false;
     };
-    std::map<int, std::vector<Lyric>> lyricOf;
+    std::map<std::pair<int, int>, std::vector<Lyric>> lyricOf; // by (channel, pitch)
     for (const Note &n : edited) {
         if (!n.lyric.empty()) {
-            lyricOf[n.pitch].push_back({take.toPPQ(n.start), &n.lyric});
+            lyricOf[{n.chan, n.pitch}].push_back({take.toPPQ(n.start), &n.lyric});
         }
     }
-    // the closest unused lyric of this pitch within a tick of start
-    const auto find = [&](double start, int pitch) -> const std::string * {
+    // the closest unused lyric of this channel and pitch within a tick of start
+    const auto find = [&](double start, int chan, int pitch) -> const std::string * {
         Lyric *best = nullptr;
-        for (Lyric &l : lyricOf[pitch]) {
+        for (Lyric &l : lyricOf[{chan, pitch}]) {
             const double d = fabs(l.start - start);
             if (!l.used && d < 1 && (!best || d < fabs(best->start - start))) {
                 best = &l;
@@ -181,7 +201,7 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
             if (e.start >= groupStart + 0.5) {
                 break;
             }
-            group.push_back({e.start, find(e.start, e.pitch)});
+            group.push_back({e.start, find(e.start, e.chan, e.pitch)});
         }
         size_t last = group.size();
         while (last > 0 && !group[last - 1].second) {
@@ -216,27 +236,35 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
             take.deleteText(i);
         }
     }
+    // Retimed notes are deleted and reinserted too: setting several notes' positions in place
+    // can leave REAPER pairing note-ons with the wrong note-offs.
     std::vector<int> del(deleted.begin(), deleted.end());
+    for (const Note &n : edited) {
+        if (known(n, loaded) && retimed(n, loaded)) {
+            del.push_back(n.idx);
+        }
+    }
     std::sort(del.rbegin(), del.rend());
+    del.erase(std::unique(del.begin(), del.end()), del.end());
     for (int i : del) {
         take.deleteNote(i);
     }
     std::sort(del.begin(), del.end());
 
-    // then changed notes in place (their indices less the deleted notes before them), and new
-    // notes, unsorted until sort()
+    // then selection changes in place (indices less the deleted notes before them), and new and
+    // retimed notes, unsorted until sort()
     for (const Note &n : edited) {
-        if (!known(n, loaded)) {
+        if (!known(n, loaded) || retimed(n, loaded)) {
             continue;
         }
         const Note &o = loaded[static_cast<size_t>(n.idx)];
-        if (n.start != o.start || n.end != o.end || n.pitch != o.pitch || n.sel != o.sel) {
+        if (n.sel != o.sel) {
             const auto before = std::lower_bound(del.begin(), del.end(), n.idx) - del.begin();
             take.setNote(n.idx - static_cast<int>(before), toEvent(take, n, n.sel, velocity));
         }
     }
     for (const Note &n : edited) {
-        if (n.idx < 0) {
+        if (!known(n, loaded) || retimed(n, loaded)) {
             take.insertNote(toEvent(take, n, n.sel, velocity));
         }
     }
@@ -259,6 +287,6 @@ void appendNotes(Take &take, std::span<const Note> notes, int velocity) {
         edited.push_back(n);
     }
     std::vector<int> deleted;
-    trimOverlaps(edited, deleted);
+    trimOverlaps(edited, deleted, loaded);
     writeNotes(take, snap, loaded, edited, deleted, velocity);
 }

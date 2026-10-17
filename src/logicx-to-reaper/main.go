@@ -259,9 +259,9 @@ func render(alt logicx.Alternative, media string) string {
 	writeTempoEnvelope(&b, p, tl)
 	for i, m := range p.Markers {
 		start := tl.seconds(m.Position)
-		if m.Length > 0 {
+		if end := markerEnd(p, i); end > m.Position {
 			fmt.Fprintf(&b, "  MARKER %d %s %s 1\n", i+1, fnum(start), quote(m.Name))
-			fmt.Fprintf(&b, "  MARKER %d %s \"\" 1\n", i+1, fnum(tl.seconds(m.Position+m.Length)))
+			fmt.Fprintf(&b, "  MARKER %d %s \"\" 1\n", i+1, fnum(tl.seconds(end)))
 		} else {
 			fmt.Fprintf(&b, "  MARKER %d %s %s 0\n", i+1, fnum(start), quote(m.Name))
 		}
@@ -289,6 +289,22 @@ func sampleRate(alt logicx.Alternative) uint64 {
 		return uint64(t.SampleRate)
 	}
 	return alt.Metadata.SampleRate
+}
+
+// markerEnd returns where p.Markers[i] ends. Logic stores a length of 1 for a
+// marker that runs to the next marker, or for the last one to the project end.
+func markerEnd(p logicx.ProjectData, i int) uint32 {
+	m := p.Markers[i]
+	if m.Length > 1 {
+		return m.Position + m.Length
+	}
+	if i+1 < len(p.Markers) {
+		return p.Markers[i+1].Position
+	}
+	if p.Transport != nil {
+		return p.Transport.End
+	}
+	return m.Position
 }
 
 // writeTempoEnvelope writes the tempo map, Logic's ramps already sampled into
