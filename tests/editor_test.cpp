@@ -88,6 +88,12 @@ int main() {
     ed.mouseUp(v, v.x(0.0), v.y(62), 0);
     assert(near(ed.notes[0].end, 1.0 + ed.minLen));
 
+    // A left edge inside a note of its pitch doesn't jump to that note's end.
+    ed.notes = {{0, 4, 62, false, 0}, {1, 2, 62, true, 1}};
+    ed.mouseDown(v, v.x(1.0) + 2, v.y(62), 0);
+    ed.mouseUp(v, v.x(1.5), v.y(62), 0);
+    assert(near(ed.notes[1].start, 1.5) && near(ed.notes[1].end, 2.0));
+
     // Cmd+click toggles; shift+drag marquee selects what it touches.
     ed.notes = {{1, 2, 60, false, 0}, {3, 4, 60, false, 1}, {5, 6, 72, false, 2}};
     ed.mouseDown(v, v.x(1.5), v.y(60), MOD_CMD);

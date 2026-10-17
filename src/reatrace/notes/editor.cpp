@@ -174,7 +174,9 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
                 }
                 if (q.start > o.start) {
                     next = std::min(next, q.start);
-                } else if (q.start < o.start) {
+                } else if (q.start < o.start && q.end <= o.start) {
+                    // one already overlapping o is cut on commit instead: stopping at its end
+                    // could put o's start past its own end
                     prev = std::max(prev, q.end);
                 }
             }
