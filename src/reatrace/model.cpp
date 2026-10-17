@@ -406,7 +406,7 @@ static int notePitchClass(std::string_view &s) {
     }
     int pc = LETTERS[idx(s.front() - 'A')];
     s.remove_prefix(1);
-    if (s.starts_with("#") || s.starts_with("b")) {
+    if (s.starts_with('#') || s.starts_with('b')) {
         pc += s.front() == '#' ? 1 : -1;
         s.remove_prefix(1);
     } else if (s.starts_with("\u266F") || s.starts_with("\u266D")) { // sharp, flat sign
