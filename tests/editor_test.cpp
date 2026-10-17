@@ -27,6 +27,15 @@ int main() {
            ed.notes[0].idx == -1);
     assert(near(ed.notes[0].start, 1.0) && near(ed.notes[0].end, 2.0));
 
+    // Just above a note (but within a row's height) draws rather than grabbing the note.
+    {
+        NoteEditor e;
+        e.notes.push_back({1.0, 2.0, 60, false, 3});
+        int hit = -1;
+        assert(e.hitTest(v, v.x(1.01), v.y(60.5) - 1, &hit) == NoteEditor::NONE);
+        assert(e.hitTest(v, v.x(1.01), v.y(60.5) + 1, &hit) == NoteEditor::LEFT && hit == 0);
+    }
+
     // A click on empty space without dragging deselects and draws nothing.
     ed.mouseDown(v, v.x(5), y60, 0);
     assert(ed.mouseUp(v, v.x(5) + 1, y60, 0));

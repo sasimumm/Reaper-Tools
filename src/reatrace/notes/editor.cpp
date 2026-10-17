@@ -6,9 +6,9 @@
 #include <cctype>
 #include <span>
 
-// Hit zones from DrawScore: note rects are inflated by 3 px, 6 px edge zones resize,
-// notes narrower than 12 px can only be moved, and a drag starts after 3 px.
-static const double INFLATE = 3, EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD = 3;
+// Hit zones from DrawScore, but only inside the note (the space around it draws): 6 px edge
+// zones resize, notes narrower than 12 px can only be moved, and a drag starts after 3 px.
+static const double EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD = 3;
 // Shift while moving locks to the axis the drag mostly went along once it passes this (DrawScribe).
 static const double AXIS_LOCK_THRESHOLD = 10;
 
@@ -21,7 +21,7 @@ NoteEditor::Hit NoteEditor::hitTest(const ViewMap &v, double x, double y, int *n
         const Note &n = notes[idx(i)];
         const double x0 = v.x(n.start), x1 = v.x(n.end);
         const double y0 = v.y(n.pitch + 0.5), y1 = v.y(n.pitch - 0.5);
-        if (x < x0 - INFLATE || x > x1 + INFLATE || y < y0 - INFLATE || y > y1 + INFLATE) {
+        if (x < x0 || x > x1 || y < y0 || y > y1) {
             continue;
         }
         if (noteIndex) {
