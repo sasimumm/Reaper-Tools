@@ -161,6 +161,26 @@ int main() {
         assert(!c.data && !c.lyrics && n[2].sel && t.texts.size() == 4);
     }
 
+    // copies of notes with lyrics (a clone drag) keep the lyrics, also landing on other notes
+    for (const double shift : {4.0, 1.0, 0.5}) {
+        FakeTake t = song();
+        const std::vector<Note> n = roundTrip(t, &c, [&](std::vector<Note> &e, std::vector<int> &) {
+            for (size_t i = 0; i < 2; i++) {
+                Note copy = e[i];
+                copy.start += shift;
+                copy.end += shift;
+                copy.idx = copy.lyricIdx = -1;
+                e.push_back(copy);
+            }
+        });
+        int hel = 0, lo = 0;
+        for (const Note &x : n) {
+            hel += x.lyric == "hel-";
+            lo += x.lyric == "lo";
+        }
+        assert(n.size() == 5 && hel == 2 && lo == 2);
+    }
+
     // moving a note with a lyric moves its lyric; the orphan lyric and the track name stay
     {
         FakeTake t = song();
