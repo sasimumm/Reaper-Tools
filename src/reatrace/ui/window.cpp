@@ -290,6 +290,8 @@ static bool onKey(int key) {
         g_settings.explain = !g_settings.explain;
     } else if (key >= '1' && key < '1' + WINDOW_VOICES && !m) {
         selectVoice(key - '1');
+    } else if (key >= '1' && key < '1' + WINDOW_VOICES && m == MOD_CMD) {
+        moveSelectedToVoice(key - '1');
     } else if ((key == VK_LEFT || key == VK_RIGHT) && !(m & ~MOD_SHIFT)) {
         nudgeSelected(key == VK_LEFT ? -1 : 1, 0);
     } else if ((key == VK_UP || key == VK_DOWN) && !(m & ~MOD_SHIFT)) {
@@ -390,7 +392,7 @@ static bool isOurKey(int key, int flags) {
     case '1':
     case '2':
     case '3':
-    case '4': return !cmd && !(flags & (FALT | FSHIFT));
+    case '4': return !(flags & (FALT | FSHIFT));
     case 'S':
     case 'G':
     case 'F':

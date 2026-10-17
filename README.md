@@ -108,6 +108,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | D | dock in REAPER's docker / float (remembered) |
 | L | link the visible time range to REAPER's arrange view (both ways) |
 | 1–4 | edit voice 1 (lead) to 4; the other voices are shown dimmed |
+| cmd+1–4 | move the selected notes to that voice (with their lyrics) and edit it |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
 | X | explain away: dim energy on drawn notes and their overtones, so what is still bright needs transcribing |
 | Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |

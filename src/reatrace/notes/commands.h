@@ -21,6 +21,7 @@ void setupEditorSnap(); // sets the editor's snap from the snap mode setting
 void acceptSuggestion(int i);
 void acceptVisibleSuggestions();
 void copyNotes(bool cut);
+void moveSelectedToVoice(int v); // cmd+1..4
 void paste();
 void setSelection(double a, double b); // time selection and loop points, seconds
 void loopPlay();

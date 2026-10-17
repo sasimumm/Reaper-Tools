@@ -321,6 +321,26 @@ void paste() {
     commitNotes();
 }
 
+// The selected notes into voice v at the same times (lyrics and MIDI properties kept), as one
+// undo point; v becomes the edited voice, with them selected.
+void moveSelectedToVoice(int v) {
+    const std::vector<Note> clip = g_session.ed.copySelected();
+    if (v == g_session.voice || clip.empty()) {
+        return;
+    }
+    double first = clip[0].start;
+    for (const Note &n : clip) {
+        first = std::min(first, n.start);
+    }
+    Undo_BeginBlock2(NULL);
+    g_session.ed.deleteSelected();
+    commitNotes();
+    selectVoice(v);
+    g_session.ed.paste(clip, first);
+    commitNotes();
+    Undo_EndBlock2(NULL, "ReaTrace: move notes to another voice", UNDO_STATE_ITEMS);
+}
+
 // Time selection and loop points together, whether or not REAPER links them.
 void setSelection(double a, double b) {
     GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);
