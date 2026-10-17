@@ -50,7 +50,8 @@ into a MIDI item on a "ReaTrace notes" track (with ReaSynth) below the audio tra
 saved with the project, can be undone, and can also be edited in REAPER's MIDI editor.
 
 - Voices: the lead goes on "ReaTrace notes"; voices 2–4 (harmonies, backing) go on "ReaTrace
-  voice 2".."4" tracks below it, created with their first note, each with ReaSynth.
+  voice 2".."4" tracks below it, created with their first note, each with ReaSynth. The tracks
+  can be renamed; they're found by position (directly below the audio track) and a tag, not name.
 - Suggestions come from a note estimator (harmonic-template NMF on the spectrogram, confirmed by
   basic-pitch), assigned to voices; accept them one by one or all in view.
 - Reference: after playing a rough take in on a MIDI keyboard, select its track (or a folder of

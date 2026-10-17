@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <set>
 #include <string>
+#include <string_view>
 
 #define REAPERAPI_IMPLEMENT
 #define REAPERAPI_MINIMAL
@@ -38,6 +39,7 @@
 #define REAPERAPI_WANT_GetProjectStateChangeCount
 #define REAPERAPI_WANT_GetResourcePath
 #define REAPERAPI_WANT_GetSelectedMediaItem
+#define REAPERAPI_WANT_GetSetMediaTrackInfo
 #define REAPERAPI_WANT_GetSetMediaTrackInfo_String
 #define REAPERAPI_WANT_GetTakeName
 #define REAPERAPI_WANT_GetThemeColor
@@ -113,21 +115,44 @@
 #include "shared/menu.h"
 #include "ui/window.h"
 
-// Voice v lives on the v-th track below the audio track: "ReaTrace notes" for the lead, then
-// "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")
+// Voice v lives on the v-th track below the audio track, created as "ReaTrace notes" for the lead,
+// then "ReaTrace voice 2", "ReaTrace voice 3", ... Tracks named before the rename ("Reascribe ...")
 // are still recognised.
 static std::string voiceTrackName(int voice, const std::string &prefix = "ReaTrace") {
     return voice == 0 ? prefix + " notes" : prefix + " voice " + std::to_string(voice + 1);
 }
 
+// The track's voice is kept in its extension data, so the track can be renamed. Tracks from
+// before that are known by name, and get the tag when first found.
+static const char *VOICE_EXT = "P_EXT:reatrace_voice";
+
+static void tagVoiceTrack(MediaTrack *tr, int voice) {
+    std::string v = std::to_string(voice);
+    GetSetMediaTrackInfo_String(tr, VOICE_EXT, v.data(), true);
+}
+
 // The voice the track holds, or -1 if it isn't a ReaTrace voice track.
 static int voiceOfTrack(MediaTrack *tr) {
+    if (!tr) {
+        return -1;
+    }
+    // read in place: the _String getter copies project data into a buffer it isn't told the size of
+    if (const auto *ext = static_cast<const char *>(GetSetMediaTrackInfo(tr, VOICE_EXT, NULL));
+        ext && *ext) {
+        for (int v = 0; v < WINDOW_VOICES; v++) {
+            if (std::string_view(ext) == std::to_string(v)) {
+                return v;
+            }
+        }
+        return -1;
+    }
     char name[256] = "";
-    if (!tr || !GetTrackName(tr, name, sizeof name)) {
+    if (!GetTrackName(tr, name, sizeof name)) {
         return -1;
     }
     for (int v = 0; v < WINDOW_VOICES; v++) {
         if (name == voiceTrackName(v) || name == voiceTrackName(v, "Reascribe")) {
+            tagVoiceTrack(tr, v);
             return v;
         }
     }
@@ -175,6 +200,7 @@ static MediaTrack *voiceTrack(MediaItem *audio, int voice, bool create) {
     MediaTrack *tr = GetTrack(NULL, idx);
     std::string name = voiceTrackName(voice);
     GetSetMediaTrackInfo_String(tr, "P_NAME", name.data(), true);
+    tagVoiceTrack(tr, voice);
     TrackFX_AddByName(tr, "ReaSynth", false, -1); // to hear the transcription against the audio
     return tr;
 }
