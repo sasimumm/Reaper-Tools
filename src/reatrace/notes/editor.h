@@ -80,6 +80,7 @@ class NoteEditor {
 
     // These return true if anything changed; deleted notes' take indices go to `deleted`.
     bool deleteSelected();
+    bool clearLyrics(); // of the selected notes, keeping the notes
     bool selectAll(bool sel);
     bool deleteAt(const ViewMap &v, double x, double y); // the note at (x, y)
 

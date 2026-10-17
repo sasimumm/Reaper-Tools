@@ -261,7 +261,11 @@ static int keyCode(int key, int flags) { return (flags & FVIRTKEY) ? key : key |
 // A shortcut (keyCode() form); true if handled.
 static bool onKey(int key) {
     const int m = mods();
-    if (key == VK_DELETE || key == VK_BACK) {
+    if ((key == VK_DELETE || key == VK_BACK) && m == MOD_SHIFT) {
+        if (g_session.ed.clearLyrics()) {
+            commitNotes();
+        }
+    } else if (key == VK_DELETE || key == VK_BACK) {
         if (g_session.ed.deleteSelected()) {
             commitNotes();
         }

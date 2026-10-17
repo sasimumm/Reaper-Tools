@@ -130,6 +130,14 @@ int main() {
         assert(near(e.notes[3].start, 4) && near(e.notes[3].end, 5));   // qn 4..5 -> 8..9
     }
 
+    // Shift+Delete clears the selected notes' lyrics, nothing else.
+    {
+        NoteEditor e;
+        e.notes = {{1, 2, 60, true, 0, "la"}, {3, 4, 62, false, 1, "lo"}, {5, 6, 64, true, 2}};
+        assert(e.clearLyrics() && e.notes.size() == 3 && e.notes[0].lyric.empty());
+        assert(e.notes[1].lyric == "lo" && !e.clearLyrics());
+    }
+
     // Moving several selected notes keeps their spacing; Delete records take indices.
     ed.selectAll(true);
     ed.mouseDown(v, v.x(3.5), v.y(60), 0);

@@ -249,6 +249,17 @@ bool NoteEditor::deleteSelected() {
     return any;
 }
 
+bool NoteEditor::clearLyrics() {
+    bool any = false;
+    for (Note &n : notes) {
+        if (n.sel && !n.lyric.empty()) {
+            n.lyric.clear();
+            any = true;
+        }
+    }
+    return any;
+}
+
 bool NoteEditor::selectAll(bool sel) {
     bool any = false;
     for (Note &n : notes) {
