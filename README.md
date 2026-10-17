@@ -123,7 +123,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | Q | quantise selected notes to the grid (strength in the panel) |
 | arrows, shift+up/down | nudge selected notes a grid step / a semitone / an octave (without a selection the arrows go to REAPER) |
 | T | follow playback: page the view along with the play cursor (on by default) |
-| I, shift+I | isolate: hear only the edited voice's pitch and overtones (a JSFX on the audio track); shift+I follows every shown voice |
+| I, alt+I | isolate: hear only the edited voice's pitch and overtones (a JSFX on the audio track); alt+I follows every shown voice |
 | U | duck notes: the same filter in reverse, lowering every shown voice's drawn notes and their overtones, to hear what isn't notated yet |
 | double-click a panel slider | reset it to its default |
 | other keys | REAPER's own shortcuts (Space = play/stop, ...) |

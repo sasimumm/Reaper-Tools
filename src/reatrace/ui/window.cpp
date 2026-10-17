@@ -306,7 +306,7 @@ static bool onKey(int key) {
         toggleIsolate(false);
     } else if (key == 'U' && !m) {
         toggleIsolate(true);
-    } else if (key == 'I' && m == MOD_SHIFT) {
+    } else if (key == 'I' && m == MOD_ALT) {
         g_settings.isolateAll = !g_settings.isolateAll;
     } else if (key == 'T' && !m) {
         g_settings.followPlay = !g_settings.followPlay;
@@ -384,7 +384,7 @@ static bool isOurKey(int key, int flags) {
     case VK_DOWN: // with notes selected; otherwise REAPER's (move the edit cursor, ...)
         return !cmd && !(flags & FALT) && firstSelected() >= 0;
     case 'A': return true;
-    case 'I': return !cmd && !(flags & FALT);
+    case 'I': return !cmd;
     case 'V':
     case 'C': return cmd;
     case 'X':

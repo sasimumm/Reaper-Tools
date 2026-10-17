@@ -205,7 +205,7 @@ static std::vector<Widget> allWidgets(Settings &s = g_settings) {
          .hi = 6,
          .display = 1,
          .fmt = "%+.1f dB"},
-        {.type = W_TOGGLE, .label = "Isolate: all shown voices (shift+I)", .flag = &s.isolateAll},
+        {.type = W_TOGGLE, .label = "Isolate: all shown voices (alt+I)", .flag = &s.isolateAll},
         {.type = W_SLIDER,
          .label = "Isolate: band width",
          .value = &s.isolateWidth,

@@ -123,7 +123,7 @@ std::vector<Item> items(const Layout &L) {
     segment(LISTEN, HEAR, HEAR_TIPS);
     const char *isolate = g_settings.isolateAll ? "Isolate all" : "Isolate";
     add(ISOLATE, 0, isolate,
-        "Hear only the edited voice's pitch and overtones (I)  ·  shift+I: all shown voices",
+        "Hear only the edited voice's pitch and overtones (I)  ·  alt+I: all shown voices",
         textWidth(isolate) + 16);
     add(DUCK, 0, "Duck notes",
         "Lower every drawn note's pitch and overtones, to hear what isn't notated yet (U)",
