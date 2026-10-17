@@ -92,11 +92,35 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
 // to the first free note (in take order) starting within half a tick, so in a group of notes
 // starting together, each note before the last one with a lyric gets one too: empty if it has none.
 static void writeLyrics(Take &take, std::span<const Note> edited) {
-    // edited notes' lyrics by (start tick, pitch), to find them from the take's notes
-    std::map<std::pair<long long, int>, std::vector<const std::string *>> lyricOf;
+    // edited notes' lyrics by pitch, with their starts in PPQ, to find them from the take's notes:
+    // the take keeps whole ticks, rounded its own way, so a start matches within a tick
+    struct Lyric {
+        double start;
+        const std::string *text;
+        bool used = false;
+    };
+    std::map<int, std::vector<Lyric>> lyricOf;
     for (const Note &n : edited) {
-        lyricOf[{std::llround(take.toPPQ(n.start)), n.pitch}].push_back(&n.lyric);
+        if (!n.lyric.empty()) {
+            lyricOf[n.pitch].push_back({take.toPPQ(n.start), &n.lyric});
+        }
     }
+    // the closest unused lyric of this pitch within a tick of start
+    const auto find = [&](double start, int pitch) -> const std::string * {
+        Lyric *best = nullptr;
+        for (Lyric &l : lyricOf[pitch]) {
+            const double d = fabs(l.start - start);
+            if (!l.used && d < 1 && (!best || d < fabs(best->start - start))) {
+                best = &l;
+            }
+        }
+        if (!best) {
+            return nullptr;
+        }
+        best->used = true;
+        return best->text;
+    };
+
     const int count = take.noteCount();
     for (int i = 0; i < count;) {
         // the group starting with note i
@@ -107,14 +131,10 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
             if (e.start >= groupStart + 0.5) {
                 break;
             }
-            std::vector<const std::string *> &l = lyricOf[{std::llround(e.start), e.pitch}];
-            group.push_back({e.start, l.empty() ? nullptr : l.front()});
-            if (!l.empty()) {
-                l.erase(l.begin());
-            }
+            group.push_back({e.start, find(e.start, e.pitch)});
         }
         size_t last = group.size();
-        while (last > 0 && (!group[last - 1].second || group[last - 1].second->empty())) {
+        while (last > 0 && !group[last - 1].second) {
             last--;
         }
         for (size_t k = 0; k < last; k++) {

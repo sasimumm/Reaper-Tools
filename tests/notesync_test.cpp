@@ -9,7 +9,8 @@
 #include "notes/notesync.h"
 
 // A take like REAPER's: indices stay put until sort(), inserted events are appended, sort() orders
-// notes by start then pitch and text events by position. 960 PPQ per second.
+// notes by start then pitch and text events by position. 960 PPQ per second. Notes are kept on
+// whole ticks, truncated: what REAPER does with a fractional position need not be our rounding.
 class FakeTake : public Take {
   public:
     std::vector<NoteEvent> notes; // in PPQ
@@ -46,9 +47,14 @@ class FakeTake : public Take {
         return true;
     }
 
-    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)] = n; }
+    void setNote(int i, const NoteEvent &n) override { notes[static_cast<size_t>(i)] = ticks(n); }
     void deleteNote(int i) override { notes.erase(notes.begin() + i); }
-    void insertNote(const NoteEvent &n) override { notes.push_back(n); }
+    void insertNote(const NoteEvent &n) override { notes.push_back(ticks(n)); }
+    static NoteEvent ticks(NoteEvent n) {
+        n.start = floor(n.start);
+        n.end = floor(n.end);
+        return n;
+    }
     void deleteText(int i) override { texts.erase(texts.begin() + i); }
     void insertText(const TextEvent &t) override { texts.push_back(t); }
 
@@ -159,6 +165,18 @@ int main() {
         const std::vector<Note> n =
             roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[2].sel = true; });
         assert(!c.data && !c.lyrics && n[2].sel && t.texts.size() == 4);
+    }
+
+    // notes moved off whole ticks (a paste at the cursor, a resize onto an onset, quantising)
+    // keep their lyrics, though the take truncates their starts
+    {
+        FakeTake t = song();
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e[0].start += 0.7 / 960; // 0.7 of a tick: rounds up, truncates down
+            e[1].start += 1.6 / 960;
+            e[1].end += 1.6 / 960;
+        });
+        assert(n.size() == 3 && n[0].lyric == "hel-" && n[1].lyric == "lo");
     }
 
     // copies of notes with lyrics (a clone drag) keep the lyrics, also landing on other notes
