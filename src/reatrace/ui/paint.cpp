@@ -990,6 +990,9 @@ static NoteBox noteBox(const Note &nt) {
 // Overlaps with a chord shorter than this (seconds) don't count, so a note starting just before a
 // chord change isn't judged by the chord before it.
 static const double CHORD_SLACK = 0.08;
+// Where a note is outside the chord its fill is darkened this much (of 256), fading over FADE
+// points into the parts inside the chord.
+static const int OUT_ALPHA = 60, FADE = 10;
 
 // With chord tones on: the parts of a note (seconds) where its pitch is outside the chord sounding
 // then and isn't a slash chord's bass. Where there is no chord, or one that can't be read, it is
@@ -1002,8 +1005,13 @@ outsideChord(const Note &nt, std::span<const ChordSpan> spans,
     for (size_t i = 0; i < spans.size(); i++) {
         const std::optional<ChordTones> &c = tones[i];
         const double a = std::max(nt.start, spans[i].start), b = std::min(nt.end, spans[i].end);
-        if (c && b - a >= CHORD_SLACK && !(c->tones >> ((pc - c->root + 12) % 12) & 1) &&
-            pc != c->bass) {
+        if (!c || b - a < CHORD_SLACK || c->tones >> ((pc - c->root + 12) % 12) & 1 ||
+            pc == c->bass) {
+            continue;
+        }
+        if (!out.empty() && out.back().second >= a - 1e-6) {
+            out.back().second = b; // outside the next chord too: one part
+        } else {
             out.emplace_back(a, b);
         }
     }
@@ -1053,9 +1061,18 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         const bool sel = nt.sel || static_cast<int>(i) == drawing;
         cv.rounded(x0, y0, x1, y1, noteColour, 245);
         const auto out = outside(nt);
-        for (const auto &[a, b] : out) { // inside the frame
-            cv.fill(std::max(x0 + 1, x(a)), y0 + 1, std::min(x1 - 1, x(b)), y1 - 1, g_theme.shadow,
-                    115);
+        for (const auto &[a, b] : out) { // inside the frame, fading into the parts inside the chord
+            const int xa = std::max(x0 + 1, x(a)), xb = std::min(x1 - 1, x(b));
+            cv.fill(xa, y0 + 1, xb, y1 - 1, g_theme.shadow, OUT_ALPHA);
+            for (int k = 1; k < FADE; k++) {
+                const int alpha = OUT_ALPHA * (FADE - k) / FADE;
+                if (xa - k > x0) {
+                    cv.fill(xa - k, y0 + 1, xa - k + 1, y1 - 1, g_theme.shadow, alpha);
+                }
+                if (xb + k < x1 - 1) {
+                    cv.fill(xb + k - 1, y0 + 1, xb + k, y1 - 1, g_theme.shadow, alpha);
+                }
+            }
         }
         cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, g_theme.shadow, 0.55));
         if (!out.empty()) {
