@@ -705,6 +705,22 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
 
     // modes, right to left: progress or the analysis note, voice, snap
     static const std::array SNAP_NAMES = {"snap: off", "snap: onsets", "snap: grid"};
+    std::string snapName = SNAP_NAMES[idx(std::clamp(g_settings.snapMode, 0, 2))];
+    if (g_settings.snapMode == SNAP_GRID) {
+        // the step as a note value, e.g. 1/16 or 1/8T
+        const double step = gridStepQN();
+        const double straight = g_settings.gridTriplets ? step * 1.5 : step;
+        if (step <= 0) {
+            snapName += " bar";
+        } else {
+            snprintf(buf, sizeof(buf), " 1/%d%s", iround(4 / straight),
+                     g_settings.gridTriplets ? "T" : "");
+            snapName += buf;
+        }
+        if (g_settings.gridDiv == 0) {
+            snapName += " (zoom)";
+        }
+    }
     static const std::array<const char *, WINDOW_VOICES> VOICE_NAMES = {
         "Lead", "Voice 2", "Voice 3", "Voice 4"
     };
@@ -737,8 +753,9 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
     right = chip(cv, dc, right, s.t, s.b, VOICE_NAMES[idx(g_session.voice)],
                  g_theme.voices[idx(g_session.voice)], g_theme.onText);
     right -= 6;
-    right = chip(cv, dc, right, s.t, s.b, SNAP_NAMES[idx(std::clamp(g_settings.snapMode, 0, 2))],
-                 g_theme.button, g_theme.dim);
+    const int snapRight = right;
+    right = chip(cv, dc, right, s.t, s.b, snapName.c_str(), g_theme.button, g_theme.dim);
+    g_ui.snapChip = {right, s.t, snapRight, s.b};
     right -= 10;
 
     // the hint gets what is left between the columns and the chips
@@ -806,7 +823,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Move selected to voice", "cmd+1-4"},
           {"Contour, ghosts, explain", "P, H, X"},
           {"Chord tones", "C"},
-          {"Snap mode", "G"}}},
+          {"Snap mode", "G; click the snap chip for the grid"}}},
         {"Lyrics",
          {{"Type a syllable", "Enter, double-click"},
           {"Next, previous note", "Tab, Space, -; shift+Tab, Backspace when empty"},

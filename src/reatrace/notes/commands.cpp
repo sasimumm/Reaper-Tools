@@ -45,12 +45,20 @@ int suggestionVoice(size_t i) {
 
 // --- grid ------------------------------------------------------------------------
 
-// Finest straight division (in quarter notes) at least MIN_GRID_PX apart, or 0 for "measures".
-// Measured at the tempo 200 px into the note area.
+// The chosen division in quarter notes (triplet if chosen), or by zoom the finest at least
+// MIN_GRID_PX apart; 0 for "measures". Measured at the tempo 200 px into the note area.
 double gridStepQN() {
+    const double triplet = g_settings.gridTriplets ? 2.0 / 3 : 1;
+    if (g_settings.gridDiv == 1) {
+        return 0;
+    }
+    if (g_settings.gridDiv > 1) {
+        return 4.0 / g_settings.gridDiv * triplet;
+    }
     const double tMid = g_ui.view.t(g_ui.view.x0 + 200);
     const double qn = TimeMap2_timeToQN(NULL, tMid);
-    for (double step : {0.125, 0.25, 0.5, 1.0}) {
+    for (double straight : {0.125, 0.25, 0.5, 1.0}) {
+        const double step = straight * triplet;
         const double px =
             (TimeMap2_QNToTime(NULL, qn + step) - TimeMap2_QNToTime(NULL, qn)) * g_ui.view.pps;
         if (px >= MIN_GRID_PX) {

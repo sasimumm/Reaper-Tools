@@ -30,6 +30,9 @@ struct Settings {
     RenderParams rp;
     int channel = CH_MIX;
     int snapMode = SNAP_ONSETS;
+    // grid notes per whole note (4: quarters), 0 by zoom, 1 a measure; triplets: 2/3 of each step
+    int gridDiv = 0;
+    bool gridTriplets = false;
     double quantStrength = 1;                 // 0..1, see quantiseNotes()
     bool ghosts = true;                       // faint outlines at each note's overtones
     double harmonics = 8, guideOpacity = 0.4; // overtones drawn per note; their opacity 0..1

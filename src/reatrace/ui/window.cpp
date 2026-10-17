@@ -13,6 +13,7 @@
 #include "playback/preview.h"
 #include "settings.h"
 #include "shared/guard.h"
+#include "shared/menu.h"
 #include "ui/paint.h"
 #include "ui/panel.h"
 #include "ui/toolbar.h"
@@ -251,6 +252,55 @@ int mods() {
 static void adjustGamma(double delta) {
     g_settings.np.gamma = std::max(3.0, std::min(40.0, g_settings.np.gamma + delta));
     requestAnalysis(false);
+}
+
+// The snap chip's menu: the mode, the grid's division and triplets (choosing either snaps to the
+// grid).
+static void snapMenu(int x, int y) {
+    enum { MODE = 1, DIV = 100, TRIPLETS = 200 };
+    static const std::array<std::pair<int, const char *>, 7> DIVS = {{
+        {0, "Grid by zoom"},
+        {1, "Grid: bar"},
+        {2, "Grid: 1/2"},
+        {4, "Grid: 1/4"},
+        {8, "Grid: 1/8"},
+        {16, "Grid: 1/16"},
+        {32, "Grid: 1/32"},
+    }};
+    HMENU menu = CreatePopupMenu();
+    static const std::array MODES = {"Snap off", "Snap to onsets", "Snap to grid"};
+    for (int m = 0; m < static_cast<int>(MODES.size()); m++) {
+        insertMenuCommand(menu, -1, MODES[idx(m)], MODE + m);
+    }
+    addMenuSeparator(menu);
+    for (const auto &[div, label] : DIVS) {
+        insertMenuCommand(menu, -1, label, DIV + div);
+    }
+    addMenuSeparator(menu);
+    insertMenuCommand(menu, -1, "Triplets", TRIPLETS);
+    CheckMenuItem(menu, MODE + g_settings.snapMode, MF_BYCOMMAND | MF_CHECKED);
+    CheckMenuItem(menu, DIV + g_settings.gridDiv, MF_BYCOMMAND | MF_CHECKED);
+    CheckMenuItem(menu, TRIPLETS,
+                  MF_BYCOMMAND | (g_settings.gridTriplets ? MF_CHECKED : MF_UNCHECKED));
+
+    POINT p = {x, y};
+    ClientToScreen(g_ui.hwnd, &p);
+    const int cmd =
+        TrackPopupMenu(menu, TPM_NONOTIFY | TPM_RETURNCMD, p.x, p.y, 0, g_ui.hwnd, NULL);
+    DestroyMenu(menu);
+    if (cmd >= TRIPLETS) {
+        g_settings.gridTriplets = !g_settings.gridTriplets;
+        g_settings.snapMode = SNAP_GRID;
+    } else if (cmd >= DIV) {
+        g_settings.gridDiv = cmd - DIV;
+        g_settings.snapMode = SNAP_GRID;
+    } else if (cmd >= MODE) {
+        g_settings.snapMode = cmd - MODE;
+    } else {
+        return;
+    }
+    setupEditorSnap();
+    redraw();
 }
 
 // Punctuation arrives as a character code without FVIRTKEY, and some collide with VK codes
@@ -538,6 +588,10 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         SetFocus(hwnd);
         if (x < KB_W && y >= noteArea().t && y < noteArea().b) {
             previewPitch(g_ui.view.pitchAt(y));
+            return 0;
+        }
+        if (g_ui.snapChip.in(x, y)) {
+            snapMenu(x, y);
             return 0;
         }
         if (layout().toolbar.in(x, y)) {

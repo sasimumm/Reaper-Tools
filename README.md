@@ -97,6 +97,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | cmd+scroll or pinch, alt+scroll | zoom time, zoom pitch |
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
+| click the snap chip (status bar) | snap menu: the mode, the grid (by zoom, a bar, or 1/2 to 1/32 notes) and triplets; picking a grid snaps to it |
 | P | pitch contour (yellow line: the sung pitch) |
 | C | chord tones: shade each chord's notes (from the chords lane) under it, the root stronger; where a note is outside the chord sounding then it gets a light dot (the edited voice's notes also a darker fill there), each part of a note judged by its own chord, ignoring overlaps under 80 ms |
 | key | the MIDI take's scale (REAPER's key snap), else the project's key signature as last saved (the first one; key changes aren't read yet): its notes are marked on the keyboard (the root wider), their rows are faintly lighter, and the status bar shows it |

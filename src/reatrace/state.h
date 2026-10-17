@@ -94,6 +94,7 @@ struct WindowState {
     bool help = false;            // the shortcut sheet is shown (?)
     unsigned hiddenVoices = 0;    // bit per voice: not drawn (shift-click its toolbar chip)
     unsigned foldedLanes = 0;     // LANE_* folded to a strip (click its label)
+    Rect snapChip;                // the status bar's snap chip, as last painted (click: menu)
 };
 inline WindowState g_ui;
 

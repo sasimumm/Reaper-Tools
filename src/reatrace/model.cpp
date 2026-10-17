@@ -59,6 +59,8 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "isolateall", .b = &s.isolateAll},
         {.name = "isolateduck", .b = &s.isolateDuck},
         {.name = "snap", .i = &s.snapMode, .lo = 0, .hi = SNAP_GRID},
+        {.name = "griddiv", .i = &s.gridDiv, .lo = 0, .hi = 64},
+        {.name = "gridtriplets", .b = &s.gridTriplets},
         {.name = "quantise", .d = &s.quantStrength, .lo = 0, .hi = 1},
     };
 }
