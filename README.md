@@ -94,7 +94,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | F, Z | fit item, zoom to selection |
 | G | snap: onsets (default: note starts/ends snap to detected onsets and pitch changes within 30 ms), grid, off |
 | P | pitch contour (yellow line: the sung pitch) |
-| N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice |
+| N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice, drag over one to draw |
 | A | accept all suggested notes in view, each into the voice it is coloured as (voice tracks are created as needed; grey ones are left) |
 | cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |
 | cmd+V | after a copy here: paste the notes at the edit cursor. Once other text has been copied: paste lyrics, one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |

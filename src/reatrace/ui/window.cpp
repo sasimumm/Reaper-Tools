@@ -35,6 +35,7 @@ static bool g_recreating; // destroying the window only to recreate it: keep the
 enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL, DRAG_OVERVIEW };
 static Drag g_drag;
 static double g_selectAnchor; // DRAG_RULER_SELECT: where the time selection started, seconds
+static int g_pressedSuggestion = -1; // DRAG_NOTES: the suggestion pressed, accepted on a click
 
 // change detection for the timer
 static int g_lastPlayState, g_lastProjChange;
@@ -512,16 +513,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             beginLyric(lyricAt(x));
             return 0;
         } else if (noteArea().in(x, y)) {
-            // a plain click on a suggested note, not on a note, makes it a note
+            // a plain click on a suggested note, not on a note, makes it a note; a drag draws
             const bool plainMiss =
                 g_session.ed.hitTest(g_ui.view, x, y, NULL) == NoteEditor::NONE &&
                 !(mods() & (MOD_SHIFT | MOD_CMD));
-            if (plainMiss) {
-                if (const int sug = suggestionAt(x, y); sug >= 0) {
-                    acceptSuggestion(sug);
-                    return 0;
-                }
-            }
+            g_pressedSuggestion = plainMiss ? suggestionAt(x, y) : -1;
 
             g_drag = DRAG_NOTES;
             g_session.ed.mouseDown(g_ui.view, x, y, mods());
@@ -564,6 +560,14 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         g_drag = DRAG_NONE;
         ReleaseCapture();
 
+        if (d == DRAG_NOTES && g_session.ed.drawing() < 0 && g_pressedSuggestion >= 0) {
+            g_session.ed.cancel();
+            acceptSuggestion(g_pressedSuggestion);
+            g_pressedSuggestion = -1;
+            redraw();
+            return 0;
+        }
+        g_pressedSuggestion = -1;
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
             commitNotes();
         }

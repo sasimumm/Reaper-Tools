@@ -573,10 +573,11 @@ static std::string hoverHint(const Layout &L) {
         if (const int i = suggestionAt(x, y); i >= 0) {
             const int v = suggestionVoice(idx(i));
             if (v < 0) {
-                return "Crowded out (more notes than voices)  ·  Click: add it to " + voice;
+                return "Crowded out (more notes than voices)  ·  Click: add it to " + voice +
+                       "  ·  Drag: draw";
             }
             return std::string("Click: accept into ") + VOICE_NAMES[idx(v)] +
-                   "  ·  A: accept all in view";
+                   "  ·  Drag: draw  ·  A: accept all in view";
         }
         return "Drag: draw a note in " + voice + "  ·  Shift+drag: select  ·  Alt: no snap";
     }
