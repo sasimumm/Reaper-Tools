@@ -116,7 +116,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | cmd+1–4 | move the selected notes to that voice (with their lyrics) and edit it |
 | H | overtone ghosts on/off (faint outlines where each note's overtones should be) |
 | X | explain away: dim energy on drawn notes and their overtones, so what is still bright needs transcribing |
-| Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab previous, Enter done, Esc cancel |
+| Enter, double-click a note | type its lyric; Tab/Space next note, `-` adds a hyphen and moves on, shift+Tab (or Backspace in an empty field) previous, Enter done, Esc cancel |
 | click a piano key | play that pitch through the notes track |
 | [ ] , - = , , . | brightness, contrast, resolution |
 | click the ruler | move the edit cursor |

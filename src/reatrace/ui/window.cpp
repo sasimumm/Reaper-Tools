@@ -447,8 +447,8 @@ int Window_TranslateAccel(MSG *msg) {
         return -1;
     }
     if (g_ui.edit && msg->hwnd != g_ui.hwnd) {
-        // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes
-        // to the field
+        // typing a lyric: Tab/Space next, shift+Tab (or Backspace in an empty field) previous, Enter
+        // done, Esc cancel; the rest goes to the field
         if (msg->message == WM_KEYDOWN) {
             const int key = static_cast<int>(msg->wParam), flags = static_cast<int>(msg->lParam);
             if (key == VK_TAB) {
@@ -457,6 +457,14 @@ int Window_TranslateAccel(MSG *msg) {
             }
             if (key == VK_SPACE && (flags & FVIRTKEY)) {
                 endLyric(true, 1);
+                return 1;
+            }
+            if (key == VK_BACK && GetWindowTextLength(g_ui.edit) == 0) {
+                endLyric(true, -1);
+                if (g_ui.edit && IsWindowVisible(g_ui.edit)) { // caret at the end, to keep deleting
+                    const int len = GetWindowTextLength(g_ui.edit);
+                    SendMessage(g_ui.edit, EM_SETSEL, static_cast<WPARAM>(len), len);
+                }
                 return 1;
             }
             if (key == '-' && !(flags & FVIRTKEY)) { // hyphen: this syllable joins the next one

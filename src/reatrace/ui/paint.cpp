@@ -809,7 +809,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Snap mode", "G"}}},
         {"Lyrics",
          {{"Type a syllable", "Enter, double-click"},
-          {"Next, previous note", "Tab, Space, -; shift+Tab"},
+          {"Next, previous note", "Tab, Space, -; shift+Tab, Backspace when empty"},
           {"Paste lyrics", "cmd+V"}}},
         {"Listen",
          {{"Play, stop", "Space"},
