@@ -220,6 +220,7 @@ void selectVoice(int v) {
     if (g_ui.edit) {
         endLyric(true, 0);
     }
+    endIntervals(false);
     g_session.ed.cancel();
     g_session.voice = g_ui.voicePick = v;
     g_session.midi = VoiceItem(g_session.audio, v, false); // created with the first note
@@ -306,6 +307,8 @@ static bool onKey(int key) {
         toggleIsolate(false);
     } else if (key == 'U' && !m) {
         toggleIsolate(true);
+    } else if (key == 'I' && m == MOD_SHIFT) {
+        beginIntervals();
     } else if (key == 'I' && m == MOD_ALT) {
         g_settings.isolateAll = !g_settings.isolateAll;
     } else if (key == 'T' && !m) {
@@ -416,6 +419,15 @@ int Window_TranslateAccel(MSG *msg) {
     if (!g_ui.hwnd || (msg->hwnd != g_ui.hwnd && !IsChild(g_ui.hwnd, msg->hwnd))) {
         return 0;
     }
+    if (g_ui.intervals && msg->hwnd != g_ui.hwnd) {
+        // typing intervals: Enter adds them, Esc cancels; the rest goes to the field (keys come
+        // from the field's own child window, as for lyrics, so anything but the window counts)
+        if (msg->message == WM_KEYDOWN && (msg->wParam == VK_RETURN || msg->wParam == VK_ESCAPE)) {
+            endIntervals(msg->wParam == VK_RETURN);
+            return 1;
+        }
+        return -1;
+    }
     if (g_ui.edit && msg->hwnd != g_ui.hwnd) {
         // typing a lyric: Tab/Space next, shift+Tab previous, Enter done, Esc cancel; the rest goes
         // to the field
@@ -496,6 +508,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         if (g_ui.edit) {
             endLyric(true, 0); // clicking elsewhere finishes the lyric
         }
+        endIntervals(false);
         SetFocus(hwnd);
         if (x < KB_W && y >= noteArea().t && y < noteArea().b) {
             previewPitch(g_ui.view.pitchAt(y));
@@ -675,7 +688,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         }
         saveItemSettings();
         stopPreviews(false);
-        g_ui.edit = NULL; // destroyed with the window
+        g_ui.edit = g_ui.intervals = NULL; // destroyed with the window
         if (!g_recreating) {
             setIsolate(false); // it follows this window's notes: don't leave it filtering
             cancelJob();

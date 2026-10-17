@@ -3,8 +3,10 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "dsp/nsgt.h"
@@ -108,6 +110,29 @@ bool coversSuggestion(const Note &n, double start, double end, double pitch);
 // way in.
 // A cursor already outside on the previous tick (the view scrolled away) is left alone.
 double followPage(double t0, double width, double prev, double now);
+
+// Shift+I, after Dorico's add intervals popover: comma-separated intervals such as 3, -3, m3, P5,
+// aug4 or -min6, where a negative degree goes down and a quality (M/maj, m/min, P/perf, d/dim,
+// a/aug) makes it chromatic; without one it counts steps of the scale. A leading t transposes the
+// selected notes by the first interval instead of adding notes.
+enum IntervalQuality { IQ_DIATONIC, IQ_MAJOR, IQ_MINOR, IQ_PERFECT, IQ_DIMINISHED, IQ_AUGMENTED };
+struct Interval {
+    int degree; // 1 = unison, 3 = third, ...; negative below
+    IntervalQuality quality;
+};
+struct IntervalInput {
+    bool transpose = false;
+    std::vector<Interval> intervals;
+};
+std::optional<IntervalInput> parseIntervals(std::string_view text);
+// The pitch an interval away, -1 outside 0..127. root 0 = C; scale bit n = pitch class root + n,
+// as MIDI_GetScale gives it; 0 means major. A pitch outside the scale keeps its distance above the
+// scale note below it.
+int intervalPitch(int pitch, Interval iv, int root, int scale);
+// Adds each interval as a selected note above the highest selected note starting at a time (below
+// the lowest, for negative ones), as long as that note; or transposes the selected notes, unless
+// one would leave 0..127. True if notes changed.
+bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, int scale);
 
 // The isolate filter's pitch changes: (start seconds, pitch) of the first `max` spans by start that
 // end after `from`.

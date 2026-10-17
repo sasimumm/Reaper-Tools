@@ -359,6 +359,61 @@ void moveSelectedToVoice(int v) {
     Undo_EndBlock2(NULL, "ReaTrace: move notes to another voice", UNDO_STATE_ITEMS);
 }
 
+void beginIntervals() {
+    const int first = firstSelected();
+    if (first < 0) {
+        return;
+    }
+    if (g_ui.edit) {
+        endLyric(true, 0);
+    }
+    if (!g_ui.intervals) {
+        // SWELL creates controls in the window set as current parent
+        SWELL_MakeSetCurParms(1, 1, 0, 0, g_ui.hwnd, false, false);
+        g_ui.intervals = SWELL_MakeEditField(1002, 0, 0, 120, 20, 0);
+        SWELL_MakeSetCurParms(1, 1, 0, 0, NULL, false, false);
+    }
+    if (!g_ui.intervals) {
+        return;
+    }
+    const Note &nt = g_session.ed.notes[idx(first)];
+    const int x = static_cast<int>(lround(g_ui.view.x(nt.start)));
+    const int y = static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5)));
+    SetWindowPos(g_ui.intervals, NULL, x, y + 1, 120, 20, SWP_NOZORDER | SWP_NOACTIVATE);
+    SetWindowText(g_ui.intervals, "");
+    ShowWindow(g_ui.intervals, SW_SHOW);
+    SetFocus(g_ui.intervals);
+    redraw();
+}
+
+void endIntervals(bool commit) {
+    if (!g_ui.intervals) {
+        return;
+    }
+    char buf[256] = "";
+    GetWindowText(g_ui.intervals, buf, sizeof(buf));
+    const std::optional<IntervalInput> in = parseIntervals(buf);
+    if (commit && !in) {
+        return; // a typo: keep the field for fixing it
+    }
+    DestroyWindow(g_ui.intervals);
+    g_ui.intervals = NULL;
+    SetFocus(g_ui.hwnd);
+    if (commit) {
+        // the take's scale (C major without one); diatonic intervals count its steps
+        int root = 0, scale = 0;
+        char name[64] = "";
+        if (MediaItem_Take *take = midiTake();
+            !take || !MIDI_GetScale(take, &root, &scale, name, sizeof(name))) {
+            root = scale = 0;
+        }
+        if (addIntervals(g_session.ed.notes, *in, root, scale)) {
+            commitNotes();
+        }
+    }
+    redraw();
+}
+
 // Time selection and loop points together, whether or not REAPER links them.
 void setSelection(double a, double b) {
     GetSet_LoopTimeRange2(NULL, true, false, &a, &b, false);

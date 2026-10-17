@@ -22,6 +22,10 @@ void acceptSuggestion(int i);
 void acceptVisibleSuggestions();
 void copyNotes(bool cut);
 void moveSelectedToVoice(int v); // cmd+1..4
+// Shift+I: a field under the earliest selected note for intervals to add (see parseIntervals).
+// Enter adds them (commit; the field stays open on a typo), Esc closes it.
+void beginIntervals();
+void endIntervals(bool commit);
 void paste();
 void setSelection(double a, double b); // time selection and loop points, seconds
 void loopPlay();

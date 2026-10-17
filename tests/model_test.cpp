@@ -138,5 +138,55 @@ int main() {
         assert(pitchSchedule(spans, 10, 5).empty());
     }
 
+    // intervals: Dorico's syntax, diatonic in the scale unless a quality is given
+    {
+        const auto in = parseIntervals(" -m3, 4 ,P5,aug4");
+        assert(in && !in->transpose && in->intervals.size() == 4);
+        assert(in->intervals[0].degree == -3 && in->intervals[0].quality == IQ_MINOR);
+        assert(in->intervals[1].degree == 4 && in->intervals[1].quality == IQ_DIATONIC);
+        assert(in->intervals[3].quality == IQ_AUGMENTED);
+        const auto t = parseIntervals("t-min6");
+        assert(t && t->transpose && t->intervals[0].degree == -6);
+        assert(parseIntervals("M3") && parseIntervals("Maj3") && parseIntervals("dim7"));
+        for (const char *bad : {"", "x", "M5", "P3", "3,", "0", "3b", "23"}) {
+            assert(!parseIntervals(bad));
+        }
+
+        const int C = 0, E = 4, major = 0xAB5, minor = 0x5AD;         // E minor: E F# G A B C D
+        assert(intervalPitch(62, {3, IQ_DIATONIC}, C, major) == 65);  // D -> F in C major
+        assert(intervalPitch(60, {3, IQ_DIATONIC}, C, major) == 64);  // C -> E
+        assert(intervalPitch(64, {-3, IQ_DIATONIC}, C, major) == 60); // E -> C
+        assert(intervalPitch(71, {2, IQ_DIATONIC}, C, major) == 72);  // B -> C, over the octave
+        assert(intervalPitch(60, {-2, IQ_DIATONIC}, C, major) == 59); // C -> B, below
+        assert(intervalPitch(60, {8, IQ_DIATONIC}, C, major) == 72);
+        assert(intervalPitch(61, {3, IQ_DIATONIC}, C, major) == 65); // C# -> E#
+        assert(intervalPitch(64, {3, IQ_DIATONIC}, E, minor) == 67); // E -> G in E minor
+        assert(intervalPitch(66, {3, IQ_DIATONIC}, E, minor) == 69); // F# -> A
+        assert(intervalPitch(60, {3, IQ_DIATONIC}, E, minor) == 64); // C -> E, below the root
+        assert(intervalPitch(60, {3, IQ_MAJOR}, E, minor) == 64);
+        assert(intervalPitch(60, {-3, IQ_MINOR}, C, major) == 57);
+        assert(intervalPitch(60, {5, IQ_DIMINISHED}, C, major) == 66);
+        assert(intervalPitch(60, {4, IQ_AUGMENTED}, C, major) == 66);
+        assert(intervalPitch(60, {10, IQ_MAJOR}, C, major) == 76);
+        assert(intervalPitch(125, {3, IQ_MAJOR}, C, major) == -1);
+
+        // a third, then another stacks on the new top note; below goes from the lowest
+        const auto parsed = [](const char *text) {
+            const std::optional<IntervalInput> r = parseIntervals(text);
+            assert(r);
+            return r.value_or(IntervalInput{});
+        };
+        std::vector<Note> ns = {{1, 2, 60, true, 5, "la"}, {3, 4, 62, false, 6}};
+        assert(addIntervals(ns, parsed("3"), C, major));
+        assert(ns.size() == 3 && ns[2].pitch == 64 && ns[2].sel && ns[2].idx == -1 &&
+               ns[2].lyric.empty() && ns[2].start == 1 && ns[2].end == 2);
+        assert(addIntervals(ns, parsed("3,-4"), C, major));
+        assert(ns.size() == 5 && ns[3].pitch == 55 && ns[4].pitch == 67);
+        assert(addIntervals(ns, parsed("-4"), C, major) && ns.back().pitch == 50);
+        std::vector<Note> tr = {{1, 2, 60, true, 5}, {3, 4, 62, false, 6}};
+        assert(addIntervals(tr, parsed("t3"), C, major) && tr[0].pitch == 64 && tr[1].pitch == 62 &&
+               tr.size() == 2);
+    }
+
     printf("ok\n");
 }

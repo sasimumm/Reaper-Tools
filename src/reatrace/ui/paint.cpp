@@ -555,6 +555,10 @@ static void monoText(HDC dc, const char *s, int l, int t, int r, int b, unsigned
 
 // What a click or drag does where the mouse is.
 static std::string hoverHint(const Layout &L) {
+    if (g_ui.intervals) {
+        return "Intervals: 3, -3 (in the take's key), m3, M6, P5, aug4, dim5; 3,5 for several; "
+               "t3: transpose  ·  Enter: add  ·  Esc: cancel";
+    }
     const int x = g_ui.mouseX, y = g_ui.mouseY;
     static const std::array<const char *, WINDOW_VOICES> VOICE_NAMES = {
         "Lead", "voice 2", "voice 3", "voice 4"
@@ -775,6 +779,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
         {"Draw and edit",
          {{"Draw a note", "drag on empty space"},
           {"Copy while moving", "cmd+drag a note"},
+          {"Add intervals, transpose", "shift+I"},
           {"Lock to time or pitch", "shift while moving"},
           {"No snapping", "alt"},
           {"Split, join", "K, J"},

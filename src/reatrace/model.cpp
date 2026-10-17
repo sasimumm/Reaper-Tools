@@ -1,9 +1,10 @@
 // REAPER-free window logic: the settings text format, quantise, follow-playback paging, the
-// isolate filter's pitch schedule and the window layout.
+// isolate filter's pitch schedule, adding intervals and the window layout.
 #include "model.h"
 
 #include "index.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -191,4 +192,201 @@ Layout computeLayout(int width, int height, bool panelWanted, unsigned folded) {
     L.status = {0, L.overview.b, c.r, c.b};
     L.panel = {n.r, TOOLBAR_H, c.r, L.status.t};
     return L;
+}
+
+// A quality word or letter: M and m by case, the rest in any case.
+static std::optional<IntervalQuality> qualityNamed(std::string_view w) {
+    if (w == "M") {
+        return IQ_MAJOR;
+    }
+    if (w == "m") {
+        return IQ_MINOR;
+    }
+    std::string l(w);
+    std::transform(l.begin(), l.end(), l.begin(), [](char c) {
+        return static_cast<char>(tolower(static_cast<unsigned char>(c)));
+    });
+    static const std::pair<const char *, IntervalQuality> NAMES[] = {
+        {"", IQ_DIATONIC},           {"diat", IQ_DIATONIC},
+        {"diatonic", IQ_DIATONIC},   {"maj", IQ_MAJOR},
+        {"major", IQ_MAJOR},         {"min", IQ_MINOR},
+        {"minor", IQ_MINOR},         {"p", IQ_PERFECT},
+        {"per", IQ_PERFECT},         {"perf", IQ_PERFECT},
+        {"perfect", IQ_PERFECT},     {"d", IQ_DIMINISHED},
+        {"dim", IQ_DIMINISHED},      {"diminished", IQ_DIMINISHED},
+        {"a", IQ_AUGMENTED},         {"aug", IQ_AUGMENTED},
+        {"augmented", IQ_AUGMENTED},
+    };
+    for (const auto &[name, q] : NAMES) {
+        if (l == name) {
+            return q;
+        }
+    }
+    return std::nullopt;
+}
+
+static std::string_view trim(std::string_view s) {
+    while (!s.empty() && isspace(static_cast<unsigned char>(s.front()))) {
+        s.remove_prefix(1);
+    }
+    while (!s.empty() && isspace(static_cast<unsigned char>(s.back()))) {
+        s.remove_suffix(1);
+    }
+    return s;
+}
+
+// unisons, fourths, fifths and octaves are perfect; the others major or minor
+static bool perfectDegree(int n) {
+    const int simple = (n - 1) % 7;
+    return simple == 0 || simple == 3 || simple == 4;
+}
+
+std::optional<IntervalInput> parseIntervals(std::string_view text) {
+    IntervalInput in;
+    text = trim(text);
+    if (!text.empty() && (text.front() == 't' || text.front() == 'T')) {
+        in.transpose = true;
+        text.remove_prefix(1);
+    }
+    while (true) {
+        const size_t comma = text.find(',');
+        std::string_view e = trim(text.substr(0, comma));
+        int sign = 1;
+        if (!e.empty() && (e.front() == '-' || e.front() == '+')) {
+            sign = e.front() == '-' ? -1 : 1;
+            e.remove_prefix(1);
+        }
+        const size_t digits = e.find_first_of("0123456789");
+        if (digits == e.npos || e.substr(digits).find_first_not_of("0123456789") != e.npos ||
+            e.size() - digits > 2) {
+            return std::nullopt;
+        }
+        const std::optional<IntervalQuality> q = qualityNamed(trim(e.substr(0, digits)));
+        int n = 0; // one or two digits, checked above
+        for (const char c : e.substr(digits)) {
+            n = n * 10 + (c - '0');
+        }
+        if (!q || n < 1 || n > 22) { // up to three octaves
+            return std::nullopt;
+        }
+        const bool perfect = perfectDegree(n);
+        if ((perfect && (*q == IQ_MAJOR || *q == IQ_MINOR)) || (!perfect && *q == IQ_PERFECT)) {
+            return std::nullopt; // no major fifth, no perfect third
+        }
+        in.intervals.push_back({sign * n, *q});
+        if (comma == text.npos) {
+            break;
+        }
+        text.remove_prefix(comma + 1);
+    }
+    return in;
+}
+
+int intervalPitch(int pitch, Interval iv, int root, int scale) {
+    const int n = std::abs(iv.degree), dir = iv.degree < 0 ? -1 : 1;
+    int to = 0;
+    if (iv.quality == IQ_DIATONIC) {
+        std::vector<int> pcs; // the scale's pitch classes above the root
+        for (int b = 0; b < 12; b++) {
+            if ((scale ? scale : 0xAB5) & (1 << b)) {
+                pcs.push_back(b);
+            }
+        }
+        const int m = static_cast<int>(pcs.size());
+        const int rel = ((pitch - root) % 12 + 12) % 12;
+        int base = pitch - rel; // the root at or below pitch
+        int k = m - 1;          // the scale note at or below pitch
+        while (k > 0 && pcs[idx(k)] > rel) {
+            k--;
+        }
+        if (pcs[idx(k)] > rel) { // below the scale's lowest note: its last one an octave down
+            k = m - 1;
+            base -= 12;
+        }
+        const int offset = pitch - (base + pcs[idx(k)]);
+        const int t = k + dir * (n - 1);
+        const int oct = t >= 0 ? t / m : -((m - 1 - t) / m);
+        to = base + oct * 12 + pcs[idx(t - oct * m)] + offset;
+    } else {
+        static const std::array MAJOR_OR_PERFECT = {0, 2, 4, 5, 7, 9, 11};
+        int st = MAJOR_OR_PERFECT[idx((n - 1) % 7)] + 12 * ((n - 1) / 7);
+        if (iv.quality == IQ_MINOR || (iv.quality == IQ_DIMINISHED && perfectDegree(n))) {
+            st -= 1;
+        } else if (iv.quality == IQ_DIMINISHED) {
+            st -= 2;
+        } else if (iv.quality == IQ_AUGMENTED) {
+            st += 1;
+        }
+        to = pitch + dir * st;
+    }
+    return to >= 0 && to <= 127 ? to : -1;
+}
+
+bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, int scale) {
+    if (in.intervals.empty()) {
+        return false;
+    }
+    if (in.transpose) {
+        std::vector<Note> out = notes;
+        bool any = false;
+        for (Note &n : out) {
+            if (n.sel) {
+                n.pitch = intervalPitch(n.pitch, in.intervals[0], root, scale);
+                if (n.pitch < 0) {
+                    return false;
+                }
+                any = true;
+            }
+        }
+        if (any) {
+            notes = std::move(out);
+        }
+        return any;
+    }
+
+    const auto sameStart = [](const Note &a, const Note &b) {
+        return fabs(a.start - b.start) < 1e-6;
+    };
+    // the selected note at i is the highest (dir 1) or lowest (-1) selected one at its start
+    const auto outer = [&](size_t i, int dir) {
+        for (size_t j = 0; j < notes.size(); j++) {
+            const Note &o = notes[j];
+            if (j != i && o.sel && sameStart(o, notes[i]) &&
+                (dir * (o.pitch - notes[i].pitch) > 0 || (o.pitch == notes[i].pitch && j < i))) {
+                return false;
+            }
+        }
+        return true;
+    };
+    std::vector<std::pair<size_t, int>> bases; // (note, direction), chosen before adding any
+    for (size_t i = 0; i < notes.size(); i++) {
+        for (const int dir : {1, -1}) {
+            if (notes[i].sel && outer(i, dir)) {
+                bases.emplace_back(i, dir);
+            }
+        }
+    }
+    bool any = false;
+    for (const auto &[i, dir] : bases) {
+        for (const Interval &iv : in.intervals) {
+            if ((iv.degree < 0 ? -1 : 1) != dir) {
+                continue;
+            }
+            const int p = intervalPitch(notes[i].pitch, iv, root, scale);
+            const bool taken = std::any_of(notes.begin(), notes.end(), [&](const Note &o) {
+                return o.pitch == p && sameStart(o, notes[i]);
+            });
+            if (p < 0 || taken) {
+                continue;
+            }
+            Note c = notes[i];
+            c.pitch = p;
+            c.idx = c.lyricIdx = -1;
+            c.lyric.clear();
+            c.sel = true;
+            notes.push_back(c);
+            any = true;
+        }
+    }
+    return any;
 }

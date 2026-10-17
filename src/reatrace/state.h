@@ -87,6 +87,7 @@ struct WindowState {
     // toggle docking on the next timer tick, outside the window's own handlers
     bool dockPending = false;
     HWND edit = NULL; // lyric edit field while typing; identifies its note by start and pitch
+    HWND intervals = NULL; // the add intervals field (shift+I) while typing
     bool analysisDirty = false;   // an analysis slider moved; recomputed on mouse up
     int mouseX = -1, mouseY = -1; // last mouse position in the client area, points
     bool help = false;            // the shortcut sheet is shown (?)

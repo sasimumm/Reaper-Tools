@@ -60,6 +60,7 @@
 #define REAPERAPI_WANT_MIDI_InsertNote
 #define REAPERAPI_WANT_MIDI_SetNote
 #define REAPERAPI_WANT_MIDI_Sort
+#define REAPERAPI_WANT_MIDI_GetScale
 #define REAPERAPI_WANT_MIDI_GetTextSysexEvt
 #define REAPERAPI_WANT_MIDI_InsertTextSysexEvt
 #define REAPERAPI_WANT_MIDI_DeleteTextSysexEvt
