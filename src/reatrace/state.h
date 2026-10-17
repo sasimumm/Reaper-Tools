@@ -82,6 +82,7 @@ struct WindowState {
     HWND hwnd = NULL;
     ViewMap view;
     bool panel = true;
+    bool tracks = false;    // the side panel shows the tracks instead of the settings (M)
     bool showOthers = true; // show the other voices' notes, dimmed
     int voicePick = 0;      // panel buttons; applied through selectVoice()
     // toggle docking on the next timer tick, outside the window's own handlers
@@ -111,3 +112,5 @@ void syncViewOrigin();   // puts the view's origin at the notes area's top left
 void redraw();           // invalidates the window, if open
 void selectVoice(int v); // makes voice v (0 = lead) the edited one, and shows it
 int mods();              // MOD_* keys held now
+// S and the Panel button: back to the settings from the tracks, else the side panel on or off.
+void showSettings();

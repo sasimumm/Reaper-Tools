@@ -16,6 +16,7 @@
 #include "ui/paint.h"
 #include "ui/panel.h"
 #include "ui/toolbar.h"
+#include "ui/tracks.h"
 
 // Zoom per pinch event: SWELL clamps each event's factor to 0.5..2, so only its direction is used.
 static const double PINCH_STEP = 1.03;
@@ -46,8 +47,8 @@ Layout layout() {
     if (g_ui.hwnd) {
         GetClientRect(g_ui.hwnd, &r);
     }
-    return computeLayout(static_cast<int>(r.right), static_cast<int>(r.bottom), g_ui.panel,
-                         g_ui.foldedLanes);
+    return computeLayout(static_cast<int>(r.right), static_cast<int>(r.bottom),
+                         g_ui.panel || g_ui.tracks, g_ui.foldedLanes);
 }
 
 Rect clientRect() { return layout().client; }
@@ -208,6 +209,15 @@ static void followPlayback() {
     s_prev = now;
 }
 
+void showSettings() {
+    if (g_ui.tracks) {
+        g_ui.tracks = false;
+        g_ui.panel = true;
+    } else {
+        g_ui.panel = !g_ui.panel;
+    }
+}
+
 void selectVoice(int v) {
     if (v < 0 || v >= WINDOW_VOICES) {
         return;
@@ -281,7 +291,9 @@ static bool onKey(int key) {
     } else if (key == 'H' && !m) {
         g_settings.ghosts = !g_settings.ghosts;
     } else if (key == 'S' && !m) {
-        g_ui.panel = !g_ui.panel;
+        showSettings();
+    } else if (key == 'M' && !m) {
+        g_ui.tracks = !g_ui.tracks;
     } else if (key == 'G' && !m) {
         g_settings.snapMode = (g_settings.snapMode + 1) % 3;
         setupEditorSnap();
@@ -399,6 +411,7 @@ static bool isOurKey(int key, int flags) {
     case '3':
     case '4': return !(flags & (FALT | FSHIFT));
     case 'S':
+    case 'M':
     case 'G':
     case 'F':
     case 'Z':
@@ -528,7 +541,11 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         }
         if (panelShown() && panelArea().in(x, y)) {
             g_drag = DRAG_PANEL;
-            panelMouse(x, y, true);
+            if (g_ui.tracks) {
+                tracksMouse(x, y, true);
+            } else {
+                panelMouse(x, y, true);
+            }
         } else if (rulerArea().in(x, y) && (mods() & MOD_SHIFT)) {
             // shift+drag in the ruler: time selection, snapped like notes
             g_drag = DRAG_RULER_SELECT;
@@ -578,6 +595,8 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             const double t =
                 (mods() & MOD_ALT) ? g_ui.view.t(x) : g_session.ed.snap(g_ui.view.t(x));
             setSelection(std::min(t, g_selectAnchor), std::max(t, g_selectAnchor));
+        } else if (g_drag == DRAG_PANEL && g_ui.tracks) {
+            tracksMouse(x, y, false);
         } else if (g_drag == DRAG_PANEL) {
             panelMouse(x, y, false);
         } else if (g_drag == DRAG_OVERVIEW) {
@@ -605,6 +624,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         }
         if (d == DRAG_PANEL) {
             finishPanelDrag();
+            finishTracksDrag();
         }
         redraw();
         return 0;
@@ -612,6 +632,12 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     case WM_LBUTTONDBLCLK: {
         // double-click a note to type its lyric, a slider to reset it
         const int x = GET_X_LPARAM(lParam), y = GET_Y_LPARAM(lParam);
+        if (panelShown() && panelArea().in(x, y) && g_ui.tracks) {
+            g_drag = DRAG_PANEL; // the second click of a quick double click on a button
+            tracksMouse(x, y, true);
+            redraw();
+            return 0;
+        }
         if (panelShown() && panelArea().in(x, y)) {
             g_drag = DRAG_PANEL;
             panelDoubleClick(y); // mouse up recomputes the analysis if needed
@@ -642,8 +668,10 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         const double steps = static_cast<short> HIWORD(wParam) / 120.0; // notches
         const int m = mods();
         if (panelShown() && panelArea().in(pt.x, pt.y)) {
-            if (msg == WM_MOUSEWHEEL) {
-                scrollPanel(static_cast<int>(lround(-steps * 30))); // 30 points per notch
+            if (msg == WM_MOUSEWHEEL && g_ui.tracks) {
+                scrollTracks(static_cast<int>(lround(-steps * 30))); // 30 points per notch
+            } else if (msg == WM_MOUSEWHEEL) {
+                scrollPanel(static_cast<int>(lround(-steps * 30)));
             }
             return 0;
         }

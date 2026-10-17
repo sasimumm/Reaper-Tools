@@ -45,6 +45,10 @@
 #define REAPERAPI_WANT_GetThemeColor
 #define REAPERAPI_WANT_GetToggleCommandState
 #define REAPERAPI_WANT_CSurf_OnPlayRateChange
+#define REAPERAPI_WANT_CSurf_OnMuteChange
+#define REAPERAPI_WANT_CSurf_OnSoloChange
+#define REAPERAPI_WANT_GetTrackColor
+#define REAPERAPI_WANT_ColorFromNative
 #define REAPERAPI_WANT_Master_GetPlayRate
 #define REAPERAPI_WANT_GetTrack
 #define REAPERAPI_WANT_GetTrackMediaItem

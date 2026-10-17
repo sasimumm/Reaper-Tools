@@ -29,6 +29,7 @@ enum Kind {
     DUCK,
     FOLLOW,
     HELP,
+    TRACKS,
     PANEL
 };
 
@@ -44,15 +45,20 @@ struct Item {
 
 const std::array<const char *, WINDOW_VOICES> VOICE_LABELS = {"Lead", "2", "3", "4"};
 
-// The width of s in points: 12 pt Helvetica, roughly.
-int textWidth(const char *s) { return 7 * static_cast<int>(std::string_view(s).size()); }
+// The width of s in points: the toolbar's Helvetica averages about 5.5 per character.
+int textWidth(const char *s) { return 6 * static_cast<int>(std::string_view(s).size()); }
+
+// Room around a button's label, and between items and groups, in points.
+static const int PAD = 12, SPACE = 4, GROUP_GAP = 8;
+// The buttons on the right: Tracks and Panel this wide, ? HELP_W, SPACE apart.
+static const int SIDE_W = 54, HELP_W = 28;
 
 // The items left to right (the help and panel buttons on the right); what doesn't fit is left out.
 std::vector<Item> items(const Layout &L) {
     std::vector<Item> out;
     const int t = L.toolbar.t + 6;
     const int b = L.toolbar.b - 6;
-    const int rightEdge = L.toolbar.r - 8 - 28 - 6 - 64 - 12; // room for ? and Panel
+    const int rightEdge = L.toolbar.r - 8 - HELP_W - 2 * (SPACE + SIDE_W) - 12; // ?, Tracks, Panel
     int x = 10;
 
     // adds an item w wide at x; the gap after it is left out inside a segmented group
@@ -63,15 +69,15 @@ std::vector<Item> items(const Layout &L) {
             return;
         }
         out.push_back({{x, t, x + w, b}, k, arg, label, tip, first, last});
-        x += w + (last ? 6 : 0);
+        x += w + (last ? SPACE : 0);
     };
-    auto gap = [&] { x += 10; }; // between groups
+    auto gap = [&] { x += GROUP_GAP; }; // between groups
     // a segmented group: one item per label, touching
     auto segment = [&](Kind k, std::span<const char *const> labels,
                        std::span<const char *const> tips) {
         const int n = static_cast<int>(labels.size());
         for (int i = 0; i < n; i++) {
-            add(k, i, labels[idx(i)], tips[idx(i)], textWidth(labels[idx(i)]) + 16, i == 0,
+            add(k, i, labels[idx(i)], tips[idx(i)], textWidth(labels[idx(i)]) + PAD, i == 0,
                 i == n - 1);
         }
     };
@@ -82,10 +88,10 @@ std::vector<Item> items(const Layout &L) {
         "Edit voice 3 (3)  ·  Shift-click: hide or show",
         "Edit voice 4 (4)  ·  Shift-click: hide or show"
     };
-    add(LABEL, 0, "VOICE", "", 40);
+    add(LABEL, 0, "VOICE", "", 36);
     for (int v = 0; v < WINDOW_VOICES; v++) {
         add(VOICE, v, VOICE_LABELS[idx(v)], VOICE_TIPS[idx(v)],
-            textWidth(VOICE_LABELS[idx(v)]) + 30);
+            textWidth(VOICE_LABELS[idx(v)]) + 24);
     }
     gap();
 
@@ -94,12 +100,12 @@ std::vector<Item> items(const Layout &L) {
         "No snapping (G cycles)", "Snap to onsets and pitch changes within 30 ms (G)",
         "Snap to the tempo grid (G)"
     };
-    add(LABEL, 0, "SNAP", "", 36);
+    add(LABEL, 0, "SNAP", "", 32);
     segment(SNAP, SNAPS, SNAP_TIPS);
     gap();
 
     add(SUGGEST, 0, "Suggestions", "Show suggested notes (N)  ·  A: accept all in view",
-        textWidth("Suggestions") + 16);
+        textWidth("Suggestions") + PAD);
     static const char *const FROM[] = {"Estimator", "Lead contour", "Reference"};
     static const char *const FROM_TIPS[] = {
         "Suggestions from the note estimator, in voices",
@@ -109,13 +115,13 @@ std::vector<Item> items(const Layout &L) {
     segment(SUGGEST_FROM, FROM, FROM_TIPS);
     gap();
 
-    add(CONTOUR, 0, "Contour", "The sung pitch as a line (P)", textWidth("Contour") + 16);
+    add(CONTOUR, 0, "Contour", "The sung pitch as a line (P)", textWidth("Contour") + PAD);
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
-        textWidth("Ghosts") + 16);
-    add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + 16);
+        textWidth("Ghosts") + PAD);
+    add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + PAD);
     add(CHORD_TONES, 0, "Chord tones",
         "Shade each chord's notes under it and mark notes outside it (C)",
-        textWidth("Chord tones") + 16);
+        textWidth("Chord tones") + PAD);
     gap();
 
     static const char *const HEAR[] = {"Both", "Audio", "Notes"};
@@ -123,15 +129,15 @@ std::vector<Item> items(const Layout &L) {
         "Hear the audio and the notes", "Hear only the audio (B swaps)",
         "Hear only the notes (B swaps)"
     };
-    add(LABEL, 0, "HEAR", "", 38);
+    add(LABEL, 0, "HEAR", "", 34);
     segment(LISTEN, HEAR, HEAR_TIPS);
     const char *isolate = g_settings.isolateAll ? "Isolate all" : "Isolate";
     add(ISOLATE, 0, isolate,
         "Hear only the edited voice's pitch and overtones (I)  ·  alt+I: all shown voices",
-        textWidth(isolate) + 16);
+        textWidth(isolate) + PAD);
     add(DUCK, 0, "Duck notes",
         "Lower every drawn note's pitch and overtones, to hear what isn't notated yet (U)",
-        textWidth("Duck notes") + 16);
+        textWidth("Duck notes") + PAD);
     static const char *const SPEEDS[] = {"100%", "75%", "50%"};
     static const char *const SPEED_TIPS[] = {
         "Play at full speed", "Play at 75%, pitch kept", "Play at 50%, pitch kept"
@@ -139,12 +145,13 @@ std::vector<Item> items(const Layout &L) {
     segment(SPEED, SPEEDS, SPEED_TIPS);
     gap();
 
-    add(FOLLOW, 0, "Follow", "Page the view along with playback (T)", textWidth("Follow") + 16);
+    add(FOLLOW, 0, "Follow", "Page the view along with playback (T)", textWidth("Follow") + PAD);
 
-    // right-aligned: Panel 64 wide, then ? 28 wide 6 to its left
-    const int r = L.toolbar.r - 8;
-    out.push_back({{r - 64, t, r, b}, PANEL, 0, "Panel", "Settings panel (S)", true, true});
-    out.push_back({{r - 64 - 34, t, r - 70, b}, HELP, 0, "?", "Shortcuts (?)", true, true});
+    // right-aligned: Panel, Tracks, then ?
+    const int r = L.toolbar.r - 8, tr = r - SIDE_W - SPACE, hr = tr - SIDE_W - SPACE;
+    out.push_back({{r - SIDE_W, t, r, b}, PANEL, 0, "Panel", "Settings panel (S)", true, true});
+    out.push_back({{tr - SIDE_W, t, tr, b}, TRACKS, 0, "Tracks", "Mute and solo (M)", true, true});
+    out.push_back({{hr - HELP_W, t, hr, b}, HELP, 0, "?", "Shortcuts (?)", true, true});
     return out;
 }
 
@@ -165,7 +172,8 @@ bool isOn(const Item &it) {
     case ISOLATE: return isolateOn() && !g_settings.isolateDuck;
     case DUCK: return isolateOn() && g_settings.isolateDuck;
     case HELP: return g_ui.help;
-    case PANEL: return g_ui.panel;
+    case TRACKS: return g_ui.tracks;
+    case PANEL: return g_ui.panel && !g_ui.tracks;
     case LABEL: return false;
     }
     return false;
@@ -239,6 +247,7 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
         case DUCK:
         case FOLLOW:
         case HELP:
+        case TRACKS:
         case PANEL: // toggles and buttons
             if (on || hov) {
                 cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
@@ -294,7 +303,8 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
     case ISOLATE: toggleIsolate(false); break;
     case DUCK: toggleIsolate(true); break;
     case HELP: g_ui.help = !g_ui.help; break;
-    case PANEL: g_ui.panel = !g_ui.panel; break;
+    case TRACKS: g_ui.tracks = !g_ui.tracks; break;
+    case PANEL: showSettings(); break;
     case LABEL: break;
     }
 }

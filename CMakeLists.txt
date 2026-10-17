@@ -46,6 +46,7 @@ add_library(reaper_reatrace MODULE
   src/reatrace/ui/panel.cpp
   src/reatrace/ui/theme.cpp
   src/reatrace/ui/toolbar.cpp
+  src/reatrace/ui/tracks.cpp
   src/reatrace/ui/window.cpp
   ${WDL}/fft.c
   ${WDL}/swell/swell-modstub.mm
