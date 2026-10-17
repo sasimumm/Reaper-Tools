@@ -97,6 +97,23 @@ int main() {
     ed.mouseUp(v, v.x(4.5), v.y(61), MOD_SHIFT);
     assert(!ed.notes[0].sel && ed.notes[1].sel && !ed.notes[2].sel);
 
+    // Cmd+drag moves copies of the selection and the pressed note; the originals stay.
+    {
+        NoteEditor e;
+        e.notes = {{1, 2, 60, true, 0, "la"}, {3, 4, 62, false, 1}, {5, 6, 64, false, 2}};
+        e.mouseDown(v, v.x(3.5), v.y(62), MOD_CMD);
+        e.mouseMove(v, v.x(5.5), v.y(62), MOD_CMD);
+        e.cancel();
+        assert(e.notes.size() == 3 && e.notes[0].sel && !e.notes[1].sel);
+        e.mouseDown(v, v.x(3.5), v.y(62), MOD_CMD);
+        assert(e.mouseUp(v, v.x(5.5), v.y(64), MOD_CMD));
+        assert(e.notes.size() == 5 && !e.notes[0].sel && !e.notes[1].sel);
+        assert(near(e.notes[0].start, 1) && near(e.notes[1].start, 3) && e.notes[1].idx == 1);
+        const Note &a = e.notes[3], &b = e.notes[4];
+        assert(a.sel && near(a.start, 3) && a.pitch == 62 && a.idx == -1 && a.lyric == "la");
+        assert(b.sel && near(b.start, 5) && b.pitch == 64 && b.idx == -1);
+    }
+
     // Moving several selected notes keeps their spacing; Delete records take indices.
     ed.selectAll(true);
     ed.mouseDown(v, v.x(3.5), v.y(60), 0);

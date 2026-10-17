@@ -567,8 +567,8 @@ static std::string hoverHint(const Layout &L) {
             return "Drag: resize  ·  Alt: no snap";
         }
         if (h == NoteEditor::BODY) {
-            return "Drag: move  ·  Shift: lock to time or pitch  ·  Double-click or Enter: lyric  "
-                   "·  K: split";
+            return "Drag: move  ·  Cmd+drag: copy  ·  Shift: lock to time or pitch  ·  "
+                   "Double-click or Enter: lyric  ·  K: split";
         }
         if (const int i = suggestionAt(x, y); i >= 0) {
             const int v = suggestionVoice(idx(i));
@@ -774,6 +774,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
           {"Follow playback", "T"}}},
         {"Draw and edit",
          {{"Draw a note", "drag on empty space"},
+          {"Copy while moving", "cmd+drag a note"},
           {"Lock to time or pitch", "shift while moving"},
           {"No snapping", "alt"},
           {"Split, join", "K, J"},

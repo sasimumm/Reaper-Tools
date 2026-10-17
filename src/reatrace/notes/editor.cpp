@@ -47,6 +47,8 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
     changed = false;
     axis = AXIS_FREE;
     orig = notes;
+    cmdPress = false;
+    beforeClone.clear();
 
     int i = -1;
     Hit h = hitTest(v, x, y, &i);
@@ -56,12 +58,10 @@ void NoteEditor::mouseDown(const ViewMap &v, double x, double y, int mods) {
         return;
     }
     if (mods & MOD_CMD) {
-        notes[idx(i)].sel = !notes[idx(i)].sel;
-        if (notes[idx(i)].sel) {
-            lastLen = notes[idx(i)].end - notes[idx(i)].start;
-        }
-        changed = true;
-        mode = IDLE;
+        cmdPress = true;
+        anchor = i;
+        dragHit = BODY; // a clone drag moves, even from an edge
+        mode = PENDING_DRAG;
         return;
     }
 
@@ -95,6 +95,27 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         notes.push_back({t, t + minLen, clampPitch(v.pitchAt(downY)), true, -1});
         drawIndex = static_cast<int>(notes.size()) - 1;
         mode = DRAW;
+    }
+    if (mode == PENDING_DRAG && past && cmdPress) {
+        // clone: the selection and the pressed note get copies, which are selected and move
+        beforeClone = orig;
+        notes = orig;
+        notes[idx(anchor)].sel = true;
+        const size_t count = notes.size();
+        for (size_t i = 0; i < count; i++) {
+            if (!notes[i].sel) {
+                continue;
+            }
+            Note c = notes[i];
+            c.idx = c.lyricIdx = -1;
+            notes[i].sel = false;
+            if (static_cast<int>(i) == anchor) {
+                anchor = static_cast<int>(notes.size());
+            }
+            notes.push_back(c);
+        }
+        orig = notes;
+        changed = true;
     }
     if (mode == PENDING_DRAG && past) {
         mode = dragHit == LEFT ? RESIZE_L : dragHit == RIGHT ? RESIZE_R : MOVE;
@@ -167,6 +188,10 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
             notes.push_back({t, t + lastLen, clampPitch(v.pitchAt(downY)), true, -1});
             changed = true;
         }
+    } else if (mode == PENDING_DRAG && cmdPress) {
+        Note &n = notes[idx(anchor)];
+        n.sel = !n.sel;
+        changed = true;
     } else if (mode == PENDING_DRAG) {
         // click on an already selected note: select just it
         for (size_t i = 0; i < notes.size(); i++) {
@@ -194,7 +219,7 @@ bool NoteEditor::mouseUp(const ViewMap &v, double x, double y, int mods) {
 
 void NoteEditor::cancel() {
     if (mode != IDLE) {
-        notes = orig;
+        notes = beforeClone.empty() ? orig : beforeClone;
     }
     mode = IDLE;
     anchor = drawIndex = -1;

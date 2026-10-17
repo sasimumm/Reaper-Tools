@@ -41,7 +41,8 @@ enum { MOD_SHIFT = 1, MOD_CMD = 2, MOD_ALT = 4 };
 std::vector<std::string> splitSyllables(const std::string &text);
 
 // No modes: drag on empty space draws, drag a note body moves, drag an edge resizes,
-// shift+drag on empty space selects with a marquee, cmd+click toggles selection.
+// shift+drag on empty space selects with a marquee, cmd+click toggles selection, cmd+drag on a
+// note moves copies of the selection (and that note), leaving the originals.
 // alt disables snapping, shift locks a move to time or pitch. Moves and resizes apply original +
 // delta, snapped via the anchor note. Mouse positions are window pixels, mods MOD_* flags.
 class NoteEditor {
@@ -114,4 +115,6 @@ class NoteEditor {
     bool cmdMarquee = false;         // the marquee adds to the selection
     enum Axis { AXIS_FREE, AXIS_TIME, AXIS_PITCH } axis = AXIS_FREE; // shift+move: only along this
     std::vector<Note> orig;                                          // notes at mouse down
+    bool cmdPress = false;         // pressed a note with cmd: a click toggles, a drag clones
+    std::vector<Note> beforeClone; // notes at mouse down while clone dragging (orig has the copies)
 };
