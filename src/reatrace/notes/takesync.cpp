@@ -33,7 +33,8 @@ class ReaperTake : public Take {
         return h;
     }
 
-    // The item's position, start offset and playrate, then every tempo/time signature marker.
+    // The item's position, start offset and playrate, where beat 1 falls (the project tempo, when
+    // there are no markers), then every tempo/time signature marker.
     std::string timeMapping() override {
         MediaItem *item = GetMediaItemTake_Item(m_take);
         char buf[160];
@@ -41,6 +42,8 @@ class ReaperTake : public Take {
                  GetMediaItemTakeInfo_Value(m_take, "D_STARTOFFS"),
                  GetMediaItemTakeInfo_Value(m_take, "D_PLAYRATE"));
         std::string out = buf;
+        snprintf(buf, sizeof(buf), "%.12g;", TimeMap2_QNToTime(NULL, 1));
+        out += buf;
         const int markers = CountTempoTimeSigMarkers(NULL);
         for (int i = 0; i < markers; i++) {
             double time = 0, beat = 0, bpm = 0;
