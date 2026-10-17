@@ -52,13 +52,18 @@ class NoteEditor {
     std::vector<Note> notes;
     std::vector<int> deleted; // take indices deleted since notes were loaded
     std::function<double(double)> snap = [](double t) { return t; }; // seconds to seconds
-    double minLen = 0.05;                                            // seconds
+    // Clone drags move in quarter notes, not seconds, so copies keep their place in the bar across
+    // tempo changes, and by whole steps of cloneStep (quarter notes to quarter notes) instead of
+    // snapping the pressed note: no onsets. Alt moves them freely.
+    std::function<double(double)> toQN = [](double t) { return t; }, fromQN = toQN;
+    std::function<double(double)> cloneStep = [](double qn) { return qn; };
+    double minLen = 0.05; // seconds
     int velocity = 96;
     // A click on empty space places a note as long as the last one drawn or pressed (when it has
     // one); without this, or without such a note, the click only deselects. Alt allows it too.
     bool clickPlaces = false;
     double lastLen = 0; // seconds, 0 until a note is drawn or pressed
-    int moves = 0; // counts mouse moves, so caches of the notes can tell a drag step happened
+    int moves = 0;      // counts mouse moves, so caches of the notes can tell a drag step happened
 
     // What is at (x, y), the topmost note's index in *noteIndex.
     Hit hitTest(const ViewMap &v, double x, double y, int *noteIndex) const;

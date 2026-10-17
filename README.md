@@ -87,7 +87,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | drag a note / its edge | move / resize (all selected notes) |
 | shift while moving | lock the move to time or pitch, whichever the drag mostly went along |
 | click, cmd+click, shift+drag | select, toggle selection, marquee select |
-| cmd+drag a note | copy the selected notes (and that one) and move the copies |
+| cmd+drag a note | copy the selected notes (and that one) and move the copies, by whole grid steps in beats so they keep their place in the bar across tempo changes (no onset snapping; snap off or alt: freely) |
 | right-click, Delete/Backspace | delete note / selected notes |
 | hover | overtone marks (1–8) for the pitch under the mouse, and the octave check: level at the pitch one octave, a 12th and two octaves below; orange means the real note is probably lower |
 | alt while dragging | no snapping |

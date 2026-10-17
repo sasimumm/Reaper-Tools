@@ -238,6 +238,24 @@ void setupEditorSnap() {
     }
     // onsets snap a drawn note's both ends; elsewhere a click repeats the last note's length
     g_session.ed.clickPlaces = g_settings.snapMode != SNAP_ONSETS;
+
+    // copies move by whole grid steps (whole measures when zoomed out), unless snapping is off
+    g_session.ed.toQN = [](double t) { return TimeMap2_timeToQN(NULL, t); };
+    g_session.ed.fromQN = [](double qn) { return TimeMap2_QNToTime(NULL, qn); };
+    if (g_settings.snapMode == SNAP_OFF) {
+        g_session.ed.cloneStep = [](double qn) { return qn; };
+    } else {
+        g_session.ed.cloneStep = [](double dq) {
+            double step = gridStepQN();
+            if (step <= 0) { // the measure's length where the view is
+                double ms = 0, me = 0;
+                TimeMap_QNToMeasures(NULL, TimeMap2_timeToQN(NULL, g_ui.view.t(g_ui.view.x0 + 200)),
+                                     &ms, &me);
+                step = me > ms ? me - ms : 4;
+            }
+            return floor(dq / step + 0.5) * step;
+        };
+    }
 }
 
 // Suggestion i as a new, solely selected note of the active voice.

@@ -114,6 +114,22 @@ int main() {
         assert(b.sel && near(b.start, 5) && b.pitch == 64 && b.idx == -1);
     }
 
+    // Copies move by whole clone steps in quarter notes (tempo 120: 2 per second, then 60 from
+    // 4 s), not by the snapped pressed note, so each lands on the same beat it had.
+    {
+        NoteEditor e;
+        e.snap = [](double t) { return t + 0.07; }; // an onset nearby: not used for copies
+        e.toQN = [](double t) { return t <= 4 ? t * 2 : 8 + (t - 4); };
+        e.fromQN = [](double q) { return q <= 8 ? q / 2 : 4 + (q - 8); };
+        e.cloneStep = [](double dq) { return round(dq); };
+        e.notes = {{1, 1.5, 60, true, 0}, {2, 2.5, 62, true, 1}};
+        e.mouseDown(v, v.x(1.2), v.y(60), MOD_CMD);
+        assert(e.mouseUp(v, v.x(3.25), v.y(60), MOD_CMD)); // 2.05 s: 4.1 qn, rounded to 4
+        assert(e.notes.size() == 4 && near(e.notes[0].start, 1) && near(e.notes[1].start, 2));
+        assert(near(e.notes[2].start, 3) && near(e.notes[2].end, 3.5)); // qn 2..3 -> 6..7
+        assert(near(e.notes[3].start, 4) && near(e.notes[3].end, 5));   // qn 4..5 -> 8..9
+    }
+
     // Moving several selected notes keeps their spacing; Delete records take indices.
     ed.selectAll(true);
     ed.mouseDown(v, v.x(3.5), v.y(60), 0);

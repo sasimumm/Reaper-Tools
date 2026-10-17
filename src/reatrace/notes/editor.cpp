@@ -135,14 +135,23 @@ void NoteEditor::mouseMove(const ViewMap &v, double x, double y, int mods) {
         } else if (axis == AXIS_FREE && (ax > AXIS_LOCK_THRESHOLD || ay > AXIS_LOCK_THRESHOLD)) {
             axis = ax >= ay ? AXIS_TIME : AXIS_PITCH;
         }
-        // the anchor's start snaps; every selected note moves by the same amount
+        // the anchor's start snaps; every selected note moves by the same amount (copies: the
+        // same number of quarter notes, in whole clone steps)
         const Note &a = orig[idx(anchor)];
-        const double dt = axis == AXIS_PITCH ? 0 : sn(a.start + dtRaw) - a.start;
+        const bool clone = !beforeClone.empty();
+        double dt = 0, dq = 0;
+        if (axis != AXIS_PITCH && clone) {
+            dq = toQN(a.start + dtRaw) - toQN(a.start);
+            dq = (mods & MOD_ALT) ? dq : cloneStep(dq);
+        } else if (axis != AXIS_PITCH) {
+            dt = sn(a.start + dtRaw) - a.start;
+        }
         const int dp = axis == AXIS_TIME ? 0 : v.pitchAt(y) - v.pitchAt(downY);
+        const auto move = [&](double t) { return clone ? fromQN(toQN(t) + dq) : t + dt; };
         for (size_t i = 0; i < notes.size(); i++) {
             if (orig[i].sel) {
-                notes[i].start = orig[i].start + dt;
-                notes[i].end = orig[i].end + dt;
+                notes[i].start = move(orig[i].start);
+                notes[i].end = move(orig[i].end);
                 notes[i].pitch = clampPitch(orig[i].pitch + dp);
             }
         }
