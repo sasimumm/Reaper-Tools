@@ -71,9 +71,9 @@ TakeSnapshot snapshotOf(Take &take);
 std::vector<Note> readNotes(Take &take);
 
 // MIDI can't hold two notes of one pitch and channel at once (a note-off would end either), so an
-// overlapping earlier note is cut to end where the later one starts; notes starting together are
-// left. True if any changed.
-bool trimOverlaps(std::span<Note> notes);
+// overlapping earlier note is cut to end where the later one starts, and notes starting together
+// become one (dropped notes read from the take are added to `deleted`). True if any changed.
+bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted);
 
 // What writing `edited` over `loaded` (as read by readNotes) would change.
 struct NoteChanges {
@@ -93,5 +93,6 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
                 std::span<const Note> edited, std::span<const int> deleted, int velocity);
 
-// Adds unselected notes (another voice's accepted suggestions).
+// Adds unselected notes (another voice's accepted suggestions), trimmed against the take's notes
+// as trimOverlaps does.
 void appendNotes(Take &take, std::span<const Note> notes, int velocity);

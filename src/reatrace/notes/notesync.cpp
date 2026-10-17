@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <numeric>
 #include <span>
@@ -64,22 +65,51 @@ static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel, int velocity
     return e;
 }
 
-bool trimOverlaps(std::span<Note> notes) {
+bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted) {
     std::vector<size_t> order(notes.size());
     std::iota(order.begin(), order.end(), size_t{0});
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
         const Note &x = notes[a], &y = notes[b];
         return std::tie(x.chan, x.pitch, x.start) < std::tie(y.chan, y.pitch, y.start);
     });
+    // Each note is cut at the next one's start, so every earlier note ends by the current one's
+    // start and only the last kept note can overlap it.
+    std::vector<bool> drop(notes.size());
     bool any = false;
-    for (size_t k = 1; k < order.size(); k++) {
-        Note &a = notes[order[k - 1]];
-        const Note &b = notes[order[k]];
-        if (a.chan == b.chan && a.pitch == b.pitch && a.end > b.start && b.start > a.start) {
-            a.end = b.start;
-            any = true;
+    size_t prev = SIZE_MAX;
+    for (const size_t k : order) {
+        const Note &b = notes[k];
+        if (prev != SIZE_MAX) {
+            Note &a = notes[prev];
+            if (a.chan == b.chan && a.pitch == b.pitch && a.start == b.start) {
+                // a duplicate: one note, as long as the longer, keeping a lyric and selection
+                a.end = std::max(a.end, b.end);
+                if (a.lyric.empty()) {
+                    a.lyric = b.lyric;
+                }
+                a.sel |= b.sel;
+                drop[k] = any = true;
+                continue;
+            }
+            if (a.chan == b.chan && a.pitch == b.pitch && a.end > b.start) {
+                a.end = b.start;
+                any = true;
+            }
+        }
+        prev = k;
+    }
+    size_t w = 0;
+    for (size_t i = 0; i < notes.size(); i++) {
+        if (!drop[i]) {
+            if (w != i) { // moving a string onto itself empties it
+                notes[w] = std::move(notes[i]);
+            }
+            w++;
+        } else if (notes[i].idx >= 0) {
+            deleted.push_back(notes[i].idx);
         }
     }
+    notes.resize(w);
     return any;
 }
 
@@ -219,8 +249,16 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
 }
 
 void appendNotes(Take &take, std::span<const Note> notes, int velocity) {
-    for (const Note &n : notes) {
-        take.insertNote(toEvent(take, n, false, velocity));
+    // through writeNotes, so they're trimmed against the take's notes like an edit
+    const TakeSnapshot snap = snapshotOf(take);
+    const std::vector<Note> loaded = readNotes(take);
+    std::vector<Note> edited = loaded;
+    for (Note n : notes) {
+        n.sel = false;
+        n.idx = n.lyricIdx = -1;
+        edited.push_back(n);
     }
-    take.sort();
+    std::vector<int> deleted;
+    trimOverlaps(edited, deleted);
+    writeNotes(take, snap, loaded, edited, deleted, velocity);
 }

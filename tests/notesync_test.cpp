@@ -189,10 +189,20 @@ int main() {
                                {1.5, 5, 62, false, 2}, {2.5, 2.7, 60, false, 3},
                                {1, 2, 64, false, 4},   {1, 3, 64, false, 5}};
         n[3].chan = 1; // another channel: left alone
-        assert(trimOverlaps(n));
-        assert(n[0].end == 2 && n[1].end == 4 && n[2].end == 5 && n[3].end == 2.7);
-        assert(n[4].end == 2 && n[5].end == 3); // starting together: left
-        assert(!trimOverlaps(n));
+        n[4].lyric = "la";
+        std::vector<int> del;
+        assert(trimOverlaps(n, del));
+        assert(n.size() == 5 && n[0].end == 2 && n[1].end == 4 && n[2].end == 5 && n[3].end == 2.7);
+        // starting together: one note, the longer, keeping the lyric; the other deleted
+        assert(n[4].end == 3 && n[4].lyric == "la" && n[4].idx == 4 && del == std::vector<int>{5});
+        assert(!trimOverlaps(n, del));
+    }
+
+    // a twin doesn't hide an overlap from the note before it
+    {
+        std::vector<Note> n = {{0, 10, 60, false, 0}, {0, 4, 60, false, 1}, {5, 8, 60, false, 2}};
+        std::vector<int> del;
+        assert(trimOverlaps(n, del) && n.size() == 2 && n[0].end == 5 && del == std::vector<int>{1});
     }
 
     // notes moved off whole ticks (a paste at the cursor, a resize onto an onset, quantising)
@@ -345,6 +355,17 @@ int main() {
         appendNotes(t, std::vector<Note>{{0.5, 0.75, 70, true, -1}}, 80);
         assert(t.notes.size() == 4 && t.notes[1].pitch == 70 && !t.notes[1].sel &&
                t.notes[1].vel == 80);
+    }
+
+    // and trimmed against the take's notes of their pitch
+    {
+        FakeTake t = song();
+        const Note first = readNotes(t)[0];
+        appendNotes(t, std::vector<Note>{{(first.start + first.end) / 2, first.end + 1, first.pitch,
+                                          false, -1}},
+                    80);
+        const std::vector<Note> n = readNotes(t);
+        assert(n.size() == 4 && n[0].end < n[1].start + 1e-9 && n[1].pitch == first.pitch);
     }
 
     printf("ok\n");

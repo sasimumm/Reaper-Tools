@@ -200,7 +200,7 @@ void commitNotes() {
         loadNotes();
         return;
     }
-    trimOverlaps(g_session.ed.notes);
+    trimOverlaps(g_session.ed.notes, g_session.ed.deleted);
     const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
     if (changes.data) {
         Undo_BeginBlock2(NULL);
