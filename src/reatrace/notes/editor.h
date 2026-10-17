@@ -67,6 +67,10 @@ class NoteEditor {
     bool mouseUp(const ViewMap &v, double x, double y, int mods);
     void cancel(); // abort the current gesture
     bool active() const { return mode != IDLE; }
+    // pressed on a note's edge, or dragging it
+    bool resizing() const {
+        return mode == RESIZE_L || mode == RESIZE_R || (mode == PENDING_DRAG && dragHit != BODY);
+    }
 
     // These return true if anything changed; deleted notes' take indices go to `deleted`.
     bool deleteSelected();

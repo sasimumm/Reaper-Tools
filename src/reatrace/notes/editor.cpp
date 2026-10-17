@@ -6,9 +6,9 @@
 #include <cctype>
 #include <span>
 
-// Hit zones from DrawScore, but only inside the note (the space around it draws): 6 px edge
-// zones resize, notes narrower than 12 px can only be moved, and a drag starts after 3 px.
-static const double EDGE = 6, MIN_EDGE_WIDTH = 12, DRAG_THRESHOLD = 3;
+// Hit zones, only inside the note (the space around it draws): 9 px edge zones resize, notes
+// narrower than 18 px can only be moved, and a drag starts after 3 px.
+static const double EDGE = 9, MIN_EDGE_WIDTH = 18, DRAG_THRESHOLD = 3;
 // Shift while moving locks to the axis the drag mostly went along once it passes this (DrawScribe).
 static const double AXIS_LOCK_THRESHOLD = 10;
 

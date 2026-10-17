@@ -463,6 +463,21 @@ int Window_TranslateAccel(MSG *msg) {
 static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
     case WM_NCHITTEST: return HTCLIENT; // otherwise SWELL turns clicks into WM_NCLBUTTONDOWN etc.
+    case WM_SETCURSOR: {
+        // a left-right arrow over a note's resize edge and while resizing
+        POINT pt;
+        GetCursorPos(&pt);
+        ScreenToClient(hwnd, &pt);
+        const NoteEditor &ed = g_session.ed;
+        const NoteEditor::Hit h = noteArea().in(pt.x, pt.y)
+                                      ? ed.hitTest(g_ui.view, pt.x, pt.y, NULL)
+                                      : NoteEditor::NONE;
+        if (ed.resizing() || (!ed.active() && (h == NoteEditor::LEFT || h == NoteEditor::RIGHT))) {
+            SetCursor(LoadCursor(NULL, IDC_SIZEWE));
+            return 1;
+        }
+        return 0;
+    }
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC hdc = BeginPaint(hwnd, &ps);
