@@ -103,7 +103,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | N | suggested notes (dashed; from the note estimator, or the lead contour, chosen in the panel), coloured by the voice they were assigned to; click one to accept it into the active voice, drag over one to draw |
 | A | accept all suggested notes in view, each into the voice it is coloured as (voice tracks are created as needed; grey ones are left) |
 | cmd+C, cmd+X | copy, cut selected notes (with their lyrics) |
-| cmd+V | after a copy here: paste the notes at the edit cursor. Once other text has been copied: paste lyrics, one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
+| cmd+V | after a copy here: paste the notes, the first starting at the edit cursor snapped like a drawn note's start and the rest the same beats after it as copied. Once other text has been copied: paste lyrics, one syllable per note (split on spaces and after hyphens) onto the selected notes, or from the selected note on |
 | cmd+D | duplicate selected notes right after the selection |
 | K | split the note under the mouse at the mouse (snapped; alt: not), or the selected notes there; with the mouse outside the notes, the selected notes at the edit cursor |
 | J | join selected notes into one (lyrics joined: `hel-` + `lo` = `hello`) |

@@ -86,7 +86,8 @@ class NoteEditor {
 
     // Editing commands; all return true if notes changed. New notes come out selected.
     std::vector<Note> copySelected() const; // as unwritten notes, lyrics and MIDI properties kept
-    // Earliest clip note starts at `at`. clip must not view `notes`, which this appends to.
+    // Earliest clip note starts at `at`, the others the same number of quarter notes (toQN) after
+    // it as before. clip must not view `notes`, which this appends to.
     void paste(std::span<const Note> clip, double at);
     bool duplicateSelected();              // right after the selection
     bool splitAt(double t, int note = -1); // that note, or selected notes spanning t

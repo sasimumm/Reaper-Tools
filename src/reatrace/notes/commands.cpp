@@ -337,7 +337,8 @@ void paste() {
         pasteLyrics(text);
         return;
     }
-    g_session.ed.paste(g_noteClip, GetCursorPosition());
+    // the first note's start snaps at the edit cursor; the rest keep their beats from it
+    g_session.ed.paste(g_noteClip, g_session.ed.snap(GetCursorPosition()));
     commitNotes();
 }
 

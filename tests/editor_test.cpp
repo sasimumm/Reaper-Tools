@@ -130,6 +130,19 @@ int main() {
         assert(near(e.notes[3].start, 4) && near(e.notes[3].end, 5));   // qn 4..5 -> 8..9
     }
 
+    // Pasting puts the earliest note at `at` and the rest the same beats after it (tempo 120
+    // until 4 s, then 60).
+    {
+        NoteEditor e;
+        e.toQN = [](double t) { return t <= 4 ? t * 2 : 8 + (t - 4); };
+        e.fromQN = [](double q) { return q <= 8 ? q / 2 : 4 + (q - 8); };
+        const std::vector<Note> clip = {{1.5, 2, 62, false, -1, "b"}, {1, 1.5, 60, false, -1, "a"}};
+        e.paste(clip, 3.5); // qn 7: +5 qn
+        assert(e.notes.size() == 2 && e.notes[1].sel && e.notes[1].lyric == "a");
+        assert(near(e.notes[1].start, 3.5) && near(e.notes[1].end, 4)); // qn 2..3 -> 7..8
+        assert(near(e.notes[0].start, 4) && near(e.notes[0].end, 5));   // qn 3..4 -> 8..9
+    }
+
     // Resizing stops at the next or previous note of the same pitch (another pitch doesn't).
     {
         NoteEditor e;

@@ -319,9 +319,10 @@ void NoteEditor::paste(std::span<const Note> clip, double at) {
     for (Note &n : notes) {
         n.sel = false;
     }
+    const double dq = toQN(at) - toQN(first);
     for (Note n : clip) {
-        n.start += at - first;
-        n.end += at - first;
+        n.start = fromQN(toQN(n.start) + dq);
+        n.end = fromQN(toQN(n.end) + dq);
         n.sel = true;
         n.idx = n.lyricIdx = -1;
         notes.push_back(n);
