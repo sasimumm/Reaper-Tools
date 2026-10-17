@@ -987,8 +987,37 @@ static NoteBox noteBox(const Note &nt) {
     return {x0, y0, x1, y1};
 }
 
+// With chord tones on: whether the note's pitch is outside the chord sounding at its start (and
+// isn't a slash chord's bass). Without a chord there, or one that can't be read, it is inside.
+static bool outsideChord(const Note &nt, std::span<const ChordSpan> spans,
+                         std::span<const std::optional<ChordTones>> tones) {
+    for (size_t i = 0; i < spans.size(); i++) {
+        const std::optional<ChordTones> &c = tones[i];
+        if (nt.start >= spans[i].start - 1e-6 && nt.start < spans[i].end - 1e-6 && c) {
+            const int pc = (nt.pitch % 12 + 12) % 12;
+            return !(c->tones >> ((pc - c->root + 12) % 12) & 1) && pc != c->bass;
+        }
+    }
+    return false;
+}
+
 // Other voices (dimmed, not editable), the edited voice's notes, their lyrics, and the marquee.
+// Notes outside the chord (chord tones on) get a light dot in their corner, the edited voice's
+// also a darker fill.
 static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
+    std::span<const ChordSpan> spans;
+    std::vector<std::optional<ChordTones>> tones;
+    if (g_settings.chordTones) {
+        spans = projectChords();
+        for (const ChordSpan &c : spans) {
+            tones.push_back(chordTones(c.name));
+        }
+    }
+    const auto outside = [&](const Note &nt) { return outsideChord(nt, spans, tones); };
+    const auto dot = [&](int x0, int y0) {
+        cv.fill(x0 + 2, y0 + 2, x0 + 5, y0 + 5, g_theme.highlight);
+    };
+
     if (g_ui.showOthers) {
         for (int v = 0; v < WINDOW_VOICES; v++) {
             if (g_ui.hiddenVoices >> v & 1) {
@@ -998,6 +1027,9 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
                 const auto [x0, y0, x1, y1] = noteBox(nt);
                 cv.rounded(x0, y0, x1, y1, g_theme.voices[idx(v)], 70);
                 cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(v)]);
+                if (outside(nt)) {
+                    dot(x0, y0);
+                }
             }
         }
     }
@@ -1009,8 +1041,12 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         const Note &nt = g_session.ed.notes[i];
         const auto [x0, y0, x1, y1] = noteBox(nt);
         const bool sel = nt.sel || static_cast<int>(i) == drawing;
-        cv.rounded(x0, y0, x1, y1, noteColour, 245);
+        const bool out = outside(nt);
+        cv.rounded(x0, y0, x1, y1, out ? mix(noteColour, g_theme.shadow, 0.45) : noteColour, 245);
         cv.roundedFrame(x0, y0, x1, y1, mix(noteColour, g_theme.shadow, 0.55));
+        if (out) {
+            dot(x0, y0);
+        }
         if (sel) {
             cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.outline, y1 - y0 > 6 ? 2 : 1);
         }

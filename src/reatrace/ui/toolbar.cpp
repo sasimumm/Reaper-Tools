@@ -113,7 +113,8 @@ std::vector<Item> items(const Layout &L) {
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
         textWidth("Ghosts") + 16);
     add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + 16);
-    add(CHORD_TONES, 0, "Chord tones", "Shade the notes of each chord in the chords lane (C)",
+    add(CHORD_TONES, 0, "Chord tones",
+        "Shade each chord's notes under it and mark notes outside it (C)",
         textWidth("Chord tones") + 16);
     gap();
 
