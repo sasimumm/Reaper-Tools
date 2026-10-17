@@ -1,4 +1,6 @@
-// The settings panel: widgets, presets, playback speed and the audio/notes balance.
+// The side panel: the settings (S) about the spectrogram and the guides, or the tracks (M) with
+// the analysis, playback and window sections; widgets, presets, playback speed and the audio/notes
+// balance.
 #pragma once
 
 #include "state.h"
@@ -15,6 +17,6 @@ int speedIndex();
 void setSpeed(int index);
 // A mouse press (down) or drag in the panel at client point x, y.
 void panelMouse(int x, int y, bool down);
-void panelDoubleClick(int y); // resets a slider to its default
+void panelDoubleClick(int x, int y); // resets a slider to its default
 void drawPanel(Canvas &cv, HDC dc);
 void finishPanelDrag(); // mouse up: recomputes the analysis if an analysis slider moved

@@ -14,7 +14,6 @@
 #include "ui/panel.h"
 #include "ui/theme.h"
 #include "ui/toolbar.h"
-#include "ui/tracks.h"
 
 static const int GUIDE_THICKNESS = 3; // overtone hover marks, points
 
@@ -1428,9 +1427,7 @@ void paint(HDC hdc) {
 
     cv.clip = {0, 0, c.r, c.b};
     syncPlayback(); // what the panel and the toolbar show
-    if (L.panelShown && g_ui.tracks) {
-        drawTracks(cv, dc);
-    } else if (L.panelShown) {
+    if (L.panelShown) {
         drawPanel(cv, dc);
     }
     drawToolbar(cv, dc, L);

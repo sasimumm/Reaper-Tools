@@ -1,5 +1,6 @@
-// The settings panel on the right of the window (its widget table, drawing and mouse handling),
-// the presets, and the playback speed and audio/notes balance the toolbar also shows.
+// The side panel on the right of the window: the settings, or the tracks with the analysis,
+// playback and window sections (its widget table, drawing and mouse handling), the presets, and
+// the playback speed and audio/notes balance the toolbar also shows.
 #include "ui/panel.h"
 
 #include "analysis.h"
@@ -7,6 +8,7 @@
 #include "notes/commands.h"
 #include "settings.h"
 #include "ui/theme.h"
+#include "ui/tracks.h"
 
 // CH_*; centre: mid minus side
 static const char *const CHANNELS[] = {"Mix", "Left", "Right", "Side", "Centre"};
@@ -241,15 +243,21 @@ static bool folded(const char *header) {
     return std::find(g_folded.begin(), g_folded.end(), header) != g_folded.end();
 }
 
-// The widgets shown: every header, and what's under the unfolded ones.
+// The sections shown below the tracks on the tracks panel (M); the settings panel has the rest,
+// about the spectrogram and what is drawn over it.
+static bool tracksSection(std::string_view header) {
+    return header == "Analysis" || header == "Playback" || header == "Window";
+}
+
+// The widgets shown on this panel: every header, and what's under the unfolded ones.
 static std::vector<Widget> widgets() {
     std::vector<Widget> out;
     bool hide = false;
     for (const Widget &w : allWidgets()) {
         if (w.type == W_HEADER) {
-            hide = folded(w.label);
+            hide = folded(w.label) || tracksSection(w.label) != g_ui.tracks;
         }
-        if (w.type == W_HEADER || !hide) {
+        if ((w.type == W_HEADER && tracksSection(w.label) == g_ui.tracks) || !hide) {
             out.push_back(w);
         }
     }
@@ -297,24 +305,35 @@ static int g_panelScroll; // points the panel is scrolled down
 
 // The height of the shown widgets with the space around them, in points.
 static int panelContentHeight() {
-    int h = 16;
+    int h = 16 + (g_ui.tracks ? tracksHeight() : 0);
     for (const Widget &w : widgets()) {
         h += widgetHeight(w.type);
     }
     return h + 12;
 }
 
-void scrollPanel(int dy) {
+// Where the panel's content starts (the tracks, on the tracks panel), and its widgets, in client
+// points.
+static int contentTop() { return panelArea().t + PANEL_TOP - g_panelScroll; }
+static int widgetsTop() { return contentTop() + (g_ui.tracks ? tracksHeight() : 0); }
+
+// Keeps the scroll within the content, which tracks coming and going or switching panels changes.
+static void clampScroll() {
     const Rect p = panelArea();
     const int maxScroll = panelContentHeight() - (p.b - p.t);
-    g_panelScroll = std::max(0, std::min(g_panelScroll + dy, maxScroll));
+    g_panelScroll = std::max(0, std::min(g_panelScroll, maxScroll));
+}
+
+void scrollPanel(int dy) {
+    g_panelScroll += dy;
+    clampScroll();
     redraw();
 }
 
 // The index into widgets() of the one at client y, -1 if none.
 static int widgetAt(int y) {
     const std::vector<Widget> ws = widgets();
-    int top = panelArea().t + PANEL_TOP - g_panelScroll;
+    int top = widgetsTop();
     for (size_t i = 0; i < ws.size(); i++) {
         const int h = widgetHeight(ws[i].type);
         if (y >= top && y < top + h) {
@@ -521,7 +540,10 @@ static double sliderDefault(const Widget &w) {
     return 0;
 }
 
-void panelDoubleClick(int y) {
+void panelDoubleClick(int x, int y) {
+    if (g_ui.tracks && tracksMouse(x, y, contentTop(), true)) {
+        return; // the second click of a quick double click on a button
+    }
     const int i = widgetAt(y);
     if (i < 0) {
         return;
@@ -543,6 +565,9 @@ static int optionAt(const Widget &w, int x, const Rect &p) {
 }
 
 void panelMouse(int x, int y, bool down) {
+    if (g_ui.tracks && tracksMouse(x, y, contentTop(), down)) {
+        return;
+    }
     const Rect p = panelArea();
     const std::vector<Widget> ws = widgets();
     if (down) {
@@ -611,8 +636,12 @@ void drawPanel(Canvas &cv, HDC dc) {
     cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
     cv.fill(p.l, p.t, p.l + 1, p.b, g_theme.separator);
 
+    clampScroll(); // not scrollPanel(): its redraw() would paint again, endlessly
+    if (g_ui.tracks) {
+        drawTrackRows(cv, dc, contentTop());
+    }
     const std::vector<Widget> ws = widgets();
-    int top = p.t + PANEL_TOP - g_panelScroll;
+    int top = widgetsTop();
     char buf[64];
     const int l = p.l + PANEL_MARGIN, r = p.r - PANEL_MARGIN;
     for (const Widget &w : ws) {
@@ -675,6 +704,7 @@ void syncPlayback() {
 }
 
 void finishPanelDrag() {
+    finishTracksDrag();
     if (g_ui.analysisDirty) {
         requestAnalysis(false);
     }

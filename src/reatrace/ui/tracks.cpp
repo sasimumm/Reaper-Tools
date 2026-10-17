@@ -4,18 +4,19 @@
 
 #include "index.h"
 
-static const int ROW_H = 24, TOP = 8, MARGIN = 12, BUTTON_W = 22, BUTTON_GAP = 4;
+static const int ROW_H = 24, BELOW = 8, MARGIN = 12, BUTTON_W = 22, BUTTON_GAP = 4;
 static const int INDENT = 12;                            // points per folder level
 static const RGB MUTE_ON = 0xd84a4a, SOLO_ON = 0xe0c040; // REAPER's red mute, yellow solo
 
 enum Button { NO_BUTTON, MUTE, SOLO };
 static Button g_drag = NO_BUTTON; // the kind of button pressed; the drag sets it to g_dragOn
 static bool g_dragOn;
-static int g_scroll; // points the list is scrolled down
 
-// The track row at client y, -1 if none.
-static int rowAt(int y) {
-    const int dy = y - (panelArea().t + TOP) + g_scroll;
+int tracksHeight() { return CountTracks(NULL) * ROW_H + BELOW; }
+
+// The track row at client y, the rows starting at top; -1 if none.
+static int rowAt(int y, int top) {
+    const int dy = y - top;
     const int i = dy >= 0 ? dy / ROW_H : -1;
     return i < CountTracks(NULL) ? i : -1;
 }
@@ -40,9 +41,12 @@ static void setOn(MediaTrack *tr, Button b, bool on) {
     }
 }
 
-void tracksMouse(int x, int y, bool down) {
-    const int row = rowAt(y);
+bool tracksMouse(int x, int y, int top, bool down) {
+    const int row = rowAt(y, top);
     if (down) {
+        if (y < top || y >= top + tracksHeight()) {
+            return false; // below the rows: the panel's sections
+        }
         g_drag = NO_BUTTON;
         for (const Button b : {MUTE, SOLO}) {
             const auto [l, r] = buttonSpan(b);
@@ -53,40 +57,28 @@ void tracksMouse(int x, int y, bool down) {
         }
     }
     // dragging goes by row only, so a drag that drifts sideways keeps setting the same column
-    if (g_drag == NO_BUTTON || row < 0) {
-        return;
+    if (g_drag == NO_BUTTON) {
+        return down; // a press on a row's name: nothing to do, but not the panel's either
     }
-    MediaTrack *tr = GetTrack(NULL, row);
-    if (isOn(tr, g_drag) != g_dragOn) {
-        setOn(tr, g_drag, g_dragOn);
-        redraw();
+    if (row >= 0) {
+        MediaTrack *tr = GetTrack(NULL, row);
+        if (isOn(tr, g_drag) != g_dragOn) {
+            setOn(tr, g_drag, g_dragOn);
+            redraw();
+        }
     }
+    return true;
 }
 
 void finishTracksDrag() { g_drag = NO_BUTTON; }
 
-void scrollTracks(int dy) {
+void drawTrackRows(Canvas &cv, HDC dc, int rowsTop) {
     const Rect p = panelArea();
-    const int maxScroll = std::max(0, CountTracks(NULL) * ROW_H + 2 * TOP - (p.b - p.t));
-    g_scroll = std::max(0, std::min(g_scroll + dy, maxScroll));
-    redraw();
-}
-
-void drawTracks(Canvas &cv, HDC dc) {
-    const Rect p = panelArea();
-    if (p.r <= p.l) {
-        return;
-    }
-    cv.clip = p;
-    cv.fill(p.l, p.t, p.r, p.b, g_theme.panel);
-    cv.fill(p.l, p.t, p.l + 1, p.b, g_theme.separator);
-    scrollTracks(0); // stay within the list as tracks come and go
-
     int depth = 0; // folder level: a track's I_FOLDERDEPTH applies to the tracks after it
     const int count = CountTracks(NULL);
     for (int i = 0; i < count; i++) {
         MediaTrack *tr = GetTrack(NULL, i);
-        const int top = p.t + TOP + i * ROW_H - g_scroll;
+        const int top = rowsTop + i * ROW_H;
         const int l = p.l + MARGIN + depth * INDENT;
         depth = std::max(0, depth + static_cast<int>(GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")));
         if (top + ROW_H < p.t || top > p.b) {
