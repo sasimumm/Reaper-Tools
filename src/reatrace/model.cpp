@@ -359,6 +359,7 @@ bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, i
         }
         return true;
     };
+    const size_t count = notes.size();
     std::vector<std::pair<size_t, int>> bases; // (note, direction), chosen before adding any
     for (size_t i = 0; i < notes.size(); i++) {
         for (const int dir : {1, -1}) {
@@ -388,6 +389,10 @@ bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, i
             notes.push_back(c);
             any = true;
         }
+    }
+    // the added notes become the selection, so the next intervals go from them
+    for (size_t i = 0; any && i < count; i++) {
+        notes[i].sel = false;
     }
     return any;
 }

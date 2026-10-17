@@ -170,7 +170,8 @@ int main() {
         assert(intervalPitch(60, {10, IQ_MAJOR}, C, major) == 76);
         assert(intervalPitch(125, {3, IQ_MAJOR}, C, major) == -1);
 
-        // a third, then another stacks on the new top note; below goes from the lowest
+        // a third, then another stacks on the new note, which is the selection now; below goes from
+        // the lowest selected
         const auto parsed = [](const char *text) {
             const std::optional<IntervalInput> r = parseIntervals(text);
             assert(r);
@@ -178,11 +179,12 @@ int main() {
         };
         std::vector<Note> ns = {{1, 2, 60, true, 5, "la"}, {3, 4, 62, false, 6}};
         assert(addIntervals(ns, parsed("3"), C, major));
-        assert(ns.size() == 3 && ns[2].pitch == 64 && ns[2].sel && ns[2].idx == -1 &&
+        assert(ns.size() == 3 && ns[2].pitch == 64 && ns[2].sel && !ns[0].sel && ns[2].idx == -1 &&
                ns[2].lyric.empty() && ns[2].start == 1 && ns[2].end == 2);
         assert(addIntervals(ns, parsed("3,-4"), C, major));
-        assert(ns.size() == 5 && ns[3].pitch == 55 && ns[4].pitch == 67);
-        assert(addIntervals(ns, parsed("-4"), C, major) && ns.back().pitch == 50);
+        assert(ns.size() == 5 && ns[3].pitch == 67 && ns[4].pitch == 59 && !ns[2].sel);
+        assert(ns[3].sel && ns[4].sel);
+        assert(addIntervals(ns, parsed("-4"), C, major) && ns.back().pitch == 53);
         std::vector<Note> tr = {{1, 2, 60, true, 5}, {3, 4, 62, false, 6}};
         assert(addIntervals(tr, parsed("t3"), C, major) && tr[0].pitch == 64 && tr[1].pitch == 62 &&
                tr.size() == 2);

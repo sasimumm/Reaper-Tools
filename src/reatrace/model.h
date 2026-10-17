@@ -130,9 +130,9 @@ std::optional<IntervalInput> parseIntervals(std::string_view text);
 // as MIDI_GetScale gives it; 0 means major. A pitch outside the scale keeps its distance above the
 // scale note below it.
 int intervalPitch(int pitch, Interval iv, int root, int scale);
-// Adds each interval as a selected note above the highest selected note starting at a time (below
-// the lowest, for negative ones), as long as that note; or transposes the selected notes, unless
-// one would leave 0..127. True if notes changed.
+// Adds each interval as a note above the highest selected note starting at a time (below the
+// lowest, for negative ones), as long as that note, and selects just the added notes; or
+// transposes the selected notes, unless one would leave 0..127. True if notes changed.
 bool addIntervals(std::vector<Note> &notes, const IntervalInput &in, int root, int scale);
 
 // A chord name's notes, as ReaChords and Logic write them: C, Cm, C7, Cmaj7, Cm7b5, Cdim7, C+,

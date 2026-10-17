@@ -88,7 +88,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | shift while moving | lock the move to time or pitch, whichever the drag mostly went along |
 | click, cmd+click, shift+drag | select, toggle selection, marquee select |
 | cmd+drag a note | copy the selected notes (and that one) and move the copies, by whole grid steps in beats so they keep their place in the bar across tempo changes (no onset snapping; snap off or alt: freely) |
-| shift+I | add intervals, as in Dorico: type `3` (a third above, in the key), `-3` (below), `m3`, `M6`, `P5`, `aug4`, `dim5`, several as `3,5`, then Enter. Above goes from the highest selected note at each time, below from the lowest, so `3` again stacks another third. `t3` or `t-m2` transposes the selected notes instead. The key is the one shown on the keyboard (C major without one) |
+| shift+I | add intervals, as in Dorico: type `3` (a third above, in the key), `-3` (below), `m3`, `M6`, `P5`, `aug4`, `dim5`, several as `3,5`, then Enter. Above goes from the highest selected note at each time, below from the lowest; the added notes become the selection, so `3` again stacks another third. `t3` or `t-m2` transposes the selected notes instead. The key is the one shown on the keyboard (C major without one) |
 | right-click, Delete/Backspace | delete note / selected notes |
 | hover | overtone marks (1–8) for the pitch under the mouse, and the octave check: level at the pitch one octave, a 12th and two octaves below; orange means the real note is probably lower |
 | alt while dragging | no snapping |
