@@ -438,6 +438,7 @@ static ChordSource *sourceOf(MediaItem *item) {
 static struct {
     HWND hwnd = NULL;
     MediaItem *item = NULL;
+    ChordSource *src = NULL;       // the item's chord source then: not another take's
     double qn = 0;                 // the chord being typed, QN from the source start
     int originX = 0, originY = 0;  // item view's (0,0) in arrange client coordinates
     double drawStart = 0, pps = 1; // item view's mapping at the click
@@ -472,6 +473,7 @@ static void beginEdit(MediaItem *item, double qn) {
     const int x0 = static_cast<int>(lround(x(t)));
     const int w = static_cast<int>(std::clamp(x(next) - x(t) - 2, 60.0, 240.0));
     g_ce.item = item;
+    g_ce.src = src;
     g_ce.qn = qn;
 
     // SWELL creates controls in the parent set here; it is reset afterwards
@@ -534,8 +536,9 @@ static void endEdit(bool commit) {
     g_ce.hwnd = NULL;
     SetFocus(arrangeHwnd());
 
-    ChordSource *src = sourceOf(g_ce.item); // the item may have gone meanwhile
-    if (!commit || !src) {
+    // the item may have gone meanwhile, or show another take
+    ChordSource *src = sourceOf(g_ce.item);
+    if (!commit || !src || src != g_ce.src) {
         return;
     }
     std::string name = buf;
