@@ -378,7 +378,6 @@ static void install(const ChannelCache &c, const Estimate &e) {
         autoCalibrate(*g_analysis.spec, g_settings.rp);
         g_autoOnInstall = false;
     }
-    g_ui.analysisDirty = false;
     updateValues();
 }
 
@@ -392,6 +391,9 @@ void requestAnalysis(bool autoCalibrateAfter) {
         return;
     }
     g_autoOnInstall |= autoCalibrateAfter;
+    // this request is for the settings as they are now; a result that finishes later from an
+    // older request leaves a slider moved since still pending
+    g_ui.analysisDirty = false;
     g_settings.np.binsPerOctave = 12 * static_cast<int>(lround(g_settings.binsPerSemitone));
     cancelJob();
     g_analysis.error.clear();
@@ -450,7 +452,6 @@ void requestAnalysis(bool autoCalibrateAfter) {
     Job *j = job.get();
     job->thread = std::thread([j] { j->run(); });
     g_job = std::move(job);
-    g_ui.analysisDirty = false;
     redraw();
 }
 
