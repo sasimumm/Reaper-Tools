@@ -436,6 +436,10 @@ bool currentKey(int *root, int *scale, std::string *name) {
     return true;
 }
 
+// The take as the intervals field opened on it: if it is reloaded meanwhile (edited elsewhere,
+// another take), the selection may be other notes, so nothing is added.
+static TakeSnapshot g_intervalsSnapshot;
+
 void beginIntervals() {
     const int first = firstSelected();
     if (first < 0) {
@@ -458,6 +462,7 @@ void beginIntervals() {
     const int y = static_cast<int>(lround(g_ui.view.y(nt.pitch - 0.5)));
     SetWindowPos(g_ui.intervals, NULL, x, y + 1, 120, 20, SWP_NOZORDER | SWP_NOACTIVATE);
     SetWindowText(g_ui.intervals, "");
+    g_intervalsSnapshot = g_session.snapshot;
     ShowWindow(g_ui.intervals, SW_SHOW);
     SetFocus(g_ui.intervals);
     redraw();
@@ -476,7 +481,7 @@ void endIntervals(bool commit) {
     DestroyWindow(g_ui.intervals);
     g_ui.intervals = NULL;
     SetFocus(g_ui.hwnd);
-    if (commit) {
+    if (commit && g_session.snapshot == g_intervalsSnapshot) {
         // the key (C major without one); diatonic intervals count its steps
         int root = 0, scale = 0;
         if (!currentKey(&root, &scale, NULL)) {
