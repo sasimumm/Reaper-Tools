@@ -356,6 +356,10 @@ void paste() {
 // The selected notes into voice v at the same times (lyrics and MIDI properties kept), as one
 // undo point; v becomes the edited voice, with them selected.
 void moveSelectedToVoice(int v) {
+    if (notesStale()) { // the selection may no longer be what the take holds
+        loadNotes();
+        return;
+    }
     const std::vector<Note> clip = g_session.ed.copySelected();
     if (v == g_session.voice || clip.empty()) {
         return;
@@ -366,7 +370,10 @@ void moveSelectedToVoice(int v) {
     }
     Undo_BeginBlock2(NULL);
     g_session.ed.deleteSelected();
-    commitNotes();
+    if (!commitNotes()) { // not deleted here: copying them would duplicate them
+        Undo_EndBlock2(NULL, "ReaTrace: move notes to another voice", UNDO_STATE_ITEMS);
+        return;
+    }
     selectVoice(v);
     g_session.ed.paste(clip, first);
     commitNotes();
