@@ -217,6 +217,8 @@ int main() {
         assert(tones("Cadd9").tones == bits({0, 2, 4, 7}));
         assert(tones("G9").tones == bits({0, 2, 4, 7, 10}));
         assert(tones("Cm(maj7)").tones == bits({0, 3, 7, 11}));
+        assert(tones("Cmaj").tones == bits({0, 4, 7}) && tones("Cmaj6").tones == bits({0, 4, 7, 9}));
+        assert(tones("C\u0394").tones == bits({0, 4, 7, 11}));
         assert(tones("C5").tones == bits({0, 7}));
         const ChordTones slash = tones("C/E");
         assert(slash.root == 0 && slash.bass == 4 && slash.tones == bits({0, 4, 7}));

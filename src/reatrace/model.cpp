@@ -461,9 +461,10 @@ std::optional<ChordTones> chordTones(std::string_view name) {
         } else if (take("maj9") || take("M9")) {
             seventh = 11;
             add({2});
-        } else if (take("maj7") || take("M7") || take("maj") || take("\u0394")) { // triangle
+        } else if (take("maj7") || take("M7") || take("\u0394")) { // triangle
             take("7");
             seventh = 11;
+        } else if (take("maj")) { // just major: Cmaj, Cmaj6
         } else if (take("dim7") || take("\u00B07") || take("o7")) { // degree sign
             third = 3;
             fifth = 6;
