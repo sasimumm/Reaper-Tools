@@ -54,11 +54,13 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
   can be renamed; they're found by position (directly below the audio track) and a tag, not name.
 - Suggestions come from a note estimator (harmonic-template NMF on the spectrogram, confirmed by
   basic-pitch), assigned to voices; accept them one by one or all in view.
-- Reference: after playing a rough take in on a MIDI keyboard, select its track (or a folder of
-  tracks) in REAPER and click **Reference** in the toolbar. Its notes then show as suggestions,
-  the same as the estimator's, to accept or redraw for the final pass. One track suggests for the
-  edited voice; with several, the first goes to the lead, the next to voice 2 and so on. Clicking
-  Reference again with other tracks selected switches to those.
+- Reference: after playing a rough take in on a MIDI keyboard, press **G** (guide) on its row in
+  the tracks panel (M), or select its track (or a folder of tracks) in REAPER and click
+  **Reference** in the toolbar. Its notes then show as suggestions, the same as the estimator's,
+  to accept or redraw for the final pass. One track suggests for the edited voice; with several,
+  the first goes to the lead, the next to voice 2 and so on (G adds a track after the others).
+  Clicking Reference again with other tracks selected switches to those; turning the last G off
+  goes back to the estimator.
 - Lyrics are stored as MIDI lyric events at each note's start, so they also show in REAPER's
   notation editor and lyrics view.
 - Settings are remembered per audio item; "Save as default" makes the current ones the starting
@@ -109,7 +111,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | K | split the note under the mouse at the mouse (snapped; alt: not), or the selected notes there; with the mouse outside the notes, the selected notes at the edit cursor |
 | J | join selected notes into one (lyrics joined: `hel-` + `lo` = `hello`) |
 | S | settings panel: the spectrogram's display and the suggestions and guides (its sections fold at their headers) |
-| M | tracks panel, in the settings panel's place: every project track with mute and solo buttons (press one and drag up or down over the others to set them the same way, as in REAPER), then the analysis, playback and window sections |
+| M | tracks panel, in the settings panel's place: every project track with mute and solo buttons, and on MIDI tracks a guide button making them the reference (press one and drag up or down over the others to set them the same way, as in REAPER), then the analysis, playback and window sections |
 | toolbar | voice (shift-click a voice to hide it), suggestions and their source, contour/ghosts/explain, what you hear and the speed; ? shows every shortcut |
 | D | dock in REAPER's docker / float (remembered) |
 | L | link the visible time range to REAPER's arrange view (both ways) |

@@ -273,13 +273,10 @@ static bool hasMIDI(MediaTrack *tr) {
     return false;
 }
 
+static std::vector<MediaTrack *> voiceTracks();
+
 bool pickReference() {
-    std::vector<MediaTrack *> voices;
-    for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (MediaItem *item = VoiceItem(g_session.audio, v, false)) {
-            voices.push_back(GetMediaItem_Track(item));
-        }
-    }
+    const std::vector<MediaTrack *> voices = voiceTracks();
     std::string ref;
     int inside = 0; // folder depth inside a selected folder
     for (int i = 0; i < CountTracks(NULL); i++) {
@@ -297,6 +294,58 @@ bool pickReference() {
     }
     g_settings.reference = ref;
     return true;
+}
+
+// The voice tracks of the audio item, which can't be its reference.
+static std::vector<MediaTrack *> voiceTracks() {
+    std::vector<MediaTrack *> voices;
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        if (MediaItem *item = VoiceItem(g_session.audio, v, false)) {
+            voices.push_back(GetMediaItem_Track(item));
+        }
+    }
+    return voices;
+}
+
+bool canReference(MediaTrack *tr) {
+    const std::vector<MediaTrack *> voices = voiceTracks();
+    return hasMIDI(tr) && std::find(voices.begin(), voices.end(), tr) == voices.end();
+}
+
+bool isReference(MediaTrack *tr) {
+    const std::string guid = trackGUID(tr);
+    std::istringstream guids(g_settings.reference);
+    for (std::string g; guids >> g;) {
+        if (g == guid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void setReference(MediaTrack *tr, bool on) {
+    if (isReference(tr) == on) {
+        return;
+    }
+    const std::string guid = trackGUID(tr);
+    std::string ref;
+    std::istringstream guids(g_settings.reference);
+    for (std::string g; guids >> g;) {
+        if (g != guid) {
+            ref += (ref.empty() ? "" : " ") + g;
+        }
+    }
+    if (on) { // after the others: the voices they suggest for stay put
+        ref += (ref.empty() ? "" : " ") + guid;
+    }
+    g_settings.reference = ref;
+    // suggest from the reference while it has tracks, else from the estimator again
+    if (!ref.empty()) {
+        g_settings.suggestFrom = FROM_REFERENCE;
+    } else if (g_settings.suggestFrom == FROM_REFERENCE) {
+        g_settings.suggestFrom = FROM_ESTIMATOR;
+    }
+    loadReference();
 }
 
 void loadReference() {

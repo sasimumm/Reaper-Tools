@@ -19,3 +19,8 @@ void insertIntoVoice(int v, std::span<const Note> notes);
 bool pickReference();
 // The reference tracks' notes over the audio item into the session, when suggesting from them.
 void loadReference();
+bool canReference(MediaTrack *tr); // has MIDI and isn't one of the item's voice tracks
+bool isReference(MediaTrack *tr);
+// Adds the track to the reference (last) or takes it out, suggesting from the reference while it
+// has any tracks.
+void setReference(MediaTrack *tr, bool on);
