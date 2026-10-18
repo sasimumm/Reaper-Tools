@@ -477,6 +477,7 @@ static bool isOurKey(int key, int flags) {
     case 'K':
     case 'J':
     case 'R':
+    case 'U':
     case 'B': return !cmd && !(flags & (FALT | FSHIFT));
     }
     return false;
