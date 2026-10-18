@@ -5,35 +5,43 @@
 #include "index.h"
 #include "notes/takesync.h"
 
-// The note being typed into, by start (seconds) and pitch: indices change when notes are reloaded.
+#include <tuple>
+
+// The note being typed into, by start (seconds), channel and pitch: indices change when notes are
+// reloaded. And the take as it was then: if it is reloaded meanwhile (edited elsewhere, another
+// take), the typed text is dropped rather than written over what changed.
 static double g_editStart;
-static int g_editPitch;
+static int g_editChan, g_editPitch;
+static TakeSnapshot g_editSnapshot;
 
 // The edit field: at least this wide and this high, in pixels.
 static const int EDIT_MIN_WIDTH = 90, EDIT_HEIGHT = 20;
 
 // --- lyrics ------------------------------------------------------------------------------
 
-// The note starting at `start` (within a microsecond) with this pitch, or -1.
-static int findNote(double start, int pitch) {
+// The note starting at `start` (within a microsecond) with this channel and pitch, or -1.
+static int findNote(double start, int chan, int pitch) {
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &n = g_session.ed.notes[i];
-        if (fabs(n.start - start) < 1e-6 && n.pitch == pitch) {
+        if (fabs(n.start - start) < 1e-6 && n.chan == chan && n.pitch == pitch) {
             return static_cast<int>(i);
         }
     }
     return -1;
 }
 
-// The note after (dir > 0) or before (dir < 0) note i in time; same-start notes ordered by pitch.
+// Notes in lyric order: by start, then pitch, then channel.
+static bool lyricOrder(const Note &x, const Note &y) {
+    return std::tie(x.start, x.pitch, x.chan) < std::tie(y.start, y.pitch, y.chan);
+}
+
+// The note after (dir > 0) or before (dir < 0) note i in lyric order.
 static int neighbourNote(int i, int dir) {
     const Note &c = g_session.ed.notes[idx(i)];
     int best = -1;
     for (size_t j = 0; j < g_session.ed.notes.size(); j++) {
         const Note &o = g_session.ed.notes[j];
-        const bool after = o.start > c.start || (o.start == c.start && o.pitch > c.pitch);
-        const bool before = o.start < c.start || (o.start == c.start && o.pitch < c.pitch);
-        if (static_cast<int>(j) == i || (dir > 0 ? !after : !before)) {
+        if (static_cast<int>(j) == i || !(dir > 0 ? lyricOrder(c, o) : lyricOrder(o, c))) {
             continue;
         }
         if (best < 0) {
@@ -41,13 +49,7 @@ static int neighbourNote(int i, int dir) {
             continue;
         }
         const Note &b = g_session.ed.notes[idx(best)];
-        bool closer = false;
-        if (dir > 0) {
-            closer = o.start < b.start || (o.start == b.start && o.pitch < b.pitch);
-        } else {
-            closer = o.start > b.start || (o.start == b.start && o.pitch > b.pitch);
-        }
-        if (closer) {
+        if (dir > 0 ? lyricOrder(o, b) : lyricOrder(b, o)) {
             best = static_cast<int>(j);
         }
     }
@@ -56,7 +58,7 @@ static int neighbourNote(int i, int dir) {
 
 // Keeps the edit field just below its note's row, as wide as the note.
 void placeEdit() {
-    const int i = findNote(g_editStart, g_editPitch);
+    const int i = findNote(g_editStart, g_editChan, g_editPitch);
     if (!g_ui.edit || i < 0) {
         return;
     }
@@ -95,7 +97,9 @@ void beginLyric(int i) {
     }
     g_session.ed.notes[idx(i)].sel = true;
     g_editStart = nt.start;
+    g_editChan = nt.chan;
     g_editPitch = nt.pitch;
+    g_editSnapshot = g_session.snapshot;
 
     if (!g_ui.edit) {
         // SWELL creates controls in the window set as current parent
@@ -136,8 +140,9 @@ void endLyric(bool commit, int dir) {
     g_ui.edit = NULL;
     SetFocus(g_ui.hwnd);
 
-    int i = findNote(g_editStart, g_editPitch);
-    if (i < 0) {
+    int i = findNote(g_editStart, g_editChan, g_editPitch);
+    if (i < 0 || g_session.snapshot != g_editSnapshot) {
+        redraw();
         return;
     }
     const std::string text = trimmed(buf);
@@ -145,9 +150,10 @@ void endLyric(bool commit, int dir) {
     // the next note by start and pitch, as committing reloads the notes
     const int next = dir ? neighbourNote(i, dir) : -1;
     double nextStart = 0;
-    int nextPitch = -1;
+    int nextChan = 0, nextPitch = -1;
     if (next >= 0) {
         nextStart = g_session.ed.notes[idx(next)].start;
+        nextChan = g_session.ed.notes[idx(next)].chan;
         nextPitch = g_session.ed.notes[idx(next)].pitch;
     }
 
@@ -156,7 +162,7 @@ void endLyric(bool commit, int dir) {
         commitNotes();
     }
     if (nextPitch >= 0) {
-        beginLyric(findNote(nextStart, nextPitch));
+        beginLyric(findNote(nextStart, nextChan, nextPitch));
     }
     redraw();
 }
@@ -185,14 +191,13 @@ void pasteLyrics(const std::string &text) {
         return;
     }
 
-    // note indices in time order, same-start notes by pitch
+    // note indices in lyric order
     std::vector<int> order(g_session.ed.notes.size());
     for (size_t i = 0; i < order.size(); i++) {
         order[i] = static_cast<int>(i);
     }
     std::sort(order.begin(), order.end(), [](int a, int b) {
-        const Note &x = g_session.ed.notes[idx(a)], &y = g_session.ed.notes[idx(b)];
-        return x.start < y.start || (x.start == y.start && x.pitch < y.pitch);
+        return lyricOrder(g_session.ed.notes[idx(a)], g_session.ed.notes[idx(b)]);
     });
 
     int selected = 0;
