@@ -560,6 +560,9 @@ static std::string hoverHint(const Layout &L) {
                "t3: transpose  ·  Enter: add  ·  Esc: cancel";
     }
     const int x = g_ui.mouseX, y = g_ui.mouseY;
+    if (g_ui.snapChip.in(x, y)) {
+        return "Click: snap mode, grid size and triplets  ·  G: cycle the mode";
+    }
     static const std::array<const char *, WINDOW_VOICES> VOICE_NAMES = {
         "Lead", "voice 2", "voice 3", "voice 4"
     };

@@ -110,7 +110,7 @@ as `UserPlugins/reatrace/nmp.mlmodelc`.
 | J | join selected notes into one (lyrics joined: `hel-` + `lo` = `hello`) |
 | S | settings panel: the spectrogram's display and the suggestions and guides (its sections fold at their headers) |
 | M | tracks panel, in the settings panel's place: every project track with mute and solo buttons (press one and drag up or down over the others to set them the same way, as in REAPER), then the analysis, playback and window sections |
-| toolbar | voice (shift-click a voice to hide it), snap, suggestions and their source, contour/ghosts/explain, what you hear and the speed; ? shows every shortcut |
+| toolbar | voice (shift-click a voice to hide it), suggestions and their source, contour/ghosts/explain, what you hear and the speed; ? shows every shortcut |
 | D | dock in REAPER's docker / float (remembered) |
 | L | link the visible time range to REAPER's arrange view (both ways) |
 | 1–4 | edit voice 1 (lead) to 4; the other voices are shown dimmed |

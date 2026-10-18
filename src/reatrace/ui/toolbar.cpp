@@ -4,7 +4,6 @@
 
 #include <span>
 
-#include "notes/commands.h"
 #include "notes/takesync.h"
 #include "playback/isolate.h"
 #include "ui/panel.h"
@@ -16,7 +15,6 @@ namespace {
 enum Kind {
     LABEL,
     VOICE,
-    SNAP,
     SUGGEST,
     SUGGEST_FROM,
     CONTOUR,
@@ -95,15 +93,6 @@ std::vector<Item> items(const Layout &L) {
     }
     gap();
 
-    static const char *const SNAPS[] = {"Off", "Onsets", "Grid"};
-    static const char *const SNAP_TIPS[] = {
-        "No snapping (G cycles)", "Snap to onsets and pitch changes within 30 ms (G)",
-        "Snap to the tempo grid (G)"
-    };
-    add(LABEL, 0, "SNAP", "", 32);
-    segment(SNAP, SNAPS, SNAP_TIPS);
-    gap();
-
     add(SUGGEST, 0, "Suggestions", "Show suggested notes (N)  ·  A: accept all in view",
         textWidth("Suggestions") + PAD);
     static const char *const FROM[] = {"Estimator", "Lead contour", "Reference"};
@@ -159,7 +148,6 @@ std::vector<Item> items(const Layout &L) {
 bool isOn(const Item &it) {
     switch (it.kind) {
     case VOICE: return it.arg == g_session.voice;
-    case SNAP: return it.arg == g_settings.snapMode;
     case SUGGEST: return g_settings.suggest;
     case SUGGEST_FROM: return it.arg == g_settings.suggestFrom;
     case CONTOUR: return g_settings.showContour;
@@ -222,7 +210,6 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             }
             break;
         }
-        case SNAP:
         case SUGGEST_FROM:
         case LISTEN:
         case SPEED: {
@@ -277,10 +264,6 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
         } else {
             selectVoice(it->arg);
         }
-        break;
-    case SNAP:
-        g_settings.snapMode = it->arg;
-        setupEditorSnap();
         break;
     case SUGGEST: g_settings.suggest = !g_settings.suggest; break;
     case SUGGEST_FROM:
