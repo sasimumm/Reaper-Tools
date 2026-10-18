@@ -187,12 +187,14 @@ int main() {
                                {1.5, 5, 62, false, 2}, {2.5, 2.7, 60, false, 3},
                                {1, 2, 64, false, 4},   {1, 3, 64, false, 5}};
         n[3].chan = 1; // another channel: left alone
-        n[4].lyric = "la";
+        n[5].lyric = "la"; // on the dropped twin: the kept one takes it
+        n[5].lyricMuted = true;
         std::vector<int> del;
         assert(trimOverlaps(n, del, {}));
         assert(n.size() == 5 && n[0].end == 2 && n[1].end == 4 && n[2].end == 5 && n[3].end == 2.7);
         // starting together: one note, the longer, keeping the lyric; the other deleted
-        assert(n[4].end == 3 && n[4].lyric == "la" && n[4].idx == 4 && del == std::vector<int>{5});
+        assert(n[4].end == 3 && n[4].lyric == "la" && n[4].lyricMuted && n[4].idx == 4 &&
+               del == std::vector<int>{5});
         assert(!trimOverlaps(n, del, {}));
     }
 

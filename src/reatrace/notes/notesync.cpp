@@ -108,6 +108,8 @@ bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted,
                 moved[ai] = true; // it may now reach notes it didn't, which are its to cut
                 if (a.lyric.empty()) {
                     a.lyric = b.lyric;
+                    a.lyricSel = b.lyricSel;
+                    a.lyricMuted = b.lyricMuted;
                 }
                 a.sel |= b.sel;
                 drop[k] = any = true;
