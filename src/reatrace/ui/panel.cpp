@@ -23,6 +23,7 @@ static int g_listen;
 static double g_notesDb; // read back from the lead voice track
 
 static int g_panelWidget = -1; // index into widgets() of the one being dragged, -1 if none
+static bool g_panelWidgetTracks; // whether it is in the tracks panel's widgets(), or the settings'
 
 // Panel geometry, in points: widgets' left and right margin, and where the first one starts.
 static const int PANEL_MARGIN = 12;
@@ -572,6 +573,11 @@ void panelMouse(int x, int y, bool down) {
     const std::vector<Widget> ws = widgets();
     if (down) {
         g_panelWidget = widgetAt(y);
+        g_panelWidgetTracks = g_ui.tracks;
+    }
+    // the panel switched (M) mid-drag: the index is into the other panel's widgets
+    if (g_panelWidgetTracks != g_ui.tracks || g_panelWidget >= static_cast<int>(ws.size())) {
+        g_panelWidget = -1;
     }
     if (g_panelWidget < 0) {
         return;
