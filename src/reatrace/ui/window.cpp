@@ -769,6 +769,12 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         DestroyWindow(hwnd);
         return 0;
     case WM_DESTROY:
+        // a gesture in progress (D pressed mid-drag) ends with the window: its mouse up won't come
+        if (g_drag == DRAG_NOTES) {
+            g_session.ed.cancel();
+        } else if (g_drag == DRAG_PANEL) {
+            finishPanelDrag();
+        }
         if (g_docked) {
             DockWindowRemove(hwnd);
         }

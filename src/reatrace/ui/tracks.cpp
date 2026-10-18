@@ -44,10 +44,10 @@ static void setOn(MediaTrack *tr, Button b, bool on) {
 bool tracksMouse(int x, int y, int top, bool down) {
     const int row = rowAt(y, top);
     if (down) {
+        g_drag = NO_BUTTON;
         if (y < top || y >= top + tracksHeight()) {
             return false; // below the rows: the panel's sections
         }
-        g_drag = NO_BUTTON;
         for (const Button b : {MUTE, SOLO}) {
             const auto [l, r] = buttonSpan(b);
             if (row >= 0 && x >= l && x < r) {
