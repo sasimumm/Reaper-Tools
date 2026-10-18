@@ -396,7 +396,7 @@ static bool onKey(int key) {
         if (g_session.ed.duplicateSelected()) {
             commitNotes();
         }
-    } else if (key == 'K' && !m) {
+    } else if (key == 'K' && !(m & ~MOD_ALT)) { // alt: unsnapped, read in splitNotes()
         splitNotes();
     } else if (key == 'R' && !m) {
         loopPlay();
@@ -476,11 +476,11 @@ static bool isOurKey(int key, int flags) {
     case 'Q':
     case 'L':
     case 'T':
-    case 'K':
     case 'J':
     case 'R':
     case 'U':
     case 'B': return !cmd && !(flags & (FALT | FSHIFT));
+    case 'K': return !cmd && !(flags & FSHIFT); // alt: split unsnapped
     }
     return false;
 }
