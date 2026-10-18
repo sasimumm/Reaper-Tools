@@ -116,3 +116,17 @@ func TestCoincidentTempoChanges(t *testing.T) {
 		t.Errorf("tempoAt = %v, want 120", got)
 	}
 }
+
+func TestWritablePath(t *testing.T) {
+	for path, want := range map[string]bool{
+		`/a/b.wav`:         true,
+		`/a/"b".wav`:       true,
+		"/a/\"b'c\".wav":   true,
+		"/a/\"b'c`d\".wav": false, // every quote: no delimiter left
+		"/a/b\nc.wav":      false,
+	} {
+		if got := writablePath(path); got != want {
+			t.Errorf("writablePath(%q) = %v, want %v", path, got, want)
+		}
+	}
+}

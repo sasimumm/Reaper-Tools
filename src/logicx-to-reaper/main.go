@@ -250,6 +250,10 @@ func render(alt logicx.Alternative, media string) string {
 			continue
 		}
 		file := files[a.Region]
+		if path := audioPath(file, media); !writablePath(path) {
+			fmt.Fprintf(os.Stderr, "logicx-to-reaper: %q can't be written in a REAPER project; region %q skipped\n", path, p.AudioRegions[a.Region].Name)
+			continue
+		}
 		t := trackFor(0, a.Track)
 		t.items = append(t.items, audioItem(a, p.AudioRegions[a.Region], file, media, tl))
 	}
@@ -557,6 +561,13 @@ func quote(s string) string {
 		return "'" + s + "'"
 	}
 	return "`" + strings.ReplaceAll(s, "`", "'") + "`"
+}
+
+// writablePath reports whether quote leaves path as it is: names are cleaned
+// up to fit a project line, but a changed path would name another file.
+func writablePath(path string) bool {
+	q := quote(path)
+	return q[1:len(q)-1] == path
 }
 
 // oneLine replaces control characters with spaces: a project line ends at a
