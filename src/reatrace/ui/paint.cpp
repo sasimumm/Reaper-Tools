@@ -852,10 +852,14 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
     const int x0 = (c.r - colW * cols) / 2;
     text(dc, "Shortcuts   (? or Esc to close)", x0, n.t + 14, x0 + colW * cols, n.t + 34,
          g_theme.text, DT_LEFT);
-    int g = 0;
+    // each row of groups starts below the tallest group of the row above
+    int g = 0, rowTop = n.t + 46, rowBottom = rowTop;
     for (const Group &group : GROUPS) {
+        if (g > 0 && g % cols == 0) {
+            rowTop = rowBottom + 16;
+        }
         const int gx = x0 + (g % cols) * colW;
-        int y = n.t + 46 + (g / cols) * 170;
+        int y = rowTop;
         g++;
         text(dc, group.title, gx, y, gx + colW, y + 18, g_theme.accent, DT_LEFT);
         y += 20;
@@ -864,6 +868,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
             monoText(dc, r.keys, gx, y, gx + colW - 14, y + 16, g_theme.dim, DT_RIGHT);
             y += 17;
         }
+        rowBottom = std::max(rowBottom, y);
     }
 }
 
