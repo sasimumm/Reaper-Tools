@@ -1256,7 +1256,7 @@ static void drawSelectionAndCursors(Canvas &cv, const Layout &L) {
     const int edit = iround(g_ui.view.x(GetCursorPosition()));
     cv.fill(edit, ru.t, edit + 1, n.b, g_theme.editCursor);
     if (GetPlayState() & 1) { // playing
-        const int play = iround(g_ui.view.x(GetPlayPosition2()));
+        const int play = iround(g_ui.view.x(GetPlayPosition()));
         cv.fill(play, ru.t, play + 1, n.b, g_theme.playCursor);
     }
 }

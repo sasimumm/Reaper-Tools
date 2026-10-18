@@ -33,6 +33,7 @@
 #define REAPERAPI_WANT_GetMediaItemTake_Track
 #define REAPERAPI_WANT_GetMediaSourceNumChannels
 #define REAPERAPI_WANT_GetMediaTrackInfo_Value
+#define REAPERAPI_WANT_GetPlayPosition
 #define REAPERAPI_WANT_GetPlayPosition2
 #define REAPERAPI_WANT_MIDI_SetItemExtents
 #define REAPERAPI_WANT_GetPlayState

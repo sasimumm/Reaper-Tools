@@ -193,7 +193,7 @@ static void syncArrange() {
 // Pages the view along with the play cursor (see followPage()).
 static void followPlayback() {
     static double s_prev = -1; // play position last tick, -1 when stopped
-    const double now = GetPlayPosition2();
+    const double now = GetPlayPosition();
     if (!(GetPlayState() & 1)) {
         s_prev = -1;
         return;
@@ -971,7 +971,7 @@ void Window_Timer() {
 
     // redraw for the play and edit cursors, and for anything a project change may have changed
     const int state = GetPlayState();
-    const double playPos = GetPlayPosition2();
+    const double playPos = GetPlayPosition();
     const double cursor = GetCursorPosition();
     if (state != g_lastPlayState || ((state & 1) && playPos != g_lastPlayPos) ||
         cursor != g_lastCursor || change != g_lastProjChange) {
