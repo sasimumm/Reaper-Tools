@@ -501,8 +501,17 @@ func audioItem(a logicx.AudioPlacement, r logicx.AudioRegion, f *logicx.AudioFil
 	fmt.Fprintf(&b, "      FADEOUT 1 %s 0\n", fnum(float64(a.FadeOut)/1000))
 	fmt.Fprintf(&b, "      NAME %s\n", quote(r.Name))
 	fmt.Fprintf(&b, "      VOLPAN 1 0 %s -1\n", fnum(math.Pow(10, float64(a.Gain)/20)))
-	fmt.Fprintf(&b, "      SOFFS %s\n", fnum(float64(r.Offset)/rate))
-	fmt.Fprintf(&b, "      <SOURCE WAVE\n        FILE %s\n      >\n    >\n", quote(audioPath(f, media)))
+	offset, file := float64(r.Offset)/rate, quote(audioPath(f, media))
+	if loop == 0 {
+		fmt.Fprintf(&b, "      SOFFS %s\n", fnum(offset))
+		fmt.Fprintf(&b, "      <SOURCE WAVE\n        FILE %s\n      >\n    >\n", file)
+		return b.String()
+	}
+	// A looped item repeats its whole source, so the source is cut to the region.
+	fmt.Fprintf(&b, "      <SOURCE SECTION\n")
+	fmt.Fprintf(&b, "        LENGTH %s\n        STARTPOS %s\n        OVERLAP 0\n",
+		fnum(float64(r.Frames)/rate), fnum(offset))
+	fmt.Fprintf(&b, "        <SOURCE WAVE\n          FILE %s\n        >\n      >\n    >\n", file)
 	return b.String()
 }
 

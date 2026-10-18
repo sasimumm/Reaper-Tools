@@ -66,3 +66,24 @@ func TestMarkerEnd(t *testing.T) {
 		}
 	}
 }
+
+func TestLoopedAudioItem(t *testing.T) {
+	tl := timeline{origin: barOneTick, bpm: 120}
+	f := &logicx.AudioFile{Name: "a.wav", SampleRate: 1000}
+	r := logicx.AudioRegion{Name: "r", Offset: 2000, Frames: 1000} // seconds 2-3 of the file
+	a := logicx.AudioPlacement{Position: barOneTick}
+	if got := audioItem(a, r, f, "/media", tl); !strings.Contains(got, "SOFFS 2\n") ||
+		strings.Contains(got, "SECTION") {
+		t.Errorf("unlooped item: %s", got)
+	}
+	a.Loop = 8 * ticksPerQuarter // 4 s: the region four times
+	got := audioItem(a, r, f, "/media", tl)
+	for _, want := range []string{"LENGTH 4\n", "LOOP 1\n", "<SOURCE SECTION\n", "LENGTH 1\n", "STARTPOS 2\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("looped item lacks %q: %s", want, got)
+		}
+	}
+	if strings.Contains(got, "SOFFS") {
+		t.Errorf("looped item keeps its offset in the section, not SOFFS: %s", got)
+	}
+}
