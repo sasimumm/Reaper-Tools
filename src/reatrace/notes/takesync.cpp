@@ -197,33 +197,41 @@ void loadOtherVoices(bool force) {
 // Writes the editor's notes back to the take as one undo point (none for selection-only changes).
 // If the take changed since the notes were loaded (an action or script during a drag, the item
 // moved, the tempo changed), the edit is dropped and the take's notes reloaded: the loaded notes
-// refer to its events by index and would overwrite the wrong ones.
-void commitNotes() {
+// refer to its events by index and would overwrite the wrong ones. False if it was dropped.
+bool commitNotes() {
     if (notesStale()) {
         loadNotes();
-        return;
+        return false;
     }
     const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
     if (changes.data) {
         Undo_BeginBlock2(NULL);
     }
 
-    // no notes item yet: create one when there is something to write
+    // no notes item yet: create one when there is something to write. One may have been made
+    // elsewhere since (a script during a drag): then its notes are read, and the editor's (all
+    // new) go on top of them, trimmed against them as any edit.
     MediaItem_Take *take = midiTake();
     TakeSnapshot loadedFrom = g_session.snapshot;
+    std::vector<Note> loaded = g_loaded, edited = g_session.ed.notes;
     if (!take && changes.data) {
-        g_session.midi = VoiceItem(g_session.audio, g_session.voice, true);
-        if (g_session.midi) {
-            take = GetActiveTake(g_session.midi);
-            loadedFrom = snapshotOf(take); // new and empty: nothing in it to overwrite
+        MediaItem *found = VoiceItem(g_session.audio, g_session.voice, false);
+        g_session.midi = found ? found : VoiceItem(g_session.audio, g_session.voice, true);
+        take = g_session.midi ? GetActiveTake(g_session.midi) : NULL;
+        if (take) {
+            ReaperTake t(take);
+            loadedFrom = snapshotOf(t);
+            loaded = readNotes(t);
+            edited.insert(edited.begin(), loaded.begin(), loaded.end());
         }
     }
 
+    bool written = !take && !changes.data;
     if (take) {
         ReaperTake t(take);
-        if (writeNotes(t, loadedFrom, g_loaded, g_session.ed.notes, g_session.ed.deleted,
-                       g_session.ed.velocity) &&
-            changes.data) {
+        written = writeNotes(t, loadedFrom, loaded, edited, g_session.ed.deleted,
+                             g_session.ed.velocity);
+        if (written && changes.data) {
             fitItemToNotes(take);
         }
     }
@@ -233,6 +241,7 @@ void commitNotes() {
         UpdateArrange();
     }
     loadNotes();
+    return written;
 }
 
 // Notes straight into another voice's take (its track and item are created if needed).
