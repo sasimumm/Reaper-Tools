@@ -88,6 +88,20 @@ func TestLoopedAudioItem(t *testing.T) {
 	}
 }
 
+func TestDelayedSequenceOrigin(t *testing.T) {
+	// A sequence at bar one played early: zero moves back a bar so its start
+	// isn't clamped and its notes stay inside the item.
+	s := logicx.MIDISequence{Position: barOneTick, Duration: 960, Delay: -120, Track: "t", Row: 1}
+	tl := newTimeline(logicx.Alternative{Project: logicx.ProjectData{Sequences: []logicx.MIDISequence{s}}})
+	start := sequenceStart(s)
+	if start < tl.origin {
+		t.Fatalf("origin %d after the delayed start %d", tl.origin, start)
+	}
+	if got := tl.seconds(start+s.Duration) - tl.seconds(start); math.Abs(got-0.5) > 1e-9 {
+		t.Errorf("item length %v, want 0.5", got)
+	}
+}
+
 func TestCoincidentTempoChanges(t *testing.T) {
 	// The last of two changes on one tick holds, for seconds and the envelope.
 	tl := newTimeline(logicx.Alternative{Project: logicx.ProjectData{TempoChanges: []logicx.TempoChange{

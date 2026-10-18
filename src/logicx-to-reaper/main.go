@@ -107,7 +107,7 @@ func newTimeline(alt logicx.Alternative) timeline {
 	earliest := uint32(barOneTick)
 	for _, s := range p.Sequences {
 		if !chordHolder(s) {
-			earliest = min(earliest, s.Position)
+			earliest = min(earliest, sequenceStart(s))
 		}
 	}
 	for _, a := range p.AudioPlacements {
@@ -394,8 +394,13 @@ type midiEvent struct {
 	msg   [3]byte
 }
 
+// sequenceStart is where s plays, its delay applied.
+func sequenceStart(s logicx.MIDISequence) uint32 {
+	return uint32(max(int64(s.Position)+int64(s.Delay), 0))
+}
+
 func midiItem(s logicx.MIDISequence, tl timeline) string {
-	start := uint32(max(int64(s.Position)+int64(s.Delay), 0))
+	start := sequenceStart(s)
 	begin := tl.seconds(start)
 
 	var events []midiEvent
