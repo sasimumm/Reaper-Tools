@@ -37,15 +37,25 @@ bool loadItemSettings() {
     loadSettings(globalState(EXT_DEFAULTS));
 
     char key[64];
-    char buf[4096] = "";
-    // the item's settings in `section` into buf; true if there are any
+    std::vector<char> buf(4096);
+    // the item's settings in `section` into buf, however long (many reference tracks); true if
+    // there are any. GetProjExtState returns the value's full length.
     const auto read = [&](const char *section) {
-        return GetProjExtState(NULL, section, key, buf, sizeof(buf)) > 0 && *buf;
+        for (;;) {
+            buf[0] = 0;
+            const int n =
+                GetProjExtState(NULL, section, key, buf.data(), static_cast<int>(buf.size()));
+            if (n < static_cast<int>(buf.size()) - 1) {
+                buf.back() = 0;
+                return n > 0 && buf[0];
+            }
+            // doubling too, in case it returned only what it copied (older REAPER)
+            buf.resize(std::max(static_cast<size_t>(n) + 2, 2 * buf.size()));
+        }
     };
     const bool has = itemKey(key) && (read(EXT_SECTION) || read(OLD_EXT_SECTION));
-    buf[sizeof(buf) - 1] = 0;
     if (has) {
-        loadSettings(buf);
+        loadSettings(buf.data());
     }
     g_savedSettings = saveSettings();
     return has;
