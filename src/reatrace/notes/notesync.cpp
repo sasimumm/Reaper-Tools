@@ -59,9 +59,8 @@ static bool known(const Note &n, std::span<const Note> loaded) {
 
 // n as a take note event, with its times in PPQ; `velocity` if n has none of its own.
 static Take::NoteEvent toEvent(Take &take, const Note &n, bool sel, int velocity) {
-    Take::NoteEvent e = {take.toPPQ(n.start), take.toPPQ(n.end), n.pitch, sel};
-    e.end = std::max(e.end, e.start + 1); // at least a tick: a note-off before its note-on would
-                                          // pair with the next note's
+    // whole ticks, as toTicks() left them (rounded again for the round trip's float error)
+    Take::NoteEvent e = {round(take.toPPQ(n.start)), round(take.toPPQ(n.end)), n.pitch, sel};
     e.vel = n.vel >= 0 ? n.vel : velocity;
     e.chan = n.chan;
     e.muted = n.muted;
@@ -104,6 +103,7 @@ bool trimOverlaps(std::vector<Note> &notes, std::vector<int> &deleted,
             if (a.start == b.start) {
                 // a duplicate: one note, as long as the longer, keeping a lyric and selection
                 a.end = std::max(a.end, b.end);
+                moved[ai] = true; // it may now reach notes it didn't, which are its to cut
                 if (a.lyric.empty()) {
                     a.lyric = b.lyric;
                 }
@@ -214,11 +214,27 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
     }
 }
 
+// Puts retimed notes on whole ticks, at least one long, as the take will keep them: overlaps are
+// then resolved where they will be, not between times the take can't tell apart.
+static void toTicks(Take &take, std::span<Note> notes, std::span<const Note> loaded) {
+    for (Note &n : notes) {
+        if (retimed(n, loaded)) {
+            const double s = round(take.toPPQ(n.start));
+            n.start = take.toTime(s);
+            n.end = take.toTime(std::max(round(take.toPPQ(n.end)), s + 1));
+        }
+    }
+}
+
 bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note> loaded,
-                std::span<const Note> edited, std::span<const int> deleted, int velocity) {
+                std::span<const Note> editedIn, std::span<const int> deletedIn, int velocity) {
     if (snapshotOf(take) != loadedFrom) {
         return false;
     }
+    std::vector<Note> edited(editedIn.begin(), editedIn.end());
+    std::vector<int> deleted(deletedIn.begin(), deletedIn.end());
+    toTicks(take, edited, loaded);
+    trimOverlaps(edited, deleted, loaded);
     const bool lyrics = diffNotes(loaded, edited, deleted).lyrics;
 
     // Deletions first, while the take is sorted as loaded: REAPER pairs note-ons with note-offs
@@ -260,7 +276,7 @@ bool writeNotes(Take &take, const TakeSnapshot &loadedFrom, std::span<const Note
         const Note &o = loaded[static_cast<size_t>(n.idx)];
         if (n.sel != o.sel) {
             const auto before = std::lower_bound(del.begin(), del.end(), n.idx) - del.begin();
-            take.setNote(n.idx - static_cast<int>(before), toEvent(take, n, n.sel, velocity));
+            take.selectNote(n.idx - static_cast<int>(before), n.sel);
         }
     }
     for (const Note &n : edited) {
@@ -286,7 +302,5 @@ void appendNotes(Take &take, std::span<const Note> notes, int velocity) {
         n.idx = n.lyricIdx = -1;
         edited.push_back(n);
     }
-    std::vector<int> deleted;
-    trimOverlaps(edited, deleted, loaded);
-    writeNotes(take, snap, loaded, edited, deleted, velocity);
+    writeNotes(take, snap, loaded, edited, {}, velocity);
 }

@@ -91,9 +91,9 @@ class ReaperTake : public Take {
         return true;
     }
 
-    void setNote(int i, const NoteEvent &n) override {
+    void selectNote(int i, bool sel) override {
         const bool noSort = true;
-        MIDI_SetNote(m_take, i, &n.sel, NULL, &n.start, &n.end, NULL, &n.pitch, NULL, &noSort);
+        MIDI_SetNote(m_take, i, &sel, NULL, NULL, NULL, NULL, NULL, NULL, &noSort);
     }
 
     void deleteNote(int i) override { MIDI_DeleteNote(m_take, i); }
@@ -203,7 +203,6 @@ void commitNotes() {
         loadNotes();
         return;
     }
-    trimOverlaps(g_session.ed.notes, g_session.ed.deleted, g_loaded);
     const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
     if (changes.data) {
         Undo_BeginBlock2(NULL);

@@ -38,7 +38,7 @@ class Take {
     virtual int textCount() = 0;
     virtual bool text(int i, TextEvent *out) = 0; // false if it isn't a text event
     // Changes don't re-sort until sort(), so indices stay valid while writing.
-    virtual void setNote(int i, const NoteEvent &n) = 0;
+    virtual void selectNote(int i, bool sel) = 0; // selection only: the event is left as it is
     virtual void deleteNote(int i) = 0;
     virtual void insertNote(const NoteEvent &n) = 0;
     virtual void deleteText(int i) = 0;
@@ -86,9 +86,10 @@ NoteChanges diffNotes(std::span<const Note> loaded, std::span<const Note> edited
                       std::span<const int> deleted);
 
 // Writes the edits, unless the take changed since `loadedFrom` (then nothing is written and it
-// returns false: the caller reloads). `deleted` take indices are removed (highest first), moved,
-// resized and transposed notes removed and reinserted, re-selected ones set, new notes (idx < 0)
-// inserted (with `velocity` unless they have their own). If lyrics need rewriting, the lyric events attached to loaded notes are replaced by
+// returns false: the caller reloads). Moved, resized, transposed and new notes are put on whole
+// ticks and their overlaps resolved there (trimOverlaps); then `deleted` take indices are removed
+// (highest first), retimed notes removed and reinserted, re-selected ones selected, new notes
+// (idx < 0) inserted (with `velocity` unless they have their own). If lyrics need rewriting, the lyric events attached to loaded notes are replaced by
 // one per edited note with a lyric, in the sorted take's order (with empty ones on lyric-less notes
 // before them in a group starting together, so each pairs with its own note); other text events
 // are left alone.

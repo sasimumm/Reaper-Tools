@@ -12,7 +12,8 @@
 // notes by start then pitch and text events by position. 960 PPQ per second. Notes are kept on
 // whole ticks, truncated: what REAPER does with a fractional position need not be our rounding.
 // Deleting from a take with unsorted changes fails the check, as REAPER can then delete the wrong
-// note-off; so does setting a note's position or pitch, which can pair it with another's note-off.
+// note-off. Notes are only selected in place, never moved: that could pair them with another's
+// note-off.
 class FakeTake : public Take {
   public:
     std::vector<NoteEvent> notes; // in PPQ
@@ -50,12 +51,7 @@ class FakeTake : public Take {
         return true;
     }
 
-    void setNote(int i, const NoteEvent &n) override {
-        const NoteEvent &o = notes[static_cast<size_t>(i)];
-        assert(ticks(n).start == o.start && ticks(n).end == o.end && n.pitch == o.pitch);
-        notes[static_cast<size_t>(i)] = ticks(n);
-        unsorted = true;
-    }
+    void selectNote(int i, bool sel) override { notes[static_cast<size_t>(i)].sel = sel; }
     void deleteNote(int i) override {
         assert(!unsorted);
         notes.erase(notes.begin() + i);
@@ -432,6 +428,35 @@ int main() {
             e.push_back({1, 0.5, 60, false, -1});
         });
         assert(n.size() == 1 && t.notes[0].end > t.notes[0].start);
+    }
+
+    // a duplicate extended by its merge cuts the notes it now reaches
+    {
+        FakeTake t;
+        t.notes = {{0, 960, 60, false, 96}, {1920, 2880, 60, false, 96}};
+        roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e.push_back({0, 4, 60, false, -1});
+        });
+        assert(t.notes.size() == 2 && t.notes[0].start == 0 && t.notes[0].end == 1920 &&
+               t.notes[1].start == 1920 && t.notes[1].end == 2880);
+    }
+
+    // starts less than a tick apart are one start: the notes merge rather than overlap there
+    {
+        FakeTake t;
+        roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e.push_back({0, 0.0005, 60, false, -1});
+            e.push_back({0.0004, 2, 60, false, -1});
+        });
+        assert(t.notes.size() == 1 && t.notes[0].start == 0 && t.notes[0].end == 1920);
+    }
+
+    // selecting a note leaves its timing, even a zero-length one's
+    {
+        FakeTake t;
+        t.notes = {{480, 480, 60, false, 96}};
+        roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) { e[0].sel = true; });
+        assert(!c.data && t.notes[0].sel && t.notes[0].start == 480 && t.notes[0].end == 480);
     }
 
     printf("ok\n");
