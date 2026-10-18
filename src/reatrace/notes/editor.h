@@ -16,6 +16,7 @@ struct Note {
     int idx; // index in the MIDI take, -1 for notes not written yet
     std::string lyric = {};
     int lyricIdx = -1; // index of the lyric text event in the take, -1 if none
+    bool lyricSel = false, lyricMuted = false; // the lyric event's own flags, kept when rewritten
     int vel = -1;      // MIDI velocity, -1 for the editor's default
     int chan = 0;      // MIDI channel, 0..15
     bool muted = false;

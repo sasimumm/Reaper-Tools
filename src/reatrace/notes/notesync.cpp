@@ -45,6 +45,8 @@ std::vector<Note> readNotes(Take &take) {
             if (notes[*it].lyricIdx < 0) {
                 notes[*it].lyric = t.text;
                 notes[*it].lyricIdx = i;
+                notes[*it].lyricSel = t.sel;
+                notes[*it].lyricMuted = t.muted;
                 break;
             }
         }
@@ -166,17 +168,17 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
     // the take keeps whole ticks, rounded its own way, so a start matches within a tick
     struct Lyric {
         double start;
-        const std::string *text;
+        const Note *note;
         bool used = false;
     };
     std::map<std::pair<int, int>, std::vector<Lyric>> lyricOf; // by (channel, pitch)
     for (const Note &n : edited) {
         if (!n.lyric.empty()) {
-            lyricOf[{n.chan, n.pitch}].push_back({take.toPPQ(n.start), &n.lyric});
+            lyricOf[{n.chan, n.pitch}].push_back({take.toPPQ(n.start), &n});
         }
     }
     // the closest unused lyric of this channel and pitch within a tick of start
-    const auto find = [&](double start, int chan, int pitch) -> const std::string * {
+    const auto find = [&](double start, int chan, int pitch) -> const Note * {
         Lyric *best = nullptr;
         for (Lyric &l : lyricOf[{chan, pitch}]) {
             const double d = fabs(l.start - start);
@@ -188,14 +190,14 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
             return nullptr;
         }
         best->used = true;
-        return best->text;
+        return best->note;
     };
 
     const int count = take.noteCount();
     for (int i = 0; i < count;) {
         // the group starting with note i
         const double groupStart = take.note(i).start;
-        std::vector<std::pair<double, const std::string *>> group; // (start, lyric)
+        std::vector<std::pair<double, const Note *>> group; // (start, the note with its lyric)
         for (; i < count; i++) {
             const Take::NoteEvent e = take.note(i);
             if (e.start >= groupStart + 0.5) {
@@ -208,8 +210,9 @@ static void writeLyrics(Take &take, std::span<const Note> edited) {
             last--;
         }
         for (size_t k = 0; k < last; k++) {
-            const std::string *l = group[k].second;
-            take.insertText({group[k].first, LYRIC_EVENT, l ? *l : std::string()});
+            const Note *l = group[k].second;
+            take.insertText({group[k].first, LYRIC_EVENT, l ? l->lyric : std::string(),
+                             l && l->lyricSel, l && l->lyricMuted});
         }
     }
 }

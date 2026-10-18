@@ -459,5 +459,18 @@ int main() {
         assert(!c.data && t.notes[0].sel && t.notes[0].start == 480 && t.notes[0].end == 480);
     }
 
+    // a lyric event's own selection and mute survive the lyrics being rewritten
+    {
+        FakeTake t = song();
+        t.texts[2].muted = true; // "lo"
+        t.texts[2].sel = true;
+        const std::vector<Note> n = roundTrip(t, &c, [](std::vector<Note> &e, std::vector<int> &) {
+            e[2].start += 0.25; // another note moved: the lyrics are rewritten
+            e[2].end += 0.25;
+        });
+        assert(c.lyrics && n[1].lyric == "lo" && n[1].lyricMuted && n[1].lyricSel);
+        assert(!n[0].lyricMuted && !n[0].lyricSel);
+    }
+
     printf("ok\n");
 }

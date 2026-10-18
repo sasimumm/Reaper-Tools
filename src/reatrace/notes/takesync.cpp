@@ -81,8 +81,8 @@ class ReaperTake : public Take {
     bool text(int i, TextEvent *out) override {
         std::array<char, 1024> msg{};
         int size = static_cast<int>(msg.size()) - 1;
-        if (!MIDI_GetTextSysexEvt(m_take, i, NULL, NULL, &out->ppq, &out->type, msg.data(),
-                                  &size)) {
+        if (!MIDI_GetTextSysexEvt(m_take, i, &out->sel, &out->muted, &out->ppq, &out->type,
+                                  msg.data(), &size)) {
             return false;
         }
         // terminate within the buffer, whatever size comes back
@@ -106,7 +106,7 @@ class ReaperTake : public Take {
     void deleteText(int i) override { MIDI_DeleteTextSysexEvt(m_take, i); }
 
     void insertText(const TextEvent &t) override {
-        MIDI_InsertTextSysexEvt(m_take, false, false, t.ppq, t.type, t.text.c_str(),
+        MIDI_InsertTextSysexEvt(m_take, t.sel, t.muted, t.ppq, t.type, t.text.c_str(),
                                 static_cast<int>(t.text.size()));
     }
 

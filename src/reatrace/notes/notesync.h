@@ -23,6 +23,7 @@ class Take {
         double ppq = 0;
         int type = 0; // MIDI meta event type, e.g. LYRIC_EVENT
         std::string text;
+        bool sel = false, muted = false;
     };
 
     virtual ~Take() = default;
