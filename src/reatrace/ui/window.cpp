@@ -36,7 +36,9 @@ static bool g_recreating; // destroying the window only to recreate it: keep the
 enum Drag { DRAG_NONE, DRAG_NOTES, DRAG_RULER, DRAG_RULER_SELECT, DRAG_PANEL, DRAG_OVERVIEW };
 static Drag g_drag;
 static double g_selectAnchor; // DRAG_RULER_SELECT: where the time selection started, seconds
-static int g_pressedSuggestion = -1; // DRAG_NOTES: the suggestion pressed, accepted on a click
+// DRAG_NOTES: a suggestion was pressed, accepted on a click (found again on release: an analysis
+// finishing in between replaces the suggestions)
+static bool g_pressedSuggestion;
 
 // change detection for the timer
 static int g_lastPlayState, g_lastProjChange;
@@ -628,7 +630,7 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
             const bool plainMiss =
                 g_session.ed.hitTest(g_ui.view, x, y, NULL) == NoteEditor::NONE &&
                 !(mods() & (MOD_SHIFT | MOD_CMD));
-            g_pressedSuggestion = plainMiss ? suggestionAt(x, y) : -1;
+            g_pressedSuggestion = plainMiss && suggestionAt(x, y) >= 0;
 
             g_drag = DRAG_NOTES;
             g_session.ed.mouseDown(g_ui.view, x, y, mods());
@@ -671,14 +673,16 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
         g_drag = DRAG_NONE;
         ReleaseCapture();
 
-        if (d == DRAG_NOTES && g_session.ed.drawing() < 0 && g_pressedSuggestion >= 0) {
+        if (d == DRAG_NOTES && g_session.ed.drawing() < 0 && g_pressedSuggestion) {
             g_session.ed.cancel();
-            acceptSuggestion(g_pressedSuggestion);
-            g_pressedSuggestion = -1;
+            g_pressedSuggestion = false;
+            if (const int i = suggestionAt(x, y); i >= 0) {
+                acceptSuggestion(i);
+            }
             redraw();
             return 0;
         }
-        g_pressedSuggestion = -1;
+        g_pressedSuggestion = false;
         if (d == DRAG_NOTES && g_session.ed.mouseUp(g_ui.view, x, y, mods())) {
             commitNotes();
         }

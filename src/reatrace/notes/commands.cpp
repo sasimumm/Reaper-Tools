@@ -270,6 +270,9 @@ void setupEditorSnap() {
 
 // Suggestion i as a new, solely selected note of the active voice.
 void acceptSuggestion(int i) {
+    if (i < 0 || i >= static_cast<int>(suggestions().size())) {
+        return;
+    }
     const Segment &sg = suggestions()[idx(i)];
     const int pitch = static_cast<int>(lround(sg.pitch));
     for (Note &o : g_session.ed.notes) {
