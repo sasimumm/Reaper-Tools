@@ -87,3 +87,18 @@ func TestLoopedAudioItem(t *testing.T) {
 		t.Errorf("looped item keeps its offset in the section, not SOFFS: %s", got)
 	}
 }
+
+func TestCoincidentTempoChanges(t *testing.T) {
+	// The last of two changes on one tick holds, for seconds and the envelope.
+	tl := newTimeline(logicx.Alternative{Project: logicx.ProjectData{TempoChanges: []logicx.TempoChange{
+		{Position: barOneTick, BPM: 120},
+		{Position: barOneTick + 960, BPM: 60},
+		{Position: barOneTick + 960, BPM: 120},
+	}}})
+	if got := tl.seconds(barOneTick + 1920); math.Abs(got-1) > 1e-9 {
+		t.Errorf("seconds = %v, want 1", got)
+	}
+	if got := tl.tempoAt(barOneTick + 960); got != 120 {
+		t.Errorf("tempoAt = %v, want 120", got)
+	}
+}

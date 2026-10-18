@@ -87,6 +87,17 @@ func newTimeline(alt logicx.Alternative) timeline {
 	p := alt.Project
 	tl := timeline{bpm: cmp.Or(alt.Metadata.BPM, 120), tempos: slices.Clone(p.TempoChanges)}
 	slices.SortStableFunc(tl.tempos, func(a, b logicx.TempoChange) int { return cmp.Compare(a.Position, b.Position) })
+	// Of changes on one tick, the last holds, for seconds, tempoAt and the
+	// envelope alike.
+	kept := tl.tempos[:0]
+	for _, c := range tl.tempos {
+		if n := len(kept); n > 0 && kept[n-1].Position == c.Position {
+			kept[n-1] = c
+			continue
+		}
+		kept = append(kept, c)
+	}
+	tl.tempos = kept
 	if len(tl.tempos) > 0 {
 		tl.bpm = tl.tempos[0].BPM
 	}
