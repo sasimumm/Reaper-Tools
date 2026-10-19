@@ -49,6 +49,7 @@ struct Theme {
     RGB shadow = 0x000000;     // outlines, backdrops, darkened notes and black-key rows
     int blackRowShade = 40;    // how much shadow covers the black-key rows (of 256)
     RGB warn = 0xffa040;       // octave check flags, estimator notes, onsets
+    RGB overlap = 0xff3030;    // the line above overlapping notes of one pitch
     RGB editCursor = 0xff6b5b; // the edit cursor
     RGB playCursor = 0xffffff; // the play cursor
 

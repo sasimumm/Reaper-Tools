@@ -1110,6 +1110,29 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         }
     }
 
+    // mark where notes of one pitch and channel overlap (MIDI can't tell them apart) with a line
+    std::vector<const Note *> byStart;
+    for (const Note &nt : g_session.ed.notes) {
+        byStart.push_back(&nt);
+    }
+    std::ranges::sort(byStart, [](const Note *a, const Note *b) {
+        return std::tie(a->chan, a->pitch, a->start) < std::tie(b->chan, b->pitch, b->start);
+    });
+    const Note *last = NULL; // of this pitch and channel, the note reaching furthest so far
+    for (const Note *nt : byStart) {
+        if (last && (last->chan != nt->chan || last->pitch != nt->pitch)) {
+            last = NULL;
+        }
+        if (last && last->end > nt->start) {
+            const int y = noteBox(*nt).y0 - 3;
+            const int xa = x(nt->start), xb = std::max(xa + 1, x(std::min(last->end, nt->end)));
+            cv.fill(xa, y - 2, xb, y, g_theme.overlap);
+        }
+        if (!last || nt->end > last->end) {
+            last = nt;
+        }
+    }
+
     // lyrics: inside the note when it is tall enough, else just below it
     for (const Note &nt : g_session.ed.notes) {
         if (nt.lyric.empty()) {
