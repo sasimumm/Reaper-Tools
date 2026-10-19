@@ -46,9 +46,13 @@ struct Session {
     // as analysed: item position and length, take start offset (seconds), take playrate
     double audioPos = 0, audioLen = 0, audioOffs = 0, audioRate = 1;
     std::string audioIdentity; // which recording: see audioIdentity()
+    // * on the toolbar: the editor has every shown voice's notes, not just the active voice's;
+    // the active voice is still the one new notes go to
+    bool allVoices = false;
+    unsigned editing = 0; // bit per voice whose notes are in the editor, as loaded
     NoteEditor ed;
-    TakeSnapshot snapshot; // of the take when the notes were loaded
-    int notesVersion = 0;  // bumped whenever notes are loaded
+    std::array<TakeSnapshot, WINDOW_VOICES> snapshot; // of each voice's take when loaded
+    int notesVersion = 0;                             // bumped whenever notes are loaded
     // the reference tracks' notes (Settings::reference) as suggestions, and which of the
     // `referenceTracks` tracks each came from
     std::vector<Segment> reference;
@@ -98,6 +102,12 @@ struct WindowState {
 };
 inline WindowState g_ui;
 
+// The voice a note in the editor belongs to: its own if that voice's notes are in the editor, else
+// the active voice (new notes, and notes pasted from a voice that isn't).
+inline int noteVoice(const Note &n) {
+    return n.voice >= 0 && (g_session.editing >> n.voice & 1) ? n.voice : g_session.voice;
+}
+
 // window.cpp
 Layout layout(); // of the window as it is now
 // The parts of layout(), in client points.
@@ -109,9 +119,10 @@ Rect chordsArea();
 Rect lyricsArea();
 Rect overviewArea();
 Rect panelArea();
-void syncViewOrigin();   // puts the view's origin at the notes area's top left
-void redraw();           // invalidates the window, if open
-void selectVoice(int v); // makes voice v (0 = lead) the edited one, and shows it
-int mods();              // MOD_* keys held now
+void syncViewOrigin();      // puts the view's origin at the notes area's top left
+void redraw();              // invalidates the window, if open
+void selectVoice(int v);    // makes voice v (0 = lead) the edited one, and shows it
+void setAllVoices(bool on); // * on the toolbar: edit every shown voice (Session::allVoices)
+int mods();                 // MOD_* keys held now
 // S and the Panel button: back to the settings from the tracks, else the side panel on or off.
 void showSettings();

@@ -341,7 +341,7 @@ static void drawGhosts(Canvas &cv) {
             const double hh = std::max(1.0, g_ui.view.rowH * 0.3); // half height
             const int y0 = iround(y - hh);
             const int y1 = iround(y + hh) + 1;
-            cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(g_session.voice)], 1,
+            cv.roundedFrame(x0, y0, x1, y1, g_theme.voices[idx(noteVoice(nt))], 1,
                             a / (h - 1) + a / 2);
         }
     }
@@ -516,11 +516,12 @@ static void drawContour(Canvas &cv, const Rect &n) {
     }
 }
 
-// Notes with lyrics, by start time.
+// The active voice's notes with lyrics, by start time.
 static std::vector<int> lyricOrder() {
     std::vector<int> out;
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
-        if (!g_session.ed.notes[i].lyric.empty()) {
+        const Note &nt = g_session.ed.notes[i];
+        if (!nt.lyric.empty() && noteVoice(nt) == g_session.voice) {
             out.push_back(static_cast<int>(i));
         }
     }
@@ -1084,9 +1085,9 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
 
     // solid with a darker edge; selected ones get a light outline, so lyrics stay readable
     const int drawing = g_session.ed.drawing();
-    const unsigned int noteColour = g_theme.voices[idx(g_session.voice)];
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &nt = g_session.ed.notes[i];
+        const unsigned int noteColour = g_theme.voices[idx(noteVoice(nt))];
         const auto [x0, y0, x1, y1] = noteBox(nt);
         const bool sel = nt.sel || static_cast<int>(i) == drawing;
         cv.rounded(x0, y0, x1, y1, noteColour, 245);
@@ -1113,17 +1114,20 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         }
     }
 
-    // mark where notes of one pitch and channel overlap (MIDI can't tell them apart) with a line
-    std::vector<const Note *> byStart;
+    // mark where a voice's notes of one pitch and channel overlap (MIDI can't tell them apart)
+    // with a line
+    std::vector<std::pair<int, const Note *>> byStart; // with their voices
     for (const Note &nt : g_session.ed.notes) {
-        byStart.push_back(&nt);
+        byStart.push_back({noteVoice(nt), &nt});
     }
-    std::ranges::sort(byStart, [](const Note *a, const Note *b) {
-        return std::tie(a->chan, a->pitch, a->start) < std::tie(b->chan, b->pitch, b->start);
+    std::ranges::sort(byStart, [](const auto &a, const auto &b) {
+        return std::tie(a.first, a.second->chan, a.second->pitch, a.second->start) <
+               std::tie(b.first, b.second->chan, b.second->pitch, b.second->start);
     });
-    const Note *last = NULL; // of this pitch and channel, the note reaching furthest so far
-    for (const Note *nt : byStart) {
-        if (last && (last->chan != nt->chan || last->pitch != nt->pitch)) {
+    const Note *last = NULL; // of this voice, pitch and channel, the note reaching furthest so far
+    int lastVoice = -1;
+    for (const auto &[voice, nt] : byStart) {
+        if (last && (lastVoice != voice || last->chan != nt->chan || last->pitch != nt->pitch)) {
             last = NULL;
         }
         if (last && last->end > nt->start) {
@@ -1133,6 +1137,7 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
         }
         if (!last || nt->end > last->end) {
             last = nt;
+            lastVoice = voice;
         }
     }
 
@@ -1151,6 +1156,7 @@ static void drawNotes(Canvas &cv, HDC dc, const Rect &n) {
             continue;
         }
         if (y1 - y0 >= 12) {
+            const unsigned int noteColour = g_theme.voices[idx(noteVoice(nt))];
             text(dc, nt.lyric.c_str(), l, std::max(y0, n.t), std::min(x1 - 1, n.r),
                  std::min(y1, n.b), mix(noteColour, g_theme.shadow, 0.85), DT_LEFT);
         } else if (y1 + 14 <= n.b) {
@@ -1327,12 +1333,11 @@ static void drawOverview(Canvas &cv, std::span<ARGB> fb, int w, const Layout &L)
     }
 
     cv.clip = o;
-    const unsigned int noteColour = g_theme.voices[idx(g_session.voice)];
     for (const Note &nt : g_session.ed.notes) {
         const int y = iround(overviewY(o, nt.pitch));
         const int xa = iround(overviewX(o, nt.start));
         const int xb = std::max(xa + 1, iround(overviewX(o, nt.end)));
-        cv.fill(xa, y - 1, xb, y + 1, noteColour);
+        cv.fill(xa, y - 1, xb, y + 1, g_theme.voices[idx(noteVoice(nt))]);
     }
 
     const int va = iround(overviewX(o, g_ui.view.t(n.l)));

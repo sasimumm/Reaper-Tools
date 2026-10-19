@@ -8,7 +8,10 @@
 #include <span>
 #include <sstream>
 
-static std::vector<Note> g_loaded; // notes as read from the take, by take index
+// Each voice's notes as read from its take, by take index. In the editor a note's idx is its voice's
+// offset plus its take index, so the editor's take indices are unique across voices.
+static std::array<std::vector<Note>, WINDOW_VOICES> g_loaded;
+static std::array<int, WINDOW_VOICES> g_offset;
 
 // --- notes <-> MIDI take ---------------------------------------------------------
 
@@ -145,22 +148,63 @@ static void fitItemToNotes(MediaItem_Take *take) {
     }
 }
 
-bool notesStale() { return snapshotOf(midiTake()) != g_session.snapshot; }
+// Voice v's notes take, or NULL.
+static MediaItem_Take *takeOf(int v) {
+    if (v == g_session.voice) {
+        return midiTake();
+    }
+    MediaItem *item = VoiceItem(g_session.audio, v, false);
+    return item ? GetActiveTake(item) : NULL;
+}
 
-// Reads the active take's notes into the editor (cancelling any gesture), as the new baseline
-// for commitNotes().
+// The voices whose notes go in the editor: the active one, and with * every shown one.
+static unsigned editedVoices() {
+    const unsigned all = (1u << WINDOW_VOICES) - 1;
+    return 1u << g_session.voice | (g_session.allVoices ? all & ~g_ui.hiddenVoices : 0);
+}
+
+bool notesStale() {
+    if (g_session.editing != editedVoices()) {
+        return true;
+    }
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        if ((g_session.editing >> v & 1) && snapshotOf(takeOf(v)) != g_session.snapshot[idx(v)]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Reads the edited voices' notes into the editor (cancelling any gesture), as the new baseline
+// for commitNotes(). The active voice's come last, so they are drawn and hit on top.
 void loadNotes() {
     g_session.ed.cancel();
-    MediaItem_Take *take = midiTake();
-    if (take) {
-        ReaperTake t(take);
-        g_loaded = readNotes(t);
-    } else {
-        g_loaded.clear();
-    }
-    g_session.ed.notes = g_loaded;
+    g_session.ed.notes.clear();
     g_session.ed.deleted.clear();
-    g_session.snapshot = snapshotOf(take);
+    g_session.editing = editedVoices();
+    int offset = 0;
+    for (int k = 1; k <= WINDOW_VOICES; k++) {
+        const int v = (g_session.voice + k) % WINDOW_VOICES;
+        std::vector<Note> &loaded = g_loaded[idx(v)];
+        loaded.clear();
+        g_session.snapshot[idx(v)] = {};
+        if (!(g_session.editing >> v & 1)) {
+            continue;
+        }
+        MediaItem_Take *take = takeOf(v);
+        if (take) {
+            ReaperTake t(take);
+            loaded = readNotes(t);
+        }
+        g_session.snapshot[idx(v)] = snapshotOf(take);
+        g_offset[idx(v)] = offset;
+        for (Note n : loaded) {
+            n.idx += offset;
+            n.voice = v;
+            g_session.ed.notes.push_back(n);
+        }
+        offset += static_cast<int>(loaded.size());
+    }
     g_session.notesVersion++;
     redraw();
 }
@@ -169,7 +213,7 @@ void loadNotes() {
 void loadOtherVoices(bool force) {
     for (int v = 0; v < WINDOW_VOICES; v++) {
         OtherVoice &o = g_session.others[idx(v)];
-        if (v == g_session.voice) {
+        if (g_session.editing >> v & 1) {
             o = OtherVoice();
             continue;
         }
@@ -194,49 +238,96 @@ void loadOtherVoices(bool force) {
     }
 }
 
-// Writes the editor's notes back to the take as one undo point (none for selection-only changes).
-// If the take changed since the notes were loaded (an action or script during a drag, the item
-// moved, the tempo changed), the edit is dropped and the take's notes reloaded: the loaded notes
+// Writes the editor's notes back to their voices' takes as one undo point (none for selection-only
+// changes). If a take changed since the notes were loaded (an action or script during a drag, an
+// item moved, the tempo changed), the edit is dropped and the notes reloaded: the loaded notes
 // refer to its events by index and would overwrite the wrong ones. False if it was dropped.
 bool commitNotes() {
     if (notesStale()) {
         loadNotes();
         return false;
     }
-    const NoteChanges changes = diffNotes(g_loaded, g_session.ed.notes, g_session.ed.deleted);
-    if (changes.data) {
+
+    // by voice, with take indices back to each voice's own; a note now in another voice than it
+    // was read from is deleted there and new in its voice
+    const auto origin = [](int i) {
+        for (int v = 0; v < WINDOW_VOICES; v++) {
+            const int o = g_offset[idx(v)];
+            if ((g_session.editing >> v & 1) && i >= o &&
+                i < o + static_cast<int>(g_loaded[idx(v)].size())) {
+                return v;
+            }
+        }
+        return -1;
+    };
+    std::array<std::vector<Note>, WINDOW_VOICES> edited;
+    std::array<std::vector<int>, WINDOW_VOICES> deleted;
+    for (const int i : g_session.ed.deleted) {
+        if (const int v = origin(i); v >= 0) {
+            deleted[idx(v)].push_back(i - g_offset[idx(v)]);
+        }
+    }
+    for (Note n : g_session.ed.notes) {
+        const int v = noteVoice(n), from = n.idx >= 0 ? origin(n.idx) : -1;
+        if (from == v) {
+            n.idx -= g_offset[idx(v)];
+        } else {
+            if (from >= 0) {
+                deleted[idx(from)].push_back(n.idx - g_offset[idx(from)]);
+            }
+            n.idx = n.lyricIdx = -1;
+        }
+        edited[idx(v)].push_back(n);
+    }
+    std::array<NoteChanges, WINDOW_VOICES> changes;
+    bool data = false;
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        changes[idx(v)] = diffNotes(g_loaded[idx(v)], edited[idx(v)], deleted[idx(v)]);
+        data |= changes[idx(v)].data;
+    }
+    if (data) {
         Undo_BeginBlock2(NULL);
     }
 
-    // no notes item yet: create one when there is something to write. One may have been made
-    // elsewhere since (a script during a drag): then its notes are read, and the editor's (all
-    // new) go on top of them, trimmed against them as any edit.
-    MediaItem_Take *take = midiTake();
-    TakeSnapshot loadedFrom = g_session.snapshot;
-    std::vector<Note> loaded = g_loaded, edited = g_session.ed.notes;
-    if (!take && changes.data) {
-        MediaItem *found = VoiceItem(g_session.audio, g_session.voice, false);
-        g_session.midi = found ? found : VoiceItem(g_session.audio, g_session.voice, true);
-        take = g_session.midi ? GetActiveTake(g_session.midi) : NULL;
-        if (take) {
-            ReaperTake t(take);
-            loadedFrom = snapshotOf(t);
-            loaded = readNotes(t);
-            edited.insert(edited.begin(), loaded.begin(), loaded.end());
+    bool written = true;
+    for (int v = 0; v < WINDOW_VOICES; v++) {
+        if (!(g_session.editing >> v & 1)) {
+            continue;
         }
-    }
-
-    bool written = !take && !changes.data;
-    if (take) {
+        // no notes item yet: create one when there is something to write. One may have been made
+        // elsewhere since (a script during a drag): then its notes are read, and the editor's (all
+        // new) go on top of them, trimmed against them as any edit.
+        MediaItem_Take *take = takeOf(v);
+        TakeSnapshot loadedFrom = g_session.snapshot[idx(v)];
+        std::vector<Note> loaded = g_loaded[idx(v)];
+        if (!take && changes[idx(v)].data) {
+            MediaItem *found = VoiceItem(g_session.audio, v, false);
+            MediaItem *item = found ? found : VoiceItem(g_session.audio, v, true);
+            if (v == g_session.voice) {
+                g_session.midi = item;
+            }
+            take = item ? GetActiveTake(item) : NULL;
+            if (take) {
+                ReaperTake t(take);
+                loadedFrom = snapshotOf(t);
+                loaded = readNotes(t);
+                edited[idx(v)].insert(edited[idx(v)].begin(), loaded.begin(), loaded.end());
+            }
+        }
+        if (!take) {
+            written &= !changes[idx(v)].data;
+            continue;
+        }
         ReaperTake t(take);
-        written = writeNotes(t, loadedFrom, loaded, edited, g_session.ed.deleted,
-                             g_session.ed.velocity);
-        if (written && changes.data) {
+        const bool ok = writeNotes(t, loadedFrom, loaded, edited[idx(v)], deleted[idx(v)],
+                                   g_session.ed.velocity);
+        if (ok && changes[idx(v)].data) {
             fitItemToNotes(take);
         }
+        written &= ok;
     }
 
-    if (changes.data) {
+    if (data) {
         Undo_EndBlock2(NULL, "ReaTrace: edit notes", UNDO_STATE_ITEMS);
         UpdateArrange();
     }

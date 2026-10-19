@@ -11,19 +11,20 @@
 // reloaded. And the take as it was then: if it is reloaded meanwhile (edited elsewhere, another
 // take), the typed text is dropped rather than written over what changed.
 static double g_editStart;
-static int g_editChan, g_editPitch;
-static TakeSnapshot g_editSnapshot;
+static int g_editVoice, g_editChan, g_editPitch;
+static decltype(Session::snapshot) g_editSnapshot;
 
 // The edit field: at least this wide and this high, in pixels.
 static const int EDIT_MIN_WIDTH = 90, EDIT_HEIGHT = 20;
 
 // --- lyrics ------------------------------------------------------------------------------
 
-// The note starting at `start` (within a microsecond) with this channel and pitch, or -1.
-static int findNote(double start, int chan, int pitch) {
+// The note of `voice` starting at `start` (within a microsecond) with this channel and pitch, or -1.
+static int findNote(int voice, double start, int chan, int pitch) {
     for (size_t i = 0; i < g_session.ed.notes.size(); i++) {
         const Note &n = g_session.ed.notes[i];
-        if (fabs(n.start - start) < 1e-6 && n.chan == chan && n.pitch == pitch) {
+        if (noteVoice(n) == voice && fabs(n.start - start) < 1e-6 && n.chan == chan &&
+            n.pitch == pitch) {
             return static_cast<int>(i);
         }
     }
@@ -35,13 +36,14 @@ static bool lyricOrder(const Note &x, const Note &y) {
     return std::tie(x.start, x.pitch, x.chan) < std::tie(y.start, y.pitch, y.chan);
 }
 
-// The note after (dir > 0) or before (dir < 0) note i in lyric order.
+// The note of its voice after (dir > 0) or before (dir < 0) note i in lyric order.
 static int neighbourNote(int i, int dir) {
     const Note &c = g_session.ed.notes[idx(i)];
     int best = -1;
     for (size_t j = 0; j < g_session.ed.notes.size(); j++) {
         const Note &o = g_session.ed.notes[j];
-        if (static_cast<int>(j) == i || !(dir > 0 ? lyricOrder(c, o) : lyricOrder(o, c))) {
+        if (static_cast<int>(j) == i || noteVoice(o) != noteVoice(c) ||
+            !(dir > 0 ? lyricOrder(c, o) : lyricOrder(o, c))) {
             continue;
         }
         if (best < 0) {
@@ -58,7 +60,7 @@ static int neighbourNote(int i, int dir) {
 
 // Keeps the edit field just below its note's row, as wide as the note.
 void placeEdit() {
-    const int i = findNote(g_editStart, g_editChan, g_editPitch);
+    const int i = findNote(g_editVoice, g_editStart, g_editChan, g_editPitch);
     if (!g_ui.edit || i < 0) {
         return;
     }
@@ -96,6 +98,7 @@ void beginLyric(int i) {
         o.sel = false;
     }
     g_session.ed.notes[idx(i)].sel = true;
+    g_editVoice = noteVoice(nt);
     g_editStart = nt.start;
     g_editChan = nt.chan;
     g_editPitch = nt.pitch;
@@ -140,7 +143,7 @@ void endLyric(bool commit, int dir) {
     g_ui.edit = NULL;
     SetFocus(g_ui.hwnd);
 
-    int i = findNote(g_editStart, g_editChan, g_editPitch);
+    int i = findNote(g_editVoice, g_editStart, g_editChan, g_editPitch);
     if (i < 0 || g_session.snapshot != g_editSnapshot) {
         redraw();
         return;
@@ -162,7 +165,7 @@ void endLyric(bool commit, int dir) {
         commitNotes();
     }
     if (nextPitch >= 0) {
-        beginLyric(findNote(nextStart, nextChan, nextPitch));
+        beginLyric(findNote(g_editVoice, nextStart, nextChan, nextPitch));
     }
     redraw();
 }

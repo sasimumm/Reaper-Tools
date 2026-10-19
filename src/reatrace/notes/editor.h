@@ -20,6 +20,7 @@ struct Note {
     int vel = -1;      // MIDI velocity, -1 for the editor's default
     int chan = 0;      // MIDI channel, 0..15
     bool muted = false;
+    int voice = -1; // the voice it was read from or goes to, -1 for the edited voice
 };
 
 // Maps window pixels to time (seconds) and continuous MIDI pitch. Note row P spans P-0.5 .. P+0.5.

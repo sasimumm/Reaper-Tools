@@ -141,9 +141,9 @@ void updateIsolate() {
     // stopped and nothing changed: what was sent still holds
     const auto inputs = std::make_tuple(
         now, g_session.notesVersion, g_session.ed.active() ? g_session.ed.moves : -1,
-        g_analysis.valVersion, g_session.voice, g_settings.isolateAll, g_ui.hiddenVoices,
-        g_settings.isolateWidth, g_settings.isolateBackground, g_settings.isolateDuck,
-        g_settings.suggestFrom);
+        g_analysis.valVersion, g_session.voice, g_session.editing, g_settings.isolateAll,
+        g_ui.hiddenVoices, g_settings.isolateWidth, g_settings.isolateBackground,
+        g_settings.isolateDuck, g_settings.suggestFrom);
     static std::remove_const_t<decltype(inputs)> s_inputs;
     if (!playing && inputs == s_inputs && g_sentTo == guid) {
         return;
@@ -169,9 +169,9 @@ void updateIsolate() {
         if (!followed(voice)) {
             continue;
         }
-        for (const Note &n :
-             voice == g_session.voice ? g_session.ed.notes : g_session.others[idx(voice)].notes) {
-            if (n.end > now - 1 && n.start < horizon) {
+        const bool edited = g_session.editing >> voice & 1;
+        for (const Note &n : edited ? g_session.ed.notes : g_session.others[idx(voice)].notes) {
+            if ((!edited || noteVoice(n) == voice) && n.end > now - 1 && n.start < horizon) {
                 spans[idx(voice)].push_back(n);
             }
         }

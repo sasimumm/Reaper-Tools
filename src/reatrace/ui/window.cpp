@@ -241,6 +241,16 @@ void selectVoice(int v) {
     redraw();
 }
 
+void setAllVoices(bool on) {
+    if (g_ui.edit) {
+        endLyric(true, 0);
+    }
+    endIntervals(false);
+    g_session.allVoices = on;
+    loadNotes();
+    loadOtherVoices(true);
+}
+
 // --- input -------------------------------------------------------------------------
 
 int mods() {

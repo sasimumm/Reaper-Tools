@@ -15,6 +15,7 @@ namespace {
 enum Kind {
     LABEL,
     VOICE,
+    ALL_VOICES,
     SUGGEST,
     SUGGEST_FROM,
     CONTOUR,
@@ -87,6 +88,8 @@ std::vector<Item> items(const Layout &L) {
         "Edit voice 4 (4)  ·  Shift-click: hide or show"
     };
     add(LABEL, 0, "VOICE", "", 36);
+    add(ALL_VOICES, 0, "*", "Edit every shown voice's notes; new notes go to the voice chosen last",
+        textWidth("*") + PAD);
     for (int v = 0; v < WINDOW_VOICES; v++) {
         add(VOICE, v, VOICE_LABELS[idx(v)], VOICE_TIPS[idx(v)],
             textWidth(VOICE_LABELS[idx(v)]) + 24);
@@ -107,7 +110,8 @@ std::vector<Item> items(const Layout &L) {
     add(CONTOUR, 0, "Contour", "The sung pitch as a line (P)", textWidth("Contour") + PAD);
     add(GHOSTS, 0, "Ghosts", "Outlines where each note's overtones should be (H)",
         textWidth("Ghosts") + PAD);
-    add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)", textWidth("Explain") + PAD);
+    add(EXPLAIN, 0, "Explain", "Dim the energy drawn notes explain (X)",
+        textWidth("Explain") + PAD);
     add(CHORD_TONES, 0, "Chord tones",
         "Shade each chord's notes under it and mark notes outside it (C)",
         textWidth("Chord tones") + PAD);
@@ -148,6 +152,7 @@ std::vector<Item> items(const Layout &L) {
 bool isOn(const Item &it) {
     switch (it.kind) {
     case VOICE: return it.arg == g_session.voice;
+    case ALL_VOICES: return g_session.allVoices;
     case SUGGEST: return g_settings.suggest;
     case SUGGEST_FROM: return it.arg == g_settings.suggestFrom;
     case CONTOUR: return g_settings.showContour;
@@ -225,6 +230,14 @@ void drawToolbar(Canvas &cv, HDC dc, const Layout &L) {
             text(dc, it.label, r.l, r.t, r.r, r.b, on ? g_theme.onText : g_theme.dim, DT_CENTER);
             break;
         }
+        case ALL_VOICES:
+            // like a voice chip, framed in the colour of the voice new notes go to when on
+            cv.rounded(r.l, r.t, r.r, r.b, hov ? g_theme.track : g_theme.button);
+            if (on) {
+                cv.roundedFrame(r.l, r.t, r.r, r.b, g_theme.voices[idx(g_session.voice)], 2);
+            }
+            text(dc, it.label, r.l, r.t, r.r, r.b, g_theme.text, DT_CENTER);
+            break;
         case SUGGEST:
         case CONTOUR:
         case GHOSTS:
@@ -260,11 +273,13 @@ void toolbarClick(int x, int y, int mods, const Layout &L) {
         if (mods & MOD_SHIFT) {
             if (it->arg != g_session.voice) {
                 g_ui.hiddenVoices ^= 1u << it->arg;
+                setAllVoices(g_session.allVoices); // a hidden voice isn't edited
             }
         } else {
             selectVoice(it->arg);
         }
         break;
+    case ALL_VOICES: setAllVoices(!g_session.allVoices); break;
     case SUGGEST: g_settings.suggest = !g_settings.suggest; break;
     case SUGGEST_FROM:
         // the reference is picked again from REAPER's selected tracks when there are any

@@ -299,23 +299,32 @@ void acceptVisibleSuggestions() {
         byVoice[idx(v)].push_back({a, b, static_cast<int>(lround(sg.pitch)), false, -1});
     }
 
-    // other voices' takes are written directly, so they need an undo block of their own; the
-    // active voice's notes go through commitNotes()
+    // voices not in the editor have their takes written directly, so they need an undo block of
+    // their own; the edited voices' notes go through commitNotes()
+    const auto inEditor = [](int v) { return (g_session.editing >> v & 1) != 0; };
     bool others = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        others |= v != g_session.voice && !byVoice[idx(v)].empty();
+        others |= !inEditor(v) && !byVoice[idx(v)].empty();
     }
     if (others) {
         Undo_BeginBlock2(NULL);
     }
+    bool own = false;
     for (int v = 0; v < WINDOW_VOICES; v++) {
-        if (v != g_session.voice && !byVoice[idx(v)].empty()) {
-            insertIntoVoice(v, byVoice[idx(v)]);
+        if (byVoice[idx(v)].empty()) {
+            continue;
         }
+        if (!inEditor(v)) {
+            insertIntoVoice(v, byVoice[idx(v)]);
+            continue;
+        }
+        for (Note nt : byVoice[idx(v)]) {
+            nt.voice = v;
+            g_session.ed.notes.push_back(nt);
+        }
+        own = true;
     }
-    const std::vector<Note> &own = byVoice[idx(g_session.voice)];
-    if (!own.empty()) {
-        g_session.ed.notes.insert(g_session.ed.notes.end(), own.begin(), own.end());
+    if (own) {
         commitNotes();
     }
     if (others) {
@@ -360,9 +369,12 @@ void moveSelectedToVoice(int v) {
         loadNotes();
         return;
     }
-    const std::vector<Note> clip = g_session.ed.copySelected();
-    if (v == g_session.voice || clip.empty()) {
+    std::vector<Note> clip = g_session.ed.copySelected();
+    if (std::ranges::all_of(clip, [v](const Note &n) { return noteVoice(n) == v; })) {
         return;
+    }
+    for (Note &n : clip) {
+        n.voice = v;
     }
     double first = clip[0].start;
     for (const Note &n : clip) {
@@ -438,7 +450,7 @@ bool currentKey(int *root, int *scale, std::string *name) {
 
 // The take as the intervals field opened on it: if it is reloaded meanwhile (edited elsewhere,
 // another take), the selection may be other notes, so nothing is added.
-static TakeSnapshot g_intervalsSnapshot;
+static decltype(Session::snapshot) g_intervalsSnapshot;
 
 void beginIntervals() {
     const int first = firstSelected();
