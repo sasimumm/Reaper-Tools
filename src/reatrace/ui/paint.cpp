@@ -421,6 +421,9 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         return;
     }
     const std::vector<Segment> &sug = suggestions();
+    const double opacity =
+        g_settings.suggestFrom == FROM_REFERENCE ? g_settings.referenceOpacity : 1;
+    const auto op = [&](int a) { return iround(a * opacity); };
     for (size_t i = 0; i < sug.size(); i++) {
         const Segment &sg = sug[i];
         int x0 = 0, y0 = 0, x1 = 0, y1 = 0;
@@ -433,11 +436,11 @@ static void drawSuggestions(Canvas &cv, const Rect &n) {
         // a tint so it stands out from bright energy
         const int v = suggestionVoice(i);
         const unsigned int col = v >= 0 ? g_theme.voices[idx(v)] : g_theme.crowded;
-        const int a = v >= 0 ? 256 : 180;
+        const int a = op(v >= 0 ? 256 : 180);
         const int t = y1 - y0 >= 8 ? 2 : 1; // dash thickness
-        cv.rounded(x0, y0, x1, y1, col, v >= 0 ? 60 : 30);
-        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.shadow, 1, 170);
-        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, g_theme.shadow, 1, 110);
+        cv.rounded(x0, y0, x1, y1, col, op(v >= 0 ? 60 : 30));
+        cv.roundedFrame(x0 - 1, y0 - 1, x1 + 1, y1 + 1, g_theme.shadow, 1, op(170));
+        cv.roundedFrame(x0 + t, y0 + t, x1 - t, y1 - t, g_theme.shadow, 1, op(110));
         for (int x = x0 + 1; x < x1 - 1; x += 8) {
             cv.fill(x, y0, std::min(x + 5, x1 - 1), y0 + t, col, a);
             cv.fill(x, y1 - t, std::min(x + 5, x1 - 1), y1, col, a);

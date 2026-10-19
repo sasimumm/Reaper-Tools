@@ -22,7 +22,7 @@ enum { LISTEN_BOTH, LISTEN_AUDIO, LISTEN_NOTES };
 static int g_listen;
 static double g_notesDb; // read back from the lead voice track
 
-static int g_panelWidget = -1; // index into widgets() of the one being dragged, -1 if none
+static int g_panelWidget = -1;   // index into widgets() of the one being dragged, -1 if none
 static bool g_panelWidgetTracks; // whether it is in the tracks panel's widgets(), or the settings'
 
 // Panel geometry, in points: widgets' left and right margin, and where the first one starts.
@@ -144,6 +144,12 @@ static std::vector<Widget> allWidgets(Settings &s = g_settings) {
          .hi = 1,
          .display = 1,
          .fmt = "%.2f"},
+        {.type = W_SLIDER,
+         .label = "Reference opacity",
+         .value = &s.referenceOpacity,
+         .hi = 1,
+         .display = 100,
+         .fmt = "%.0f%%"},
         {.type = W_SLIDER,
          .label = "Quantise strength",
          .value = &s.quantStrength,

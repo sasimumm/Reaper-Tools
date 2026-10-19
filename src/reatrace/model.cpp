@@ -49,6 +49,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "suggest", .b = &s.suggest},
         {.name = "suggestfrom", .i = &s.suggestFrom, .lo = 0, .hi = FROM_REFERENCE},
         {.name = "reference", .s = &s.reference},
+        {.name = "referenceopacity", .d = &s.referenceOpacity, .lo = 0, .hi = 1},
         {.name = "estimatevote", .b = &s.estimateVote},
         {.name = "audition", .b = &s.audition},
         {.name = "theme", .b = &s.followTheme},
@@ -464,7 +465,7 @@ std::optional<ChordTones> chordTones(std::string_view name) {
         } else if (take("maj7") || take("M7") || take("\u0394")) { // triangle
             take("7");
             seventh = 11;
-        } else if (take("maj")) { // just major: Cmaj, Cmaj6
+        } else if (take("maj")) {                                   // just major: Cmaj, Cmaj6
         } else if (take("dim7") || take("\u00B07") || take("o7")) { // degree sign
             third = 3;
             fifth = 6;
