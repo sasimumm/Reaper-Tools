@@ -557,16 +557,21 @@ static INT_PTR handleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     switch (msg) {
     case WM_NCHITTEST: return HTCLIENT; // otherwise SWELL turns clicks into WM_NCLBUTTONDOWN etc.
     case WM_SETCURSOR: {
-        // a left-right arrow over a note's resize edge and while resizing
+        // REAPER's item edge cursors over a note's resize edge and while resizing, showing which
+        // edge; a plain left-right arrow if REAPER's bundle doesn't have them
+        static const HCURSOR s_left = SWELL_LoadCursorFromFile("size-left");
+        static const HCURSOR s_right = SWELL_LoadCursorFromFile("size-right");
         POINT pt;
         GetCursorPos(&pt);
         ScreenToClient(hwnd, &pt);
         const NoteEditor &ed = g_session.ed;
-        const NoteEditor::Hit h = noteArea().in(pt.x, pt.y)
-                                      ? ed.hitTest(g_ui.view, pt.x, pt.y, NULL)
-                                      : NoteEditor::NONE;
-        if (ed.resizing() || (!ed.active() && (h == NoteEditor::LEFT || h == NoteEditor::RIGHT))) {
-            SetCursor(LoadCursor(NULL, IDC_SIZEWE));
+        NoteEditor::Hit h = ed.resizing();
+        if (h == NoteEditor::NONE && !ed.active() && noteArea().in(pt.x, pt.y)) {
+            h = ed.hitTest(g_ui.view, pt.x, pt.y, NULL);
+        }
+        if (h == NoteEditor::LEFT || h == NoteEditor::RIGHT) {
+            const HCURSOR c = h == NoteEditor::LEFT ? s_left : s_right;
+            SetCursor(c ? c : LoadCursor(NULL, IDC_SIZEWE));
             return 1;
         }
         return 0;
