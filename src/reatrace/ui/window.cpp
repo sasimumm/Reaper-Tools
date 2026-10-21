@@ -318,6 +318,8 @@ static void snapMenu(int x, int y) {
 // Punctuation arrives as a character code without FVIRTKEY, and some collide with VK codes
 // ('.' == VK_DELETE), so keys are encoded as key | CHARKEY for characters.
 static const int CHARKEY = 0x10000;
+// § as SWELL delivers it: the key left of 1 on ISO keyboards (` on US ones)
+static const int SECTION = 0xA7;
 static int keyCode(int key, int flags) { return (flags & FVIRTKEY) ? key : key | CHARKEY; }
 
 // A shortcut (keyCode() form); true if handled.
@@ -432,6 +434,8 @@ static bool onKey(int key) {
     } else if (key == ('=' | CHARKEY)) {
         g_settings.rp.contrast = std::min(3.0, g_settings.rp.contrast * 1.1);
         updateValues();
+    } else if (key == (SECTION | CHARKEY) || key == ('`' | CHARKEY)) {
+        setAllVoices(!g_session.allVoices);
     } else if (key == (',' | CHARKEY)) {
         adjustGamma(-1);
     } else if (key == ('.' | CHARKEY)) {
@@ -458,6 +462,8 @@ static bool isOurKey(int key, int flags) {
     case '=' | CHARKEY:
     case ',' | CHARKEY:
     case '.' | CHARKEY:
+    case SECTION | CHARKEY:
+    case '`' | CHARKEY:
     case '?' | CHARKEY: return true;
     case '/' | CHARKEY: return (flags & FSHIFT) != 0;
     case VK_LEFT:

@@ -826,6 +826,7 @@ static void drawShortcuts(Canvas &cv, HDC dc, const Layout &L) {
         {"Suggestions and voices",
          {{"Show suggestions", "N"},
           {"Accept all in view", "A"},
+          {"Edit every shown voice", "§ (` on US keyboards)"},
           {"Edit voice", "1-4"},
           {"Move selected to voice", "cmd+1-4"},
           {"Contour, ghosts, explain", "P, H, X"},

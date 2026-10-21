@@ -88,7 +88,8 @@ std::vector<Item> items(const Layout &L) {
         "Edit voice 4 (4)  ·  Shift-click: hide or show"
     };
     add(LABEL, 0, "VOICE", "", 36);
-    add(ALL_VOICES, 0, "*", "Edit every shown voice's notes; new notes go to the voice chosen last",
+    add(ALL_VOICES, 0, "*",
+        "Edit every shown voice's notes (§); new notes go to the voice chosen last",
         textWidth("*") + PAD);
     for (int v = 0; v < WINDOW_VOICES; v++) {
         add(VOICE, v, VOICE_LABELS[idx(v)], VOICE_TIPS[idx(v)],
