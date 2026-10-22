@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cctype>
 #include <span>
+#include <tuple>
 
 // Hit zones, only inside the note (the space around it draws): 9 px edge zones resize, notes
 // narrower than 18 px can only be moved, and a drag starts after 3 px.
@@ -396,32 +397,57 @@ bool NoteEditor::joinSelected() {
     if (sel.size() < 2) {
         return false;
     }
-    std::sort(sel.begin(), sel.end(),
-              [&](int a, int b) { return notes[idx(a)].start < notes[idx(b)].start; });
 
-    Note &first = notes[idx(sel[0])];
-    // lyrics are joined, dropping the hyphens between syllables: "hel-" + "lo" -> "hello"
-    for (size_t k = 1; k < sel.size(); k++) {
-        const Note &n = notes[idx(sel[k])];
-        first.end = std::max(first.end, n.end);
-        if (n.lyric.empty()) {
-            continue;
+    // the selected notes of each voice, channel and pitch join on their own, by start; with no two
+    // on one pitch, they all join into one note
+    const auto pitchOf = [&](int i) {
+        const Note &n = notes[idx(i)];
+        return std::tie(n.voice, n.chan, n.pitch);
+    };
+    std::sort(sel.begin(), sel.end(), [&](int a, int b) {
+        return std::tuple_cat(pitchOf(a), std::tie(notes[idx(a)].start)) <
+               std::tuple_cat(pitchOf(b), std::tie(notes[idx(b)].start));
+    });
+    std::vector<std::vector<int>> groups;
+    for (size_t k = 0; k < sel.size(); k++) {
+        if (k == 0 || pitchOf(sel[k]) != pitchOf(sel[k - 1])) {
+            groups.emplace_back();
         }
-        if (!first.lyric.empty() && first.lyric.back() == '-') {
-            first.lyric.pop_back();
+        groups.back().push_back(sel[k]);
+    }
+    if (std::ranges::none_of(groups, [](const auto &g) { return g.size() > 1; })) {
+        std::sort(sel.begin(), sel.end(),
+                  [&](int a, int b) { return notes[idx(a)].start < notes[idx(b)].start; });
+        groups = {sel};
+    }
+
+    std::vector<int> drop;
+    for (const std::vector<int> &g : groups) {
+        Note &first = notes[idx(g[0])];
+        // lyrics are joined, dropping the hyphens between syllables: "hel-" + "lo" -> "hello"
+        for (size_t k = 1; k < g.size(); k++) {
+            const Note &n = notes[idx(g[k])];
+            first.end = std::max(first.end, n.end);
+            drop.push_back(g[k]);
+            if (n.lyric.empty()) {
+                continue;
+            }
+            if (!first.lyric.empty() && first.lyric.back() == '-') {
+                first.lyric.pop_back();
+            }
+            first.lyric += n.lyric;
         }
-        first.lyric += n.lyric;
     }
 
     // remove the rest, highest index first so the others stay valid
-    std::sort(sel.begin() + 1, sel.end(), std::greater<int>());
-    for (size_t k = 1; k < sel.size(); k++) {
-        if (notes[idx(sel[k])].idx >= 0) {
-            deleted.push_back(notes[idx(sel[k])].idx);
+    std::sort(drop.begin(), drop.end(), std::greater<int>());
+    for (const int i : drop) {
+        if (notes[idx(i)].idx >= 0) {
+            deleted.push_back(notes[idx(i)].idx);
         }
-        notes.erase(notes.begin() + sel[k]);
+        notes.erase(notes.begin() + i);
     }
-    return true;
+    return !drop.empty();
 }
 
 std::optional<NoteEditor::Box> NoteEditor::marquee() const {

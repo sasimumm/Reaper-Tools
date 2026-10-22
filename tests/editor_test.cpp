@@ -257,6 +257,21 @@ int main() {
                e.notes[0].lyric == "hello");
         assert(e.deleted.size() == 1 && e.deleted[0] == 4);
     }
+    {
+        // notes on one pitch join with each other only; a lone one on its pitch stays
+        NoteEditor e;
+        e.notes = {{1, 2, 60, true, 0}, {2, 3, 60, true, 1}, {1, 2, 64, true, 2},
+                   {2, 3, 64, true, 3}, {1, 3, 67, true, 4}, {2, 3, 60, true, 5}};
+        e.notes[5].voice = 1; // another voice's, on the same pitch
+        assert(e.joinSelected() && e.notes.size() == 4);
+        int joined = 0;
+        for (const Note &n : e.notes) {
+            joined += n.voice < 0 && n.pitch != 67 && near(n.start, 1) && near(n.end, 3);
+        }
+        assert(joined == 2);
+        std::sort(e.deleted.begin(), e.deleted.end());
+        assert(e.deleted == std::vector<int>({1, 3}));
+    }
 
     printf("ok\n");
 }
