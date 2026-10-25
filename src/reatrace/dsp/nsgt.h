@@ -14,6 +14,7 @@ struct NSGTParams {
     int binsPerOctave = 60;    // 5 bins per semitone
     int hop = 256;             // samples per frame, power of two
     double gamma = 11; // Hz added to every bin's bandwidth: lower = sharper pitch, blurrier timing
+    double a4 = 440;   // Hz of MIDI pitch 69: the tuning of the pitch axis
 };
 
 // Magnitudes on a log-frequency axis: bin b is p.fmin * 2^(b / binsPerOctave) Hz, frame f is

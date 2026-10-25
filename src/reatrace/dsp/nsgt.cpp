@@ -27,7 +27,7 @@ static int nextPow2(int n) {
 }
 
 double Spectrogram::binOfPitch(double midiPitch) const {
-    double f = 440.0 * pow(2.0, (midiPitch - 69) / 12.0);
+    double f = p.a4 * pow(2.0, (midiPitch - 69) / 12.0);
     return p.binsPerOctave * log2(f / p.fmin);
 }
 
@@ -43,6 +43,7 @@ static NSGTParams sanitize(NSGTParams p) {
     p.fmin = std::max(10.0, std::min(p.sampleRate * 0.25, p.fmin));
     p.fmax = std::max(p.fmin * 2, std::min(p.sampleRate * 0.45, p.fmax));
     p.gamma = std::max(0.0, std::min(1000.0, p.gamma));
+    p.a4 = std::max(415.0, std::min(466.0, p.a4)); // a semitone either way
     return p;
 }
 

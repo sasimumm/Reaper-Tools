@@ -647,12 +647,12 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
         const double t = g_ui.view.t(g_ui.mouseX);
         const double p = g_ui.view.p(g_ui.mouseY);
         const int ip = static_cast<int>(floor(p + 0.5));
+        const Spectrogram &sp = *g_analysis.spec;
         col[0] = pitchName(ip);
-        snprintf(buf, sizeof(buf), "%7.1f Hz", 440 * pow(2.0, (p - 69) / 12));
+        snprintf(buf, sizeof(buf), "%7.1f Hz", sp.p.a4 * pow(2.0, (p - 69) / 12));
         col[1] = buf;
 
         // the strongest bin within a semitone of the pitch, and the level at the pitch
-        const Spectrogram &sp = *g_analysis.spec;
         const int f = iround((t - g_session.audioPos) * sp.frameRate());
         if (f >= 0 && f < sp.frames) {
             const int b0 = std::max(0, static_cast<int>(floor(sp.binOfPitch(ip - 1))));
@@ -666,7 +666,7 @@ static void drawStatus(Canvas &cv, HDC dc, const Layout &L) {
             if (best >= 0) {
                 const double peakHz =
                     sp.p.fmin * pow(2.0, static_cast<double>(best) / sp.p.binsPerOctave);
-                const double peak = 69 + 12 * log2(peakHz / 440);
+                const double peak = 69 + 12 * log2(peakHz / sp.p.a4);
                 const int pp = static_cast<int>(floor(peak + 0.5));
                 snprintf(buf, sizeof(buf), "peak %-3s %+3.0fc", pitchName(pp).c_str(),
                          (peak - pp) * 100);

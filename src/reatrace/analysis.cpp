@@ -43,7 +43,8 @@ struct AudioKey {
 // Whether two transforms give the same spectrogram.
 static bool sameNSGT(const NSGTParams &a, const NSGTParams &b) {
     return a.sampleRate == b.sampleRate && a.fmin == b.fmin && a.fmax == b.fmax &&
-           a.binsPerOctave == b.binsPerOctave && a.hop == b.hop && a.gamma == b.gamma;
+           a.binsPerOctave == b.binsPerOctave && a.hop == b.hop && a.gamma == b.gamma &&
+           a.a4 == b.a4;
 }
 
 // What a channel's display spectrogram (and its contour, onsets) depends on.
@@ -58,6 +59,7 @@ struct EstimateKey {
     AudioKey audio;
     int channel = CH_MIX;
     bool vote = true;
+    double a4 = 440;
     bool operator==(const EstimateKey &) const = default;
 };
 
@@ -192,6 +194,19 @@ struct Job {
         // free the input: ~80 MB each at 15 min
         std::vector<float>().swap(left);
         std::vector<float>().swap(right);
+        // The estimator (and basic-pitch) know only A4 = 440 Hz: resample so the tuning's A4 lands
+        // there, and scale its frames back. Linear interpolation; the shift is under 6%.
+        const double k = 440 / estKey.a4;
+        if (k != 1) {
+            std::vector<float> y(static_cast<size_t>(static_cast<double>(mono.size()) / k));
+            for (size_t i = 0; i < y.size(); i++) {
+                const double x = static_cast<double>(i) * k;
+                const size_t j = static_cast<size_t>(x);
+                const float a = mono[j], b = j + 1 < mono.size() ? mono[j + 1] : a;
+                y[i] = a + static_cast<float>(x - static_cast<double>(j)) * (b - a);
+            }
+            mono = std::move(y);
+        }
 
         const NSGTParams ep = estimateNSGTParams();
         // the centre's display spectrogram is mid minus side, not the mid the estimator reads: it
@@ -235,8 +250,11 @@ struct Job {
 
         EstimateParams opts;
         opts.vote = estKey.vote;
-        const std::vector<NoteEstimate> notes =
-            estimateNotes(es, mono, basicPitch, opts, part(0.2, 1));
+        std::vector<NoteEstimate> notes = estimateNotes(es, mono, basicPitch, opts, part(0.2, 1));
+        for (NoteEstimate &e : notes) {
+            e.f0 = static_cast<int>(lround(e.f0 * k));
+            e.f1 = std::max(e.f0 + 1, static_cast<int>(lround(e.f1 * k)));
+        }
         for (const NoteEstimate &e : notes) { // f1 is exclusive there, inclusive in a Segment
             est.estimated.push_back({e.f0, e.f1 - 1, static_cast<double>(e.pitch)});
         }
@@ -409,7 +427,7 @@ void requestAnalysis(bool autoCalibrateAfter) {
     };
     const int ch = g_settings.channel;
     const SpecKey key = {audio, g_settings.np};
-    const EstimateKey estKey = {audio, ch, g_settings.estimateVote};
+    const EstimateKey estKey = {audio, ch, g_settings.estimateVote, g_settings.np.a4};
     const bool haveSpec = cached(ch, key) && g_cache[idx(ch)].vocalValid;
     const bool haveEstimate = g_estimate.valid && g_estimate.key == estKey;
     if (haveSpec && haveEstimate) {

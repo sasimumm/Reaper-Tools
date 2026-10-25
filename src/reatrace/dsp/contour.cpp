@@ -16,7 +16,7 @@ static const double JUMP_COST = 0.3; // Viterbi cost per semitone of pitch chang
 
 // Continuous MIDI pitch of a (fractional) bin index; the inverse of Spectrogram::binOfPitch.
 static double pitchOfBin(const Spectrogram &s, double bin) {
-    return 69 + 12 * log2(s.p.fmin / 440) + 12 * bin / s.p.binsPerOctave;
+    return 69 + 12 * log2(s.p.fmin / s.p.a4) + 12 * bin / s.p.binsPerOctave;
 }
 
 // Upper median (0 when empty).

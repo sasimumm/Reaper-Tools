@@ -67,6 +67,8 @@ saved with the project, can be undone, and can also be edited in REAPER's MIDI e
   point for new items. Presets: "Vocal in mix" (centre channel, noise subtraction, 60 Hz–5 kHz),
   "Solo vocal", "Fast runs" (sharper timing). The analysis channel "Centre" (mid minus side) helps
   pull a centre-panned lead vocal out of a mix; playback can be slowed to 75/50 % with pitch kept.
+- Tuning (A4, 415–466 Hz, under Analysis) sets the pitch of A4 for recordings not tuned to 440: the
+  keyboard, contour, suggestions, readouts and the isolate filter all follow it.
 - Tempo mapping is left to REAPER's own tools (tempo markers, "create measure from time
   selection", SWS tempo tools); the grid follows the project tempo map.
 - With ReaChords installed, the chord items' chords show in a lane under the ruler.

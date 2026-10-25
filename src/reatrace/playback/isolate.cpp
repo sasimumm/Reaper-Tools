@@ -197,7 +197,7 @@ void updateIsolate() {
         v[at++] = static_cast<double>(sched.size());
         for (const auto &[t, p] : sched) {
             v[at++] = t;
-            v[at++] = p;
+            v[at++] = p + 12 * log2(g_settings.np.a4 / 440); // the JSFX's pitches are at A4 = 440
         }
     }
 

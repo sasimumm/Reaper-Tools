@@ -43,6 +43,24 @@ int main() {
         assert(lo > 0.48 && hi < 0.52);
     }
 
+    // Tuned to A4 = 432 Hz: a 432 Hz sine is loudest at pitch 69.
+    {
+        std::vector<float> x(static_cast<size_t>(2 * sr));
+        for (size_t i = 0; i < x.size(); i++) {
+            x[i] = 0.5f * static_cast<float>(sin(2 * M_PI * 432 * static_cast<double>(i) / sr));
+        }
+        NSGTParams p;
+        p.a4 = 432;
+        Spectrogram s =
+            computeNSGT(p, static_cast<long long>(x.size()),
+                        [&](long long start, std::span<float> out) { readPadded(x, start, out); });
+        const int a4 = static_cast<int>(lround(s.binOfPitch(69)));
+        const int f = s.frames / 2;
+        for (int b = 0; b < s.bins; b++) {
+            assert(s.at(f, b) <= s.at(f, a4));
+        }
+    }
+
     // Clicks, including ones near block boundaries: a high bin peaks at the click's frame.
     {
         std::vector<float> x(static_cast<size_t>(6 * sr));

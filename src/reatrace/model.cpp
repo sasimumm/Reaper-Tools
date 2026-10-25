@@ -28,6 +28,7 @@ static std::vector<Setting> fields(Settings &s) {
         {.name = "gamma", .d = &s.np.gamma, .lo = 3, .hi = 40},
         {.name = "fmin", .d = &s.np.fmin, .lo = 20, .hi = 500},
         {.name = "fmax", .d = &s.np.fmax, .lo = 1000, .hi = 11000},
+        {.name = "a4", .d = &s.np.a4, .lo = 415, .hi = 466},
         {.name = "binspersemitone", .d = &s.binsPerSemitone, .lo = 1, .hi = 10},
         {.name = "channel", .i = &s.channel, .lo = 0, .hi = CH_CENTRE},
         {.name = "floor", .d = &s.rp.dbFloor, .lo = -120, .hi = -20},
