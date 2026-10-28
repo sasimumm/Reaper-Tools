@@ -188,6 +188,29 @@ int main() {
         std::vector<Note> tr = {{1, 2, 60, true, 5}, {3, 4, 62, false, 6}};
         assert(addIntervals(tr, parsed("t3"), C, major) && tr[0].pitch == 64 && tr[1].pitch == 62 &&
                tr.size() == 2);
+
+        // note names: above (or below with -) the outer selected notes; tA moves to the nearest
+        const auto bb = parsed("Bb, -f#");
+        assert(bb.intervals.size() == 2 && bb.intervals[0].pc == 10 && bb.intervals[0].degree == 1);
+        assert(bb.intervals[1].pc == 6 && bb.intervals[1].degree == -1);
+        assert(!parseIntervals("H") && !parseIntervals("Bx") && !parseIntervals("A3b"));
+        // with an octave, the pitch; lowercase a3, d5 stay intervals
+        assert(parsed("A3").intervals[0].pitch == 57 && parsed("F#2").intervals[0].pitch == 42);
+        assert(parsed("B#3").intervals[0].pitch == 60 && parsed("Cb4").intervals[0].pitch == 59);
+        assert(parsed("a3").intervals[0].quality == IQ_AUGMENTED);
+        assert(parsed("d5").intervals[0].quality == IQ_DIMINISHED && !parseIntervals("G#9"));
+        std::vector<Note> nn = {{1, 2, 60, true, 5}, {1, 2, 64, true, 6}};
+        assert(addIntervals(nn, parsed("A"), C, major) && nn.size() == 3 && nn[2].pitch == 69);
+        nn[2].sel = false;
+        nn[0].sel = nn[1].sel = true;
+        assert(addIntervals(nn, parsed("-A"), C, major) && nn.size() == 4 && nn[3].pitch == 57);
+        std::vector<Note> ta = {{1, 2, 60, true, 5}, {3, 4, 66, true, 6}, {5, 6, 69, true, 7}};
+        assert(addIntervals(ta, parsed("tA"), C, major));
+        assert(ta[0].pitch == 57 && ta[1].pitch == 69 && ta[2].pitch == 69);
+        assert(addIntervals(ta, parsed("t+C"), C, major) && ta[0].pitch == 60 && ta[2].pitch == 72);
+        assert(addIntervals(ta, parsed("tE2"), C, major) && ta[0].pitch == 40 && ta[2].pitch == 40);
+        std::vector<Note> ab = {{1, 2, 60, true, 5}, {1, 2, 64, true, 6}};
+        assert(addIntervals(ab, parsed("F#2"), C, major) && ab.size() == 3 && ab[2].pitch == 42);
     }
 
     // chord names to their notes

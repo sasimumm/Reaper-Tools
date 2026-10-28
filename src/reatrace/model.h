@@ -119,11 +119,17 @@ double followPage(double t0, double width, double prev, double now);
 // Shift+I, after Dorico's add intervals popover: comma-separated intervals such as 3, -3, m3, P5,
 // aug4 or -min6, where a negative degree goes down and a quality (M/maj, m/min, P/perf, d/dim,
 // a/aug) makes it chromatic; without one it counts steps of the scale. A leading t transposes the
-// selected notes by the first interval instead of adding notes.
+// selected notes by the first interval instead of adding notes. A note name (A, Bb, F#) adds that
+// note: the nearest one above (-A: below); tA moves the selected notes to the nearest A. With an
+// octave (A3, F#2; uppercase, since a3 and d5 are intervals) it is that pitch.
 enum IntervalQuality { IQ_DIATONIC, IQ_MAJOR, IQ_MINOR, IQ_PERFECT, IQ_DIMINISHED, IQ_AUGMENTED };
 struct Interval {
-    int degree; // 1 = unison, 3 = third, ...; negative below
-    IntervalQuality quality;
+    int degree = 1; // 1 = unison, 3 = third, ...; negative below
+    IntervalQuality quality = IQ_DIATONIC;
+    // a note name's pitch class (0 = C), -1 for an interval; then degree is 1 above, -1 below or 0
+    // the nearest
+    int pc = -1;
+    int pitch = -1; // a note name with an octave: this MIDI pitch, wherever the note is
 };
 struct IntervalInput {
     bool transpose = false;

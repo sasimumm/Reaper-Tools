@@ -246,6 +246,37 @@ static bool perfectDegree(int n) {
     return simple == 0 || simple == 3 || simple == 4;
 }
 
+// A note name: "A", "Bb", "f#" as an Interval with its pitch class; with an octave, "A3" (57),
+// "F#2", its pitch too. The letter must be uppercase then: a3 and d5 are intervals.
+static std::optional<Interval> noteNamed(std::string_view e) {
+    static const std::array PCS = {9, 11, 0, 2, 4, 5, 7}; // A..G
+    const char letter = e.empty() ? 0 : e[0];
+    const char c = static_cast<char>(tolower(letter));
+    if (c < 'a' || c > 'g') {
+        return std::nullopt;
+    }
+    e.remove_prefix(1);
+    int pc = PCS[idx(c - 'a')];
+    if (!e.empty() && (e[0] == 'b' || e[0] == '#')) {
+        pc += e[0] == '#' ? 1 : -1;
+        e.remove_prefix(1);
+    }
+    pc = (pc + 12) % 12;
+    if (e.empty()) {
+        return Interval{.degree = 1, .quality = IQ_DIATONIC, .pc = pc};
+    }
+    if (e.size() != 1 || e[0] < '0' || e[0] > '9' || letter != toupper(letter)) {
+        return std::nullopt;
+    }
+    // the C of octave n is 12 * (n + 1); B# and Cb cross into the next and previous octaves
+    const int pitch = pc + 12 * (e[0] - '0' + 1) + (c == 'b' && pc == 0 ? 12 : 0) -
+                      (c == 'c' && pc == 11 ? 12 : 0);
+    if (pitch > 127) {
+        return std::nullopt;
+    }
+    return Interval{.degree = 1, .quality = IQ_DIATONIC, .pc = pc, .pitch = pitch};
+}
+
 std::optional<IntervalInput> parseIntervals(std::string_view text) {
     IntervalInput in;
     text = trim(text);
@@ -257,28 +288,35 @@ std::optional<IntervalInput> parseIntervals(std::string_view text) {
         const size_t comma = text.find(',');
         std::string_view e = trim(text.substr(0, comma));
         int sign = 1;
-        if (!e.empty() && (e.front() == '-' || e.front() == '+')) {
+        const bool hasSign = !e.empty() && (e.front() == '-' || e.front() == '+');
+        if (hasSign) {
             sign = e.front() == '-' ? -1 : 1;
             e.remove_prefix(1);
         }
-        const size_t digits = e.find_first_of("0123456789");
-        if (digits == e.npos || e.substr(digits).find_first_not_of("0123456789") != e.npos ||
-            e.size() - digits > 2) {
-            return std::nullopt;
+        if (std::optional<Interval> note = noteNamed(e)) {
+            // unsigned when transposing: the nearest one
+            note->degree = in.transpose && !hasSign ? 0 : sign;
+            in.intervals.push_back(*note);
+        } else {
+            const size_t digits = e.find_first_of("0123456789");
+            if (digits == e.npos || e.substr(digits).find_first_not_of("0123456789") != e.npos ||
+                e.size() - digits > 2) {
+                return std::nullopt;
+            }
+            const std::optional<IntervalQuality> q = qualityNamed(trim(e.substr(0, digits)));
+            int n = 0; // one or two digits, checked above
+            for (const char c : e.substr(digits)) {
+                n = n * 10 + (c - '0');
+            }
+            if (!q || n < 1 || n > 22) { // up to three octaves
+                return std::nullopt;
+            }
+            const bool perfect = perfectDegree(n);
+            if ((perfect && (*q == IQ_MAJOR || *q == IQ_MINOR)) || (!perfect && *q == IQ_PERFECT)) {
+                return std::nullopt; // no major fifth, no perfect third
+            }
+            in.intervals.push_back({sign * n, *q});
         }
-        const std::optional<IntervalQuality> q = qualityNamed(trim(e.substr(0, digits)));
-        int n = 0; // one or two digits, checked above
-        for (const char c : e.substr(digits)) {
-            n = n * 10 + (c - '0');
-        }
-        if (!q || n < 1 || n > 22) { // up to three octaves
-            return std::nullopt;
-        }
-        const bool perfect = perfectDegree(n);
-        if ((perfect && (*q == IQ_MAJOR || *q == IQ_MINOR)) || (!perfect && *q == IQ_PERFECT)) {
-            return std::nullopt; // no major fifth, no perfect third
-        }
-        in.intervals.push_back({sign * n, *q});
         if (comma == text.npos) {
             break;
         }
@@ -290,7 +328,18 @@ std::optional<IntervalInput> parseIntervals(std::string_view text) {
 int intervalPitch(int pitch, Interval iv, int root, int scale) {
     const int n = std::abs(iv.degree), dir = iv.degree < 0 ? -1 : 1;
     int to = 0;
-    if (iv.quality == IQ_DIATONIC) {
+    if (iv.pitch >= 0) {
+        to = iv.pitch;
+    } else if (iv.pc >= 0) {
+        const int up = ((iv.pc - pitch) % 12 + 12) % 12, down = (12 - up) % 12;
+        if (iv.degree > 0) {
+            to = pitch + (up ? up : 12);
+        } else if (iv.degree < 0) {
+            to = pitch - (down ? down : 12);
+        } else {
+            to = up <= 6 ? pitch + up : pitch - down;
+        }
+    } else if (iv.quality == IQ_DIATONIC) {
         std::vector<int> pcs; // the scale's pitch classes above the root
         for (int b = 0; b < 12; b++) {
             if ((scale ? scale : 0xAB5) & (1 << b)) {
